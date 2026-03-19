@@ -688,7 +688,7 @@ function startApp() {
 
       var camera = new THREE.PerspectiveCamera(55, el.clientWidth/el.clientHeight, 0.01, 10000);
       camera.up.set(0,0,1);
-      camera.position.set(30,30,25);
+      camera.position.set(30,25,30);
       S.camera = camera;
 
       var renderer = new THREE.WebGLRenderer({antialias:true});
@@ -838,7 +838,7 @@ function startApp() {
             var sz=box.getSize(new THREE.Vector3()), ctr=box.getCenter(new THREE.Vector3());
             var d=Math.max(sz.x,sz.y,sz.z)*1.5;
             S.orbit.target.copy(ctr);
-            S.camera.position.set(ctr.x+d,ctr.y+d,ctr.z+d*0.6);
+            S.camera.position.set(ctr.x+d,ctr.y+d,ctr.z+d*0.7);
             S.orbit.sync();
           }
         }
