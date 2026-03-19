@@ -162,7 +162,8 @@ function startApp() {
 
   var INIT_FILTERS = {
     search:'', status:'all', type:'all', discipline:'all',
-    floor:'all', distMin:0, distMax:9999, elementId:'', selfClash:'all'
+    floor:'all', distMin:0, distMax:9999, elementId:'', selfClash:'all',
+    ifcType:'all', storey:'all', material:'all'
   };
   var INIT = {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, tab:'clashes',
@@ -203,10 +204,219 @@ function startApp() {
     });
   }
 
+  // IFC type constants (from web-ifc schema)
+  var IFC = {
+    IFCWALL:839292159, IFCWALLSTANDARDCASE:3512223829, IFCSLAB:1529196076,
+    IFCBEAM:753842376, IFCCOLUMN:843113511, IFCDOOR:395920057,
+    IFCWINDOW:3304561284, IFCROOF:2016517767, IFCSTAIR:331165859,
+    IFCRAILING:2262370178, IFCFURNISHINGELEMENT:263784265,
+    IFCFLOWSEGMENT:987401354, IFCFLOWTERMINAL:2058353004,
+    IFCFLOWFITTING:4278956645, IFCDISTRIBUTIONFLOWELEMENT:3040386961,
+    IFCPIPESEGMENT:3612865200, IFCDUCTSEGMENT:3518393246,
+    IFCMEMBER:1073191201, IFCPLATE:3171933400, IFCFOOTING:900683007,
+    IFCPILE:1687234759, IFCCOVERING:1973544240, IFCSPACE:3856911033,
+    IFCBUILDINGSTOREY:3124254112, IFCRELCONTAINEDINSPATIALSTRUCTURE:3242617779,
+    IFCRELDEFINESBYPROPERTIES:4186316022, IFCPROPERTYSET:1451395588,
+    IFCPROPERTYSINGLEVALUE:3972844353, IFCELEMENTQUANTITY:1883228015,
+    IFCQUANTITYLENGTH:931644368, IFCQUANTITYAREA:2235152071,
+    IFCQUANTITYVOLUME:3252649465, IFCQUANTITYWEIGHT:825690147,
+    IFCRELASSOCIATESMATERIAL:2655215786, IFCMATERIALLAYERSETUSAGE:1303795690,
+    IFCMATERIALLAYERSET:3303938423, IFCMATERIALLAYER:248100487,
+    IFCMATERIAL:1838606355
+  };
+
+  function safeStr(v) {
+    if (v == null) return '';
+    if (typeof v === 'object' && v.value != null) return String(v.value);
+    return String(v);
+  }
+
+  function extractProperties(api, modelID, expressID) {
+    var props = {expressId:expressID, ifcType:'', name:'', description:'', objectType:'', storey:'', storeyId:null, material:'', quantities:{}, psets:{}};
+    try {
+      var line = api.GetLine(modelID, expressID);
+      if (line) {
+        props.ifcType = line.__proto__.constructor.name || line.type || '';
+        // Try to get a readable type name from the IFC type number
+        if (line.constructor && line.constructor.name) props.ifcType = line.constructor.name;
+        props.name = safeStr(line.Name);
+        props.description = safeStr(line.Description);
+        props.objectType = safeStr(line.ObjectType);
+        // Store the raw type ID for lookups
+        if (line.type != null) props.typeId = line.type;
+      }
+    } catch(e) {}
+    return props;
+  }
+
+  function extractStoreys(api, modelID) {
+    // Build map: elementExpressID -> storeyName
+    var storeyMap = {};
+    try {
+      var storeyIds = api.GetLineIDsWithType(modelID, IFC.IFCBUILDINGSTOREY);
+      var storeys = {};
+      for (var i = 0; i < storeyIds.size(); i++) {
+        var sid = storeyIds.get(i);
+        try {
+          var sl = api.GetLine(modelID, sid);
+          storeys[sid] = safeStr(sl.Name) || ('Storey #'+sid);
+        } catch(e) { storeys[sid] = 'Storey #'+sid; }
+      }
+      // IfcRelContainedInSpatialStructure links elements to storeys
+      var relIds = api.GetLineIDsWithType(modelID, IFC.IFCRELCONTAINEDINSPATIALSTRUCTURE);
+      for (var i = 0; i < relIds.size(); i++) {
+        try {
+          var rel = api.GetLine(modelID, relIds.get(i));
+          var structId = rel.RelatingStructure ? (rel.RelatingStructure.value||rel.RelatingStructure) : null;
+          var storeyName = storeys[structId] || '';
+          if (storeyName && rel.RelatedElements) {
+            var els = rel.RelatedElements;
+            for (var j = 0; j < els.length; j++) {
+              var eid = els[j].value != null ? els[j].value : els[j];
+              storeyMap[eid] = storeyName;
+            }
+          }
+        } catch(e) {}
+      }
+    } catch(e) { console.warn('Storey extraction failed:', e.message||e); }
+    return storeyMap;
+  }
+
+  function extractQuantitiesAndPsets(api, modelID, expressID, props) {
+    try {
+      var relIds = api.GetLineIDsWithType(modelID, IFC.IFCRELDEFINESBYPROPERTIES);
+      for (var i = 0; i < relIds.size(); i++) {
+        try {
+          var rel = api.GetLine(modelID, relIds.get(i));
+          var objs = rel.RelatedObjects || [];
+          var found = false;
+          for (var j = 0; j < objs.length; j++) {
+            var oid = objs[j].value != null ? objs[j].value : objs[j];
+            if (oid === expressID) { found = true; break; }
+          }
+          if (!found) continue;
+          var defId = rel.RelatingPropertyDefinition ? (rel.RelatingPropertyDefinition.value||rel.RelatingPropertyDefinition) : null;
+          if (!defId) continue;
+          var def = api.GetLine(modelID, defId);
+          if (!def) continue;
+          var setName = safeStr(def.Name) || 'Unknown';
+          // IfcElementQuantity
+          if (def.Quantities) {
+            for (var q = 0; q < def.Quantities.length; q++) {
+              try {
+                var qid = def.Quantities[q].value != null ? def.Quantities[q].value : def.Quantities[q];
+                var ql = api.GetLine(modelID, qid);
+                var qn = safeStr(ql.Name);
+                var qv = ql.LengthValue||ql.AreaValue||ql.VolumeValue||ql.WeightValue||ql.CountValue;
+                if (qn && qv != null) props.quantities[qn] = typeof qv === 'object' ? qv.value : qv;
+              } catch(e) {}
+            }
+          }
+          // IfcPropertySet
+          if (def.HasProperties) {
+            var pset = {};
+            for (var p = 0; p < def.HasProperties.length; p++) {
+              try {
+                var pid = def.HasProperties[p].value != null ? def.HasProperties[p].value : def.HasProperties[p];
+                var pl = api.GetLine(modelID, pid);
+                var pn = safeStr(pl.Name);
+                var pv = pl.NominalValue;
+                if (pn && pv != null) pset[pn] = typeof pv === 'object' ? (pv.value != null ? pv.value : String(pv)) : pv;
+              } catch(e) {}
+            }
+            if (Object.keys(pset).length) props.psets[setName] = pset;
+          }
+        } catch(e) {}
+      }
+    } catch(e) { console.warn('Property extraction failed for #'+expressID+':', e.message||e); }
+  }
+
+  function extractMaterials(api, modelID, expressID) {
+    try {
+      var relIds = api.GetLineIDsWithType(modelID, IFC.IFCRELASSOCIATESMATERIAL);
+      for (var i = 0; i < relIds.size(); i++) {
+        try {
+          var rel = api.GetLine(modelID, relIds.get(i));
+          var objs = rel.RelatedObjects || [];
+          var found = false;
+          for (var j = 0; j < objs.length; j++) {
+            var oid = objs[j].value != null ? objs[j].value : objs[j];
+            if (oid === expressID) { found = true; break; }
+          }
+          if (!found) continue;
+          var matRef = rel.RelatingMaterial ? (rel.RelatingMaterial.value||rel.RelatingMaterial) : null;
+          if (!matRef) continue;
+          var mat = api.GetLine(modelID, matRef);
+          if (!mat) continue;
+          // Direct material
+          if (mat.Name) return safeStr(mat.Name);
+          // MaterialLayerSetUsage -> MaterialLayerSet -> layers
+          if (mat.ForLayerSet) {
+            var lsid = mat.ForLayerSet.value != null ? mat.ForLayerSet.value : mat.ForLayerSet;
+            var ls = api.GetLine(modelID, lsid);
+            if (ls && ls.MaterialLayers) {
+              var names = [];
+              for (var k = 0; k < ls.MaterialLayers.length; k++) {
+                try {
+                  var lid = ls.MaterialLayers[k].value != null ? ls.MaterialLayers[k].value : ls.MaterialLayers[k];
+                  var layer = api.GetLine(modelID, lid);
+                  if (layer && layer.Material) {
+                    var mid = layer.Material.value != null ? layer.Material.value : layer.Material;
+                    var m = api.GetLine(modelID, mid);
+                    if (m && m.Name) names.push(safeStr(m.Name));
+                  }
+                } catch(e) {}
+              }
+              if (names.length) return names.join(', ');
+            }
+          }
+          // MaterialLayerSet directly
+          if (mat.MaterialLayers) {
+            var names = [];
+            for (var k = 0; k < mat.MaterialLayers.length; k++) {
+              try {
+                var lid = mat.MaterialLayers[k].value != null ? mat.MaterialLayers[k].value : mat.MaterialLayers[k];
+                var layer = api.GetLine(modelID, lid);
+                if (layer && layer.Material) {
+                  var mid = layer.Material.value != null ? layer.Material.value : layer.Material;
+                  var m = api.GetLine(modelID, mid);
+                  if (m && m.Name) names.push(safeStr(m.Name));
+                }
+              } catch(e) {}
+            }
+            if (names.length) return names.join(', ');
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+    return '';
+  }
+
+  // IFC type ID to human-readable name map
+  var IFC_TYPE_NAMES = {};
+  IFC_TYPE_NAMES[839292159] = 'IfcWall'; IFC_TYPE_NAMES[3512223829] = 'IfcWall';
+  IFC_TYPE_NAMES[1529196076] = 'IfcSlab'; IFC_TYPE_NAMES[753842376] = 'IfcBeam';
+  IFC_TYPE_NAMES[843113511] = 'IfcColumn'; IFC_TYPE_NAMES[395920057] = 'IfcDoor';
+  IFC_TYPE_NAMES[3304561284] = 'IfcWindow'; IFC_TYPE_NAMES[2016517767] = 'IfcRoof';
+  IFC_TYPE_NAMES[331165859] = 'IfcStair'; IFC_TYPE_NAMES[2262370178] = 'IfcRailing';
+  IFC_TYPE_NAMES[263784265] = 'IfcFurnishingElement';
+  IFC_TYPE_NAMES[987401354] = 'IfcFlowSegment'; IFC_TYPE_NAMES[2058353004] = 'IfcFlowTerminal';
+  IFC_TYPE_NAMES[4278956645] = 'IfcFlowFitting'; IFC_TYPE_NAMES[3040386961] = 'IfcDistributionFlowElement';
+  IFC_TYPE_NAMES[3612865200] = 'IfcPipeSegment'; IFC_TYPE_NAMES[3518393246] = 'IfcDuctSegment';
+  IFC_TYPE_NAMES[1073191201] = 'IfcMember'; IFC_TYPE_NAMES[3171933400] = 'IfcPlate';
+  IFC_TYPE_NAMES[900683007] = 'IfcFooting'; IFC_TYPE_NAMES[1687234759] = 'IfcPile';
+  IFC_TYPE_NAMES[1973544240] = 'IfcCovering'; IFC_TYPE_NAMES[3856911033] = 'IfcSpace';
+
   function loadIFC(buffer, fallbackColor) {
     return getIfcAPI().then(function(api) {
       var modelID = api.OpenModel(new Uint8Array(buffer));
       var meshes = [], elements = [];
+
+      // Pre-extract storey assignments for all elements
+      var storeyMap = extractStoreys(api, modelID);
+      var allStoreys = {};
+      Object.keys(storeyMap).forEach(function(k){ allStoreys[storeyMap[k]] = true; });
+
       api.StreamAllMeshes(modelID, function(ifcMesh) {
         var expressID = ifcMesh.expressID;
         var elMeshes = [], elBox = new THREE.Box3();
@@ -237,10 +447,20 @@ function startApp() {
             gd.delete();
           } catch(e) { console.warn('Skipped element geometry #'+expressID+': '+(e.message||e)); }
         }
-        if (elMeshes.length > 0) elements.push({ expressId:expressID, meshes:elMeshes, box:elBox.clone() });
+        if (elMeshes.length > 0) {
+          // Extract full properties for this element
+          var props = extractProperties(api, modelID, expressID);
+          props.storey = storeyMap[expressID] || '';
+          props.material = extractMaterials(api, modelID, expressID);
+          // Resolve type name from typeId
+          if (props.typeId && IFC_TYPE_NAMES[props.typeId]) props.ifcType = IFC_TYPE_NAMES[props.typeId];
+          // Extract quantities and property sets
+          extractQuantitiesAndPsets(api, modelID, expressID, props);
+          elements.push({ expressId:expressID, meshes:elMeshes, box:elBox.clone(), props:props });
+        }
       });
       api.CloseModel(modelID);
-      return { meshes:meshes, elements:elements };
+      return { meshes:meshes, elements:elements, storeys:Object.keys(allStoreys).sort() };
     });
   }
 
@@ -266,14 +486,21 @@ function startApp() {
           var gy=Math.max(0,bB.min.y-bA.max.y,bA.min.y-bB.max.y);
           var gz=Math.max(0,bB.min.z-bA.max.z,bA.min.z-bB.max.z);
           var dist=Math.round(Math.sqrt(gx*gx+gy*gy+gz*gz)*1000);
+          var pA = eA.props||{}, pB = eB.props||{};
+          var tA = pA.ifcType||'Element', tB = pB.ifcType||'Element';
+          var nA = pA.name||('#'+eA.expressId), nB = pB.name||('#'+eB.expressId);
           clashes.push({
             id:uid(), source:'auto', type:isHard?'hard':'soft', status:'open',
             title:sameModel?mA.name+' (self)':mA.discipline.toUpperCase()+' \u2194 '+mB.discipline.toUpperCase(),
-            description:'#'+eA.expressId+' ('+mA.name+') vs #'+eB.expressId+' ('+mB.name+')',
+            description:tA+': '+nA+' ('+mA.name+') vs '+tB+': '+nB+' ('+mB.name+')',
             modelAId:mA.id, modelBId:mB.id, elemA:eA.expressId, elemB:eB.expressId,
             point:[ctr.x,ctr.y,ctr.z], createdAt:new Date().toISOString(),
             distance:dist, elevation:Math.round(ctr.y*1000)/1000,
-            disciplines:[mA.discipline,mB.discipline], selfClash:sameModel
+            disciplines:[mA.discipline,mB.discipline], selfClash:sameModel,
+            elemAType:tA, elemBType:tB, elemAName:nA, elemBName:nB,
+            elemAStorey:pA.storey||'', elemBStorey:pB.storey||'',
+            elemAMaterial:pA.material||'', elemBMaterial:pB.material||'',
+            propsA:pA, propsB:pB
           });
         }
       }); });
@@ -594,7 +821,7 @@ function startApp() {
           return f.arrayBuffer().then(function(buf) {
             var disc='structural', col=DISC[0].c;
             return loadIFC(buf, col).then(function(result) {
-              d({t:'ADD_MODEL', v:{id:uid(), name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements}});
+              d({t:'ADD_MODEL', v:{id:uid(), name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[]}});
             });
           }).catch(function(er) {
             console.error(er);
@@ -677,6 +904,22 @@ function startApp() {
     var isClashTab = s.tab==='clashes';
     var rawItems = isClashTab ? s.clashes : s.issues;
 
+    // Collect unique values for dynamic filter dropdowns
+    var uniqueTypes = {}, uniqueStoreys = {}, uniqueMaterials = {};
+    if (isClashTab) {
+      s.clashes.forEach(function(c) {
+        if(c.elemAType) uniqueTypes[c.elemAType]=true;
+        if(c.elemBType) uniqueTypes[c.elemBType]=true;
+        if(c.elemAStorey) uniqueStoreys[c.elemAStorey]=true;
+        if(c.elemBStorey) uniqueStoreys[c.elemBStorey]=true;
+        if(c.elemAMaterial) uniqueMaterials[c.elemAMaterial]=true;
+        if(c.elemBMaterial) uniqueMaterials[c.elemBMaterial]=true;
+      });
+    }
+    var typeList = Object.keys(uniqueTypes).sort();
+    var storeyList = Object.keys(uniqueStoreys).sort();
+    var materialList = Object.keys(uniqueMaterials).sort();
+
     // Count active filters
     var activeCount = 0;
     if(f.status!=='all') activeCount++;
@@ -686,6 +929,9 @@ function startApp() {
     if(f.selfClash!=='all') activeCount++;
     if(f.elementId) activeCount++;
     if(f.distMin>0||f.distMax<9999) activeCount++;
+    if(f.ifcType!=='all') activeCount++;
+    if(f.storey!=='all') activeCount++;
+    if(f.material!=='all') activeCount++;
 
     // Apply all filters
     var items = rawItems.filter(function(it){
@@ -706,6 +952,9 @@ function startApp() {
         }
         if(f.selfClash==='self' && !it.selfClash) return false;
         if(f.selfClash==='cross' && it.selfClash) return false;
+        if(f.ifcType!=='all' && it.elemAType!==f.ifcType && it.elemBType!==f.ifcType) return false;
+        if(f.storey!=='all' && it.elemAStorey!==f.storey && it.elemBStorey!==f.storey) return false;
+        if(f.material!=='all' && it.elemAMaterial!==f.material && it.elemBMaterial!==f.material) return false;
       }
       return true;
     });
@@ -789,6 +1038,30 @@ function startApp() {
           </div>
         </div>`}
 
+        ${isClashTab && typeList.length>0 && html`<div>
+          <span style=${FL}>Element Type</span>
+          <select value=${f.ifcType} onChange=${function(e){d({t:'UPD_FILTERS',u:{ifcType:e.target.value}})}} style=${SELSTYLE}>
+            <option value="all">All types</option>
+            ${typeList.map(function(t){return html`<option key=${t} value=${t}>${t}</option>`})}
+          </select>
+        </div>`}
+
+        ${isClashTab && storeyList.length>0 && html`<div>
+          <span style=${FL}>Storey</span>
+          <select value=${f.storey} onChange=${function(e){d({t:'UPD_FILTERS',u:{storey:e.target.value}})}} style=${SELSTYLE}>
+            <option value="all">All storeys</option>
+            ${storeyList.map(function(t){return html`<option key=${t} value=${t}>${t}</option>`})}
+          </select>
+        </div>`}
+
+        ${isClashTab && materialList.length>0 && html`<div>
+          <span style=${FL}>Material</span>
+          <select value=${f.material} onChange=${function(e){d({t:'UPD_FILTERS',u:{material:e.target.value}})}} style=${SELSTYLE}>
+            <option value="all">All materials</option>
+            ${materialList.map(function(t){return html`<option key=${t} value=${t}>${t}</option>`})}
+          </select>
+        </div>`}
+
         ${isClashTab && html`<div>
           <span style=${FL}>Element ID</span>
           <input type="text" placeholder="e.g. 12345" value=${f.elementId} onInput=${function(e){d({t:'UPD_FILTERS',u:{elementId:e.target.value}})}}
@@ -810,6 +1083,51 @@ function startApp() {
     </aside>`;
   }
 
+  function PropBlock(props) {
+    var p=props.p, label=props.label;
+    if (!p) return null;
+    var qKeys = p.quantities ? Object.keys(p.quantities) : [];
+    var psetKeys = p.psets ? Object.keys(p.psets) : [];
+    var LS={fontSize:'.55rem',color:'#64748b'};
+    var VS={fontSize:'.55rem',color:'#cbd5e1'};
+    var ROW={display:'flex',justifyContent:'space-between',padding:'.1rem 0'};
+    return html`<div style=${{background:'#0f172a',borderRadius:4,padding:'.35rem',marginBottom:'.2rem'}}>
+      <div style=${{fontSize:'.6rem',fontWeight:600,color:'#93c5fd',marginBottom:'.2rem'}}>${label}</div>
+      ${p.ifcType && html`<div style=${ROW}><span style=${LS}>Type</span><span style=${VS}>${p.ifcType}</span></div>`}
+      ${p.name && html`<div style=${ROW}><span style=${LS}>Name</span><span style=${VS}>${p.name}</span></div>`}
+      ${p.objectType && html`<div style=${ROW}><span style=${LS}>Object Type</span><span style=${VS}>${p.objectType}</span></div>`}
+      ${p.storey && html`<div style=${ROW}><span style=${LS}>Storey</span><span style=${VS}>${p.storey}</span></div>`}
+      ${p.material && html`<div style=${ROW}><span style=${LS}>Material</span><span style=${VS}>${p.material}</span></div>`}
+      <div style=${ROW}><span style=${LS}>Express ID</span><span style=${VS}>#${p.expressId}</span></div>
+      ${qKeys.length>0 && html`<div style=${{marginTop:'.2rem',borderTop:'1px solid #1e293b',paddingTop:'.2rem'}}>
+        <div style=${{fontSize:'.55rem',fontWeight:600,color:'#64748b',marginBottom:'.1rem'}}>Quantities</div>
+        ${qKeys.map(function(k){return html`<div key=${k} style=${ROW}><span style=${LS}>${k}</span><span style=${VS}>${typeof p.quantities[k]==='number'?p.quantities[k].toFixed(3):p.quantities[k]}</span></div>`})}
+      </div>`}
+      ${psetKeys.map(function(setName){
+        var ps=p.psets[setName]; var keys=Object.keys(ps);
+        return html`<div key=${setName} style=${{marginTop:'.2rem',borderTop:'1px solid #1e293b',paddingTop:'.2rem'}}>
+          <div style=${{fontSize:'.55rem',fontWeight:600,color:'#64748b',marginBottom:'.1rem'}}>${setName}</div>
+          ${keys.map(function(k){return html`<div key=${k} style=${ROW}><span style=${LS}>${k}</span><span style=${VS}>${String(ps[k])}</span></div>`})}
+        </div>`;
+      })}
+    </div>`;
+  }
+
+  function ClashProps(props) {
+    var it=props.item;
+    var dp=useState(false), detailOpen=dp[0], setDetailOpen=dp[1];
+    return html`<div onClick=${function(e){e.stopPropagation();}}>
+      <button onClick=${function(){setDetailOpen(!detailOpen)}}
+        style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .35rem',background:'#0f172a',color:'#64748b',width:'100%',textAlign:'left',border:'1px solid #1e293b'}}>
+        ${detailOpen?'▼':'▶'} Element Properties
+      </button>
+      ${detailOpen && html`<div style=${{marginTop:'.3rem',maxHeight:'300px',overflowY:'auto'}}>
+        <${PropBlock} p=${it.propsA} label=${'Element A: '+(it.elemAName||'#'+it.elemA)} />
+        <${PropBlock} p=${it.propsB} label=${'Element B: '+(it.elemBName||'#'+it.elemB)} />
+      </div>`}
+    </div>`;
+  }
+
   function IssueRow(props) {
     var it=props.item, active=props.active, d=props.d, isClash=props.isClash;
     var icon = it.type==='hard'?'🔴':it.type==='soft'?'🟡':'📌';
@@ -827,10 +1145,13 @@ function startApp() {
           ${it.distance!=null && html`<span style=${{fontSize:'.55rem',color:'#64748b',marginTop:'.1rem',display:'inline-block'}}>${it.distance} mm${it.selfClash?' · self':''}</span>`}
         </div>
       </div>
-      ${active && html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid #334155',display:'flex',gap:'.25rem'}}>
-        ${Object.keys(STAT).map(function(k){return html`<button key=${k}
-          onClick=${function(e){e.stopPropagation();d({t:isClash?'UPD_CLASH':'UPD_ISSUE',id:it.id,u:{status:k}})}}
-          style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .35rem',background:it.status===k?STAT[k].bg:'#1e293b',color:it.status===k?'#fff':'#475569'}}>${STAT[k].label}</button>`})}
+      ${active && html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid #334155'}}>
+        <div style=${{display:'flex',gap:'.25rem',marginBottom:'.4rem'}}>
+          ${Object.keys(STAT).map(function(k){return html`<button key=${k}
+            onClick=${function(e){e.stopPropagation();d({t:isClash?'UPD_CLASH':'UPD_ISSUE',id:it.id,u:{status:k}})}}
+            style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .35rem',background:it.status===k?STAT[k].bg:'#1e293b',color:it.status===k?'#fff':'#475569'}}>${STAT[k].label}</button>`})}
+        </div>
+        ${(it.propsA||it.propsB) && html`<${ClashProps} item=${it} />`}
       </div>`}
     </div>`;
   }
