@@ -174,7 +174,7 @@ function startApp() {
   var INIT = {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:'clashes',
     rules:{ modelA:'all', modelB:'all', hard:true, soft:true, clearance:50 },
-    detecting:false, sectionAxis:null, sectionPos:0.5,
+    detecting:false, sectionAxis:null, sectionPos:0.5, sectionCustom:null,
     filters:Object.assign({},INIT_FILTERS), floors:[],
     prefs:Object.assign({},INIT_PREFS)
   };
@@ -195,7 +195,8 @@ function startApp() {
       case 'UPD_RULES':   return Object.assign({},s,{rules:Object.assign({},s.rules,a.u)});
       case 'UPD_FILTERS': return Object.assign({},s,{filters:Object.assign({},s.filters,a.u)});
       case 'RESET_FILTERS': return Object.assign({},s,{filters:Object.assign({},INIT_FILTERS)});
-      case 'SECTION':     return Object.assign({},s,{sectionAxis:a.axis, sectionPos:a.pos!=null?a.pos:s.sectionPos});
+      case 'SECTION':     return Object.assign({},s,{sectionAxis:a.axis, sectionPos:a.pos!=null?a.pos:s.sectionPos, sectionCustom:null});
+      case 'SECTION_CUSTOM': return Object.assign({},s,{sectionAxis:null, sectionCustom:a.v, sectionPos:a.pos!=null?a.pos:0.5});
       case 'TAB':         return Object.assign({},s,{tab:a.v});
       case 'SETTINGS':    return Object.assign({},s,{showSettings:a.v});
       case 'UPD_PREFS':   return Object.assign({},s,{prefs:Object.assign({},s.prefs,a.u)});
@@ -670,6 +671,7 @@ function startApp() {
     var ref = useRef(null);
     var state3d = useRef({scene:null,camera:null,renderer:null,orbit:null,mg:null,map:{},raf:null});
     var se = useState(null), selectedEl=se[0], setSelectedEl=se[1];
+    var cm = useState(null), ctxMenu=cm[0], setCtxMenu=cm[1];
     var hlRef = useRef(null); // highlighted mesh outline
     var modelsRef = useRef(s.models);
     modelsRef.current = s.models;
@@ -721,7 +723,7 @@ function startApp() {
       var raycaster = new THREE.Raycaster();
       var mouse = new THREE.Vector2();
       var downPos = {x:0,y:0};
-      renderer.domElement.addEventListener('mousedown', function(e){downPos.x=e.clientX;downPos.y=e.clientY;});
+      renderer.domElement.addEventListener('mousedown', function(e){downPos.x=e.clientX;downPos.y=e.clientY;setCtxMenu(null);});
       renderer.domElement.addEventListener('mouseup', function(e){
         // Only pick if the mouse didn't move (not a drag)
         if(Math.abs(e.clientX-downPos.x)>3 || Math.abs(e.clientY-downPos.y)>3) return;
@@ -758,6 +760,31 @@ function startApp() {
           // Click on empty space — deselect
           if(hlRef.current){scene.remove(hlRef.current);hlRef.current=null;}
           setSelectedEl(null);
+        }
+      });
+
+      // Right-click context menu
+      renderer.domElement.addEventListener('contextmenu', function(e){
+        e.preventDefault();
+        var rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX-rect.left)/rect.width)*2-1;
+        mouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
+        raycaster.setFromCamera(mouse, camera);
+        var hits = raycaster.intersectObjects(S.mg.children, true);
+        if(hits.length>0) {
+          var hit = hits[0];
+          var faceNormal = hit.face.normal.clone();
+          // Transform normal from object space to world space
+          faceNormal.transformDirection(hit.object.matrixWorld);
+          var pt = hit.point;
+          setCtxMenu({
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+            normal: [faceNormal.x, faceNormal.y, faceNormal.z],
+            point: [pt.x, pt.y, pt.z]
+          });
+        } else {
+          setCtxMenu(null);
         }
       });
 
@@ -840,10 +867,21 @@ function startApp() {
         var cut=box.min[s.sectionAxis]+(box.max[s.sectionAxis]-box.min[s.sectionAxis])*s.sectionPos;
         var nm={x:new THREE.Vector3(1,0,0),y:new THREE.Vector3(0,1,0),z:new THREE.Vector3(0,0,1)};
         planes.push(new THREE.Plane(nm[s.sectionAxis].clone().negate(),cut));
+      } else if(s.sectionCustom){
+        var sc=s.sectionCustom;
+        var normal=new THREE.Vector3(sc.normal[0],sc.normal[1],sc.normal[2]);
+        var pt=new THREE.Vector3(sc.point[0],sc.point[1],sc.point[2]);
+        // sectionPos offsets along the normal: 0.5=at surface, 0=back, 1=forward
+        var box2=new THREE.Box3().setFromObject(S.mg);
+        var diag=box2.getSize(new THREE.Vector3()).length();
+        var offset=(s.sectionPos-0.5)*diag;
+        var shiftedPt=pt.clone().addScaledVector(normal,offset);
+        var plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normal.negate(),shiftedPt);
+        planes.push(plane);
       }
       S.renderer.clippingPlanes=planes;
       S.mg.traverse(function(obj){if(obj.isMesh&&obj.material){obj.material.clippingPlanes=planes;obj.material.needsUpdate=true;}});
-    }, [s.sectionAxis, s.sectionPos]);
+    }, [s.sectionAxis, s.sectionPos, s.sectionCustom]);
 
     // Prefs: grid & axes visibility
     useEffect(function(){
@@ -863,8 +901,10 @@ function startApp() {
       <div style=${{...P,top:'.75rem',left:'.75rem',background:'rgba(15,23,42,.85)',color:'#64748b'}}>
         ${s.models.length===0?'Load an IFC file to begin':s.models.length+' model'+(s.models.length>1?'s':'')+' loaded'}
       </div>
-      ${s.sectionAxis && html`<div style=${{...P,top:'.75rem',right:'.75rem',background:'rgba(30,58,138,.9)',color:'#93c5fd'}}>
-        Section ${s.sectionAxis.toUpperCase()} · ${Math.round(s.sectionPos*100)}%
+      ${(s.sectionAxis||s.sectionCustom) && html`<div style=${{...P,top:'.75rem',right:'.75rem',background:'rgba(30,58,138,.9)',color:'#93c5fd',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'.4rem'}}
+        onClick=${function(){d({t:'SECTION',axis:null})}}>
+        <span>Section ${s.sectionAxis?s.sectionAxis.toUpperCase():'Surface'} · ${Math.round(s.sectionPos*100)}%</span>
+        <span style=${{fontSize:'.6rem',opacity:.7}} title="Clear section">✕</span>
       </div>`}
       ${selectedEl && html`<div style=${{position:'absolute',bottom:'.75rem',left:'.75rem',width:280,maxHeight:'50%',overflowY:'auto',background:'rgba(15,23,42,.95)',border:'1px solid #334155',borderRadius:8,padding:'.6rem',pointerEvents:'auto',boxShadow:'0 4px 20px rgba(0,0,0,.5)'}}>
         <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.4rem'}}>
@@ -895,6 +935,19 @@ function startApp() {
             ${keys.map(function(k){return html`<div key=${k} style=${ROW}><span style=${LS}>${k}</span><span style=${VS}>${String(ps[k])}</span></div>`})}
           </div>`;
         })}
+      </div>`}
+      ${ctxMenu && html`<div onClick=${function(){setCtxMenu(null)}} style=${{position:'absolute',inset:0,zIndex:10}}>
+        <div style=${{position:'absolute',left:ctxMenu.x,top:ctxMenu.y,background:'#1e293b',border:'1px solid #334155',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,.6)',overflow:'hidden',minWidth:160,zIndex:11}}
+          onClick=${function(e){e.stopPropagation();}}>
+          <button onClick=${function(){d({t:'SECTION_CUSTOM',v:{normal:ctxMenu.normal,point:ctxMenu.point}});setCtxMenu(null);}}
+            style=${{...S_BTN,width:'100%',textAlign:'left',padding:'.5rem .7rem',background:'transparent',color:'#e2e8f0',fontSize:'.75rem',borderRadius:0,display:'flex',alignItems:'center',gap:'.4rem'}}>
+            <span style=${{fontSize:'.85rem'}}>✂</span> Make Section
+          </button>
+          <button onClick=${function(){d({t:'SECTION',axis:null});setCtxMenu(null);}}
+            style=${{...S_BTN,width:'100%',textAlign:'left',padding:'.5rem .7rem',background:'transparent',color:'#94a3b8',fontSize:'.75rem',borderRadius:0,borderTop:'1px solid #334155',display:'flex',alignItems:'center',gap:'.4rem'}}>
+            <span style=${{fontSize:'.85rem'}}>○</span> Clear Section
+          </button>
+        </div>
       </div>`}
     </div>`;
   }
@@ -991,11 +1044,15 @@ function startApp() {
           ${['x','y','z'].map(function(ax){return html`<button key=${ax} onClick=${function(){d({t:'SECTION',axis:s.sectionAxis===ax?null:ax})}}
             style=${{...S_BTN,flex:1,padding:'.25rem',background:s.sectionAxis===ax?'#2563eb':'#1e293b',color:s.sectionAxis===ax?'#fff':'#64748b'}}>${ax.toUpperCase()}</button>`})}
           <button onClick=${function(){d({t:'SECTION',axis:null})}}
-            style=${{...S_BTN,flex:1,padding:'.25rem',background:!s.sectionAxis?'#2563eb':'#1e293b',color:!s.sectionAxis?'#fff':'#64748b'}}>Off</button>
+            style=${{...S_BTN,flex:1,padding:'.25rem',background:!s.sectionAxis&&!s.sectionCustom?'#2563eb':'#1e293b',color:!s.sectionAxis&&!s.sectionCustom?'#fff':'#64748b'}}>Off</button>
         </div>
-        ${s.sectionAxis && html`<div style=${{marginTop:'.4rem'}}>
+        ${s.sectionCustom && html`<div style=${{marginTop:'.3rem',fontSize:'.6rem',color:'#93c5fd',background:'#1e3a5f',padding:'.2rem .4rem',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <span>Surface section active</span>
+          <span style=${{fontSize:'.55rem',color:'#64748b'}}>Right-click to set</span>
+        </div>`}
+        ${(s.sectionAxis||s.sectionCustom) && html`<div style=${{marginTop:'.4rem'}}>
           <input type="range" min="0" max="1" step="0.005" value=${s.sectionPos}
-            onInput=${function(e){d({t:'SECTION',axis:s.sectionAxis,pos:parseFloat(e.target.value)})}}
+            onInput=${function(e){var pos=parseFloat(e.target.value);if(s.sectionAxis)d({t:'SECTION',axis:s.sectionAxis,pos:pos});else if(s.sectionCustom)d({t:'SECTION_CUSTOM',v:s.sectionCustom,pos:pos});}}
             style=${{width:'100%'}} />
           <span style=${{fontSize:'.7rem',color:'#475569'}}>${Math.round(s.sectionPos*100)}%</span>
         </div>`}
