@@ -818,7 +818,7 @@ function startApp() {
           <span style=${{fontSize:'.7rem',fontWeight:600,color:'#93c5fd'}}>Element Properties</span>
           <div style=${{display:'flex',gap:'.3rem'}}>
             <button onClick=${function(){d({t:'MODAL',v:true,el:selectedEl});d({t:'TAB',v:'issues'});}}
-              style=${{...S_BTN,padding:'.1rem .4rem',background:'#2563eb',color:'#fff',fontSize:'.65rem',fontWeight:600,borderRadius:4}}>+ Issue</button>
+              style=${{...S_BTN,padding:'.1rem .4rem',background:'#2563eb',color:'#fff',fontSize:'.65rem',fontWeight:600,borderRadius:4}}>Create Issue</button>
             <button onClick=${function(){setSelectedEl(null);if(hlRef.current&&state3d.current.scene){state3d.current.scene.remove(hlRef.current);hlRef.current=null;}}}
               style=${{...S_BTN,padding:'0 4px',background:'none',color:'#475569',fontSize:'.7rem'}}>✕</button>
           </div>
