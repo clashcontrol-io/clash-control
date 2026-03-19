@@ -152,6 +152,7 @@ function startApp() {
     open:        { label:'Open',        bg:'#ef4444' },
     in_progress: { label:'In progress', bg:'#f59e0b' },
     resolved:    { label:'Resolved',    bg:'#22c55e' },
+    closed:      { label:'Closed',      bg:'#64748b' },
   };
 
   function uid()  { return Math.random().toString(36).slice(2,10).toUpperCase(); }
@@ -653,6 +654,7 @@ function startApp() {
   // ── Three.js Viewer Component ──────────────────────────────────
 
   var _flyTo = null;
+  var _highlightById = null;
   function Viewer(props) {
     var s = props.s, d = props.d;
     var ref = useRef(null);
@@ -690,6 +692,20 @@ function startApp() {
         S.camera.position.set(pt[0]+15,pt[1]+10,pt[2]+15);
         d.sync(); d.apply();
       };
+      _highlightById = function(expressId) {
+        if(!expressId||!S.mg) return;
+        if(hlRef.current){scene.remove(hlRef.current);hlRef.current=null;}
+        var found = null;
+        S.mg.traverse(function(obj){
+          if(obj.isMesh && obj.userData.expressID===expressId && !found) found=obj;
+        });
+        if(found){
+          var box = new THREE.BoxHelper(found, 0x3b82f6);
+          box.material.linewidth = 2;
+          scene.add(box);
+          hlRef.current = box;
+        }
+      };
 
       // Raycaster for element picking
       var raycaster = new THREE.Raycaster();
@@ -723,7 +739,10 @@ function startApp() {
             box.material.linewidth = 2;
             scene.add(box);
             hlRef.current = box;
-            setSelectedEl(found ? {props:found.el.props||{}, modelName:found.model.name, expressId:eid} : {props:{expressId:eid}, modelName:'Unknown', expressId:eid});
+            var hitBox = new THREE.Box3().setFromObject(hit);
+            var hitCtr = hitBox.getCenter(new THREE.Vector3());
+            var hitPt = [hitCtr.x, hitCtr.y, hitCtr.z];
+            setSelectedEl(found ? {props:found.el.props||{}, modelName:found.model.name, expressId:eid, point:hitPt} : {props:{expressId:eid}, modelName:'Unknown', expressId:eid, point:hitPt});
           }
         } else {
           // Click on empty space — deselect
@@ -1212,14 +1231,14 @@ function startApp() {
     var it=props.item, active=props.active, d=props.d, isClash=props.isClash;
     var icon = it.type==='hard'?'🔴':it.type==='soft'?'🟡':it.source==='element'?'🏗':'📌';
     var stBg = (STAT[it.status]||STAT.open).bg;
-    return html`<div onClick=${function(){d({t:'ACTIVE',id:active?null:it.id});if(!active&&it.point&&_flyTo)_flyTo(it.point);}}
+    return html`<div onClick=${function(){d({t:'ACTIVE',id:active?null:it.id});if(!active&&it.point&&_flyTo){_flyTo(it.point);if(it.elementId&&_highlightById)_highlightById(it.elementId);}}}
       style=${{padding:'.6rem .7rem',borderBottom:'1px solid #1e293b',cursor:'pointer',background:active?'#1e293b':'transparent',borderLeft:active?'2px solid #3b82f6':'2px solid transparent'}}>
       <div style=${{display:'flex',gap:'.35rem',alignItems:'flex-start'}}>
         <span style=${{fontSize:'.85rem',flexShrink:0}}>${icon}</span>
         <div style=${{flex:1,minWidth:0}}>
           <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
-            <span style=${{color:'#e2e8f0',fontSize:'.7rem',fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>${it.title}</span>
-            <span style=${{width:7,height:7,borderRadius:'50%',background:stBg,flexShrink:0}}></span>
+            <span style=${{color:'#e2e8f0',fontSize:'.7rem',fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>${it.title}</span>
+            <span style=${{fontSize:'.55rem',padding:'.1rem .35rem',borderRadius:4,background:stBg+'22',color:stBg,fontWeight:600,flexShrink:0,whiteSpace:'nowrap'}}>${(STAT[it.status]||STAT.open).label}</span>
           </div>
           <p style=${{color:'#475569',fontSize:'.65rem',marginTop:'.1rem'}} class="lc2">${it.description}</p>
           ${it.distance!=null && html`<span style=${{fontSize:'.55rem',color:'#64748b',marginTop:'.1rem',display:'inline-block'}}>${it.distance} mm${it.selfClash?' · self':''}</span>`}
@@ -1298,7 +1317,7 @@ function startApp() {
     var defaultTitle = hasEl ? ('Issue: '+(ep.ifcType||'Element')+' '+(ep.name||'#'+el.expressId)) : '';
     var defaultDesc = hasEl ? ('Model: '+el.modelName+'\nType: '+(ep.ifcType||'Unknown')+'\nName: '+(ep.name||'N/A')+'\nStorey: '+(ep.storey||'N/A')+'\nMaterial: '+(ep.material||'N/A')+'\nExpress ID: #'+el.expressId) : '';
 
-    var f=useState({title:defaultTitle,desc:'',priority:'normal',category:'design',assignee:'',dueDate:''}), form=f[0], setForm=f[1];
+    var f=useState({title:defaultTitle,desc:'',priority:'normal',status:'open',category:'design',assignee:'',dueDate:''}), form=f[0], setForm=f[1];
     useEffect(function(){
       function onKey(e){if(e.key==='Escape')d({t:'MODAL',v:false});}
       window.addEventListener('keydown',onKey);
@@ -1308,13 +1327,14 @@ function startApp() {
     function submit(e){
       e.preventDefault();
       var issue = {
-        id:uid(), source:hasEl?'element':'manual', type:'manual', status:'open',
+        id:uid(), source:hasEl?'element':'manual', type:'manual', status:form.status,
         title:form.title, description:form.desc, priority:form.priority,
         category:form.category, assignee:form.assignee||'',
         dueDate:form.dueDate||'', createdAt:new Date().toISOString()
       };
       if (hasEl) {
         issue.elementId = el.expressId;
+        if (el.point) issue.point = el.point;
         issue.modelName = el.modelName;
         issue.elementType = ep.ifcType||'';
         issue.elementName = ep.name||'';
@@ -1351,6 +1371,10 @@ function startApp() {
         <div><label style=${LBL}>What is the issue? *</label>
           <textarea required value=${form.desc} onInput=${upd('desc')} rows="3" placeholder="Describe what the problem is and what needs to be resolved…" style=${{...S_INPUT,resize:'vertical'}} /></div>
         <div style=${{display:'flex',gap:'.5rem'}}>
+          <div style=${{flex:1}}><label style=${LBL}>Status</label>
+            <select value=${form.status} onChange=${upd('status')} style=${S_INPUT}>
+              ${Object.keys(STAT).map(function(k){return html`<option key=${k} value=${k}>${STAT[k].label}</option>`})}
+            </select></div>
           <div style=${{flex:1}}><label style=${LBL}>Priority</label>
             <select value=${form.priority} onChange=${upd('priority')} style=${S_INPUT}>
               <option value="critical">Critical</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
