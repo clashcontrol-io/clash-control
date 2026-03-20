@@ -124,7 +124,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.1.9',hash:'c3b2df5',date:'2026-03-20T17:21:09Z'};
+  var CC_VERSION = {v:'1.1.10',hash:'a5e4601',date:'2026-03-20T19:45:44Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -1397,7 +1397,24 @@ function startApp() {
               hitNormal = [fn.x, fn.y, fn.z];
             }
             setSelectedEl(found ? {props:found.el.props||{}, modelName:found.model.name, expressId:eid, point:hitPt, box:hitBox, normal:hitNormal} : {props:{expressId:eid}, modelName:'Unknown', expressId:eid, point:hitPt, box:hitBox, normal:hitNormal});
-            ghostOthers([eid]);
+            // Normal click: outline only, no transparency
+            unghostAll();
+            if(outlineRef.current){scene.remove(outlineRef.current);outlineRef.current=null;}
+            if(prefsRef.current.outlineSelected!==false){
+              try {
+                var outGeo = hit.geometry.clone();
+                var outMat = new THREE.MeshBasicMaterial({color:0x3b82f6, side:THREE.BackSide, transparent:true, opacity:0.35});
+                var outMesh = new THREE.Mesh(outGeo, outMat);
+                outMesh.applyMatrix4(hit.matrixWorld);
+                var ob = new THREE.Box3().setFromObject(outMesh);
+                var oc = ob.getCenter(new THREE.Vector3());
+                outMesh.position.sub(oc).multiplyScalar(1.05).add(oc);
+                outMesh.scale.multiplyScalar(1.05);
+                outMesh.renderOrder = -1;
+                scene.add(outMesh);
+                outlineRef.current = outMesh;
+              } catch(e){}
+            }
             // Fly to element on click (if autoFlyTo enabled)
             if(prefsRef.current.autoFlyTo!==false && _flyTo) {
               var elSz = hitBox.getSize(new THREE.Vector3());
