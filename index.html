@@ -124,7 +124,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.1.8',hash:'a32c8fa',date:'2026-03-20T17:17:53Z'};
+  var CC_VERSION = {v:'1.1.9',hash:'c3b2df5',date:'2026-03-20T17:21:09Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -191,8 +191,6 @@ function startApp() {
     classifications:{}, // { byType:{}, byStorey:{}, byDiscipline:{}, byMaterial:{} }
     hiddenClasses:{}, // { 'byType:IfcWall':true, ... } – toggle visibility per classification group
     colorByClass:null, // null, 'byType', 'byStorey', 'byDiscipline', 'byMaterial'
-    // Exploder
-    explodeAmount:0, // 0=off, 0.01-1=exploded
     // Model tree
     treeOpen:false,
     // Floor plan cut
@@ -232,7 +230,7 @@ function startApp() {
       case 'SHOW_ALL_CLASSES': return Object.assign({},s,{hiddenClasses:{}});
       case 'HIDE_ALL_CLASSES': var hca={}; if(s.classifications[a.view]){Object.keys(s.classifications[a.view]).forEach(function(k){hca[a.view+':'+k]=true;});} return Object.assign({},s,{hiddenClasses:hca});
       case 'COLOR_BY_CLASS': return Object.assign({},s,{colorByClass:s.colorByClass===a.v?null:a.v});
-      case 'EXPLODE':      return Object.assign({},s,{explodeAmount:a.v});
+
       case 'TREE':         return Object.assign({},s,{treeOpen:a.v});
       case 'FLOOR_PLAN':   return Object.assign({},s,{floorPlan:a.v, sectionAxis:null, sectionCustom:null, sectionBox:null});
       default:            return s;
@@ -1792,40 +1790,6 @@ function startApp() {
       origColorsRef.current=saved;
     }, [s.colorByClass, s.classifications]);
 
-    // Exploder: spread elements outward from center
-    var explodeOrigRef = useRef(null);
-    useEffect(function(){
-      var S = state3d.current; if(!S.mg) return;
-      if(s.explodeAmount<=0){
-        if(explodeOrigRef.current){
-          explodeOrigRef.current.forEach(function(e){e.mesh.position.copy(e.pos);});
-          explodeOrigRef.current=null;
-        }
-        return;
-      }
-      // Save originals + pre-compute directions (once)
-      if(!explodeOrigRef.current){
-        var box=new THREE.Box3().setFromObject(S.mg);
-        var center=box.getCenter(new THREE.Vector3());
-        var saved=[];
-        S.mg.traverse(function(obj){
-          if(!obj.isMesh) return;
-          var meshBox=new THREE.Box3().setFromObject(obj);
-          var meshCtr=meshBox.getCenter(new THREE.Vector3());
-          var dir=meshCtr.sub(center);
-          var len=dir.length();
-          if(len>0.001) dir.normalize();
-          saved.push({mesh:obj, pos:obj.position.clone(), dir:dir, dist:len});
-        });
-        explodeOrigRef.current=saved;
-      }
-      var factor=s.explodeAmount*2;
-      explodeOrigRef.current.forEach(function(e){
-        if(e.dist<0.001) return;
-        e.mesh.position.copy(e.pos).addScaledVector(e.dir, e.dist*factor);
-      });
-    }, [s.explodeAmount]);
-
     // Sync clash markers when clashes change
     useEffect(function(){
       if(s.prefs.showClashMarkers!==false && s.clashes.length>0 && _showClashMarkers){
@@ -2369,15 +2333,6 @@ function startApp() {
           <span style=${{fontSize:'.6rem',color:'#475569'}}>${Math.round(s.sectionPos*100)}%</span>
         </div>`}
         <${SectionBoxUI} s=${s} d=${d} />
-      </div>
-      <div style=${{padding:'.5rem .75rem',borderTop:'1px solid #1e293b',flexShrink:0}}>
-        <span style=${{fontSize:'.65rem',fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'.05em',display:'block',marginBottom:'.3rem'}}>Exploder</span>
-        <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
-          <input type="range" min="0" max="1" step="0.01" value=${s.explodeAmount}
-            onInput=${function(e){d({t:'EXPLODE',v:parseFloat(e.target.value)});}}
-            style=${{flex:1}} />
-          <span style=${{fontSize:'.6rem',color:'#475569',minWidth:30,textAlign:'right'}}>${s.explodeAmount>0?Math.round(s.explodeAmount*100)+'%':'Off'}</span>
-        </div>
       </div>
     </aside>`;
   }
