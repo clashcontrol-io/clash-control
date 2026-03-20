@@ -124,7 +124,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.1.12',hash:'9d434ca',date:'2026-03-20T20:01:26Z'};
+  var CC_VERSION = {v:'1.1.13',hash:'6a3b90c',date:'2026-03-20T20:06:51Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -338,6 +338,86 @@ function startApp() {
   }
 
   // Pre-build material map: expressID -> material name (scans relations once, not per element)
+  // Resolve material name from any IFC material entity
+  function resolveMaterialName(api, modelID, mat) {
+    if (!mat) return '';
+    // Direct material with Name
+    if (mat.Name) return safeStr(mat.Name);
+    // IfcMaterialLayerSetUsage → ForLayerSet → MaterialLayers
+    if (mat.ForLayerSet || mat.MaterialLayers) {
+      var layerSet = mat.ForLayerSet ? api.GetLine(modelID, mat.ForLayerSet.value != null ? mat.ForLayerSet.value : mat.ForLayerSet) : mat;
+      if (layerSet) {
+        if (layerSet.Name) return safeStr(layerSet.Name);
+        if (layerSet.MaterialLayers) {
+          var names = [];
+          for (var k = 0; k < layerSet.MaterialLayers.length; k++) {
+            try {
+              var lid = layerSet.MaterialLayers[k].value != null ? layerSet.MaterialLayers[k].value : layerSet.MaterialLayers[k];
+              var layer = api.GetLine(modelID, lid);
+              if (layer && layer.Material) {
+                var mid = layer.Material.value != null ? layer.Material.value : layer.Material;
+                var m2 = api.GetLine(modelID, mid);
+                if (m2 && m2.Name) names.push(safeStr(m2.Name));
+              }
+            } catch(e) {}
+          }
+          if (names.length) return names.join(', ');
+        }
+      }
+    }
+    // IfcMaterialConstituentSet → MaterialConstituents
+    if (mat.MaterialConstituents) {
+      var cNames = [];
+      for (var c = 0; c < mat.MaterialConstituents.length; c++) {
+        try {
+          var cid = mat.MaterialConstituents[c].value != null ? mat.MaterialConstituents[c].value : mat.MaterialConstituents[c];
+          var constituent = api.GetLine(modelID, cid);
+          if (constituent && constituent.Material) {
+            var cmid = constituent.Material.value != null ? constituent.Material.value : constituent.Material;
+            var cm = api.GetLine(modelID, cmid);
+            if (cm && cm.Name) cNames.push(safeStr(cm.Name));
+          }
+        } catch(e) {}
+      }
+      if (cNames.length) return cNames.join(', ');
+    }
+    // IfcMaterialProfileSetUsage → ForProfileSet → MaterialProfiles
+    if (mat.ForProfileSet || mat.MaterialProfiles) {
+      var profSet = mat.ForProfileSet ? api.GetLine(modelID, mat.ForProfileSet.value != null ? mat.ForProfileSet.value : mat.ForProfileSet) : mat;
+      if (profSet) {
+        if (profSet.Name) return safeStr(profSet.Name);
+        if (profSet.MaterialProfiles) {
+          var pNames = [];
+          for (var p = 0; p < profSet.MaterialProfiles.length; p++) {
+            try {
+              var pid = profSet.MaterialProfiles[p].value != null ? profSet.MaterialProfiles[p].value : profSet.MaterialProfiles[p];
+              var profile = api.GetLine(modelID, pid);
+              if (profile && profile.Material) {
+                var pmid = profile.Material.value != null ? profile.Material.value : profile.Material;
+                var pm = api.GetLine(modelID, pmid);
+                if (pm && pm.Name) pNames.push(safeStr(pm.Name));
+              }
+            } catch(e) {}
+          }
+          if (pNames.length) return pNames.join(', ');
+        }
+      }
+    }
+    // IfcMaterialList → Materials
+    if (mat.Materials) {
+      var lNames = [];
+      for (var l = 0; l < mat.Materials.length; l++) {
+        try {
+          var mlid = mat.Materials[l].value != null ? mat.Materials[l].value : mat.Materials[l];
+          var ml = api.GetLine(modelID, mlid);
+          if (ml && ml.Name) lNames.push(safeStr(ml.Name));
+        } catch(e) {}
+      }
+      if (lNames.length) return lNames.join(', ');
+    }
+    return '';
+  }
+
   function buildMaterialMap(api, modelID) {
     var matMap = {};
     try {
@@ -348,27 +428,7 @@ function startApp() {
           var matRef = rel.RelatingMaterial ? (rel.RelatingMaterial.value||rel.RelatingMaterial) : null;
           if (!matRef) continue;
           var mat = api.GetLine(modelID, matRef);
-          if (!mat) continue;
-          var matName = '';
-          if (mat.Name) { matName = safeStr(mat.Name); }
-          else if (mat.ForLayerSet || mat.MaterialLayers) {
-            var layerSet = mat.ForLayerSet ? api.GetLine(modelID, mat.ForLayerSet.value != null ? mat.ForLayerSet.value : mat.ForLayerSet) : mat;
-            if (layerSet && layerSet.MaterialLayers) {
-              var names = [];
-              for (var k = 0; k < layerSet.MaterialLayers.length; k++) {
-                try {
-                  var lid = layerSet.MaterialLayers[k].value != null ? layerSet.MaterialLayers[k].value : layerSet.MaterialLayers[k];
-                  var layer = api.GetLine(modelID, lid);
-                  if (layer && layer.Material) {
-                    var mid = layer.Material.value != null ? layer.Material.value : layer.Material;
-                    var m2 = api.GetLine(modelID, mid);
-                    if (m2 && m2.Name) names.push(safeStr(m2.Name));
-                  }
-                } catch(e) {}
-              }
-              matName = names.join(', ');
-            }
-          }
+          var matName = resolveMaterialName(api, modelID, mat);
           if (!matName) continue;
           var objs = rel.RelatedObjects || [];
           for (var j = 0; j < objs.length; j++) {
@@ -1613,70 +1673,14 @@ function startApp() {
 
       var mg = new THREE.Group(); scene.add(mg); S.mg = mg;
 
-      // Mini-map: top-down orthographic camera
-      var miniCam = new THREE.OrthographicCamera(-50,50,50,-50,0.1,10000);
-      miniCam.position.set(0,200,0);
-      miniCam.lookAt(0,0,0);
-      S.miniCam = miniCam;
-      S.miniMapEnabled = true;
-      // Camera indicator for mini-map
-      var camIndicator = new THREE.Mesh(
-        new THREE.ConeGeometry(1.5,3,4),
-        new THREE.MeshBasicMaterial({color:0x3b82f6,transparent:true,opacity:0.9})
-      );
-      camIndicator.rotation.x = Math.PI;
-      scene.add(camIndicator);
-      S.camIndicator = camIndicator;
-
       // FPS tracking
       S.perf = {fps:0, frameCount:0, lastTime:performance.now(), tris:0, meshCount:0, drawCalls:0};
-      // Cached mini-map bounds (invalidated on model add/remove)
-      S._mmBoxCache = null;
-      S._mmBoxCacheTime = 0;
       function tick(){
         S.raf=requestAnimationFrame(tick);
         // Main render
         renderer.setViewport(0,0,el.clientWidth,el.clientHeight);
         renderer.setScissorTest(false);
         renderer.render(scene,camera);
-        // Mini-map render (recalculate bounds only every 2s)
-        if(S.miniMapEnabled && S.mg && S.mg.children.length>0){
-          var mmSize = 140;
-          var now2 = performance.now();
-          if(!S._mmBoxCache || now2 - S._mmBoxCacheTime > 2000){
-            S._mmBoxCache = new THREE.Box3().setFromObject(S.mg);
-            S._mmBoxCacheTime = now2;
-            if(!S._mmBoxCache.isEmpty()){
-              var mmCtr2 = S._mmBoxCache.getCenter(new THREE.Vector3());
-              var mmSz2 = S._mmBoxCache.getSize(new THREE.Vector3());
-              var extent = Math.max(mmSz2.x, mmSz2.z) * 0.7;
-              miniCam.left = -extent; miniCam.right = extent;
-              miniCam.top = extent; miniCam.bottom = -extent;
-              miniCam.position.set(mmCtr2.x, mmCtr2.y + Math.max(mmSz2.y,50)*2, mmCtr2.z);
-              miniCam.lookAt(mmCtr2.x, mmCtr2.y, mmCtr2.z);
-              miniCam.updateProjectionMatrix();
-              S._mmCtr = mmCtr2;
-            }
-          }
-          if(S._mmCtr){
-            // Only camera indicator needs per-frame update (cheap)
-            camIndicator.position.copy(camera.position);
-            camIndicator.position.y = S._mmCtr.y + 0.5;
-            var lookDir = new THREE.Vector3();
-            camera.getWorldDirection(lookDir);
-            camIndicator.rotation.y = Math.atan2(lookDir.x, lookDir.z);
-            camIndicator.visible = true;
-          }
-          renderer.setViewport(el.clientWidth-mmSize-8, 8, mmSize, mmSize);
-          renderer.setScissor(el.clientWidth-mmSize-8, 8, mmSize, mmSize);
-          renderer.setScissorTest(true);
-          renderer.setClearColor(0x0c1222, 1);
-          renderer.clear();
-          renderer.render(scene, miniCam);
-          renderer.setClearColor(0x0f172a, 1);
-        } else {
-          if(camIndicator) camIndicator.visible = false;
-        }
         S.perf.frameCount++;
         var now = performance.now();
         if(now - S.perf.lastTime >= 1000) {
@@ -2209,26 +2213,31 @@ function startApp() {
         ${ep && ep.material && html`<div style=${ROW}><span style=${LS}>Material</span><span style=${VS}>${ep.material}</span></div>`}
         <div style=${ROW}><span style=${LS}>Express ID</span><span style=${VS}>#${selectedEl.expressId}</span></div>
         ${function(){
-          // Show IFC quantities for length/width/height if available, otherwise bounding box
+          // Show IFC dimensions from quantities and property sets
           var q = ep&&ep.quantities||{};
-          var hasIfcDims = q.Length||q.Width||q.Height||q.Depth||q.Perimeter;
+          var psets = ep&&ep.psets||{};
           var ifcDims = [];
-          if(q.Length) ifcDims.push({l:'Length',v:q.Length});
-          if(q.Width) ifcDims.push({l:'Width',v:q.Width});
-          if(q.Height) ifcDims.push({l:'Height',v:q.Height});
-          if(q.Depth) ifcDims.push({l:'Depth',v:q.Depth});
-          if(q.Perimeter) ifcDims.push({l:'Perimeter',v:q.Perimeter});
+          // Collect from IFC quantities
+          var dimKeys = ['Length','Width','Height','Depth','Perimeter','Thickness','Area','Volume','GrossArea','NetArea','GrossSideArea','NetSideArea','GrossVolume','NetVolume','GrossFootprintArea'];
+          dimKeys.forEach(function(k){ if(q[k]!=null) ifcDims.push({l:k,v:q[k]}); });
+          // Also scan property sets for dimension-like properties
+          var dimPropKeys = ['Height','Width','Length','Depth','Thickness','Span','Diameter','Radius','OverallHeight','OverallWidth','OverallDepth','NominalHeight','NominalWidth','NominalLength'];
+          Object.keys(psets).forEach(function(setName){
+            var ps=psets[setName];
+            dimPropKeys.forEach(function(k){
+              if(ps[k]!=null && !ifcDims.some(function(d){return d.l===k;})){
+                var v=ps[k];
+                if(typeof v==='number'||(!isNaN(parseFloat(v))&&isFinite(v))) ifcDims.push({l:k,v:typeof v==='number'?v:parseFloat(v),src:setName});
+              }
+            });
+          });
+          if(!ifcDims.length) return null;
           return html`<div style=${{marginTop:'.2rem',borderTop:'1px solid #1e293b',paddingTop:'.2rem'}}>
-            <div style=${{fontSize:'.6rem',fontWeight:600,color:'#64748b',marginBottom:'.1rem'}}>Dimensions${hasIfcDims?' (IFC)':' (bounding box)'}</div>
-            ${hasIfcDims ? ifcDims.map(function(d){
+            <div style=${{fontSize:'.6rem',fontWeight:600,color:'#64748b',marginBottom:'.1rem'}}>Dimensions (IFC)</div>
+            ${ifcDims.map(function(d){
               var val = typeof d.v==='number'?(d.v>=1?(d.v.toFixed(3)+' m'):((d.v*1000).toFixed(0)+' mm')):String(d.v);
               return html`<div key=${d.l} style=${ROW}><span style=${LS}>${d.l}</span><span style=${VS}>${val}</span></div>`;
-            }) : selectedEl.box ? function(){
-              var sz = selectedEl.box.getSize(new THREE.Vector3());
-              return [{l:'Length (X)',v:sz.x},{l:'Width (Z)',v:sz.z},{l:'Height (Y)',v:sz.y}].map(function(d){
-                return html`<div key=${d.l} style=${ROW}><span style=${LS}>${d.l}</span><span style=${VS}>${(d.v*1000).toFixed(0)} mm (${d.v.toFixed(3)} m)</span></div>`;
-              });
-            }() : null}
+            })}
           </div>`;
         }()}
         ${epQ.length>0 && html`<div style=${{marginTop:'.3rem',borderTop:'1px solid #1e293b',paddingTop:'.3rem'}}>
@@ -2302,9 +2311,6 @@ function startApp() {
             <span style=${{fontSize:'.85rem'}}>○</span> Clear Section
           </button>
         </div>
-      </div>`}
-      ${s.models.length>0 && html`<div style=${{position:'absolute',bottom:8,right:8,width:140,height:140,border:'1px solid #334155',borderRadius:4,pointerEvents:'auto',overflow:'hidden'}}>
-        <div style=${{position:'absolute',top:2,left:4,fontSize:'.45rem',color:'#475569',zIndex:1}}>Mini-map</div>
       </div>`}
     </div>`;
   }
