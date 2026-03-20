@@ -124,7 +124,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.1.1',hash:'0161e69',date:'2026-03-20T08:13:23Z'};
+  var CC_VERSION = {v:'1.1.3',hash:'8d7e1af',date:'2026-03-20T12:24:55Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -179,6 +179,7 @@ function startApp() {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:'clashes',
     rules:{ modelA:'all', modelB:'all', hard:true, soft:true, clearance:50 },
     detecting:false, sectionAxis:null, sectionPos:0.5, sectionCustom:null,
+    sectionBox:null, // {enabled, min:[x,y,z], max:[x,y,z]} – 6-plane box clipping
     filters:Object.assign({},INIT_FILTERS), floors:[],
     prefs:Object.assign({},INIT_PREFS),
     // Measurements
@@ -186,7 +187,13 @@ function startApp() {
     // Viewpoints
     viewpoints:[],
     // Classification
-    classifications:{} // { byType:{}, byStorey:{}, byDiscipline:{}, byMaterial:{} }
+    classifications:{}, // { byType:{}, byStorey:{}, byDiscipline:{}, byMaterial:{} }
+    hiddenClasses:{}, // { 'byType:IfcWall':true, ... } – toggle visibility per classification group
+    colorByClass:null, // null, 'byType', 'byStorey', 'byDiscipline', 'byMaterial'
+    // Exploder
+    explodeAmount:0, // 0=off, 0.01-1=exploded
+    // Model tree
+    treeOpen:false
   };
   function reducer(s,a) {
     switch(a.t) {
@@ -217,6 +224,13 @@ function startApp() {
       case 'ADD_VIEWPOINT': return Object.assign({},s,{viewpoints:s.viewpoints.concat([a.v])});
       case 'DEL_VIEWPOINT': return Object.assign({},s,{viewpoints:s.viewpoints.filter(function(v){return v.id!==a.id})});
       case 'SET_CLASSIFICATIONS': return Object.assign({},s,{classifications:a.v});
+      case 'SECTION_BOX':  return Object.assign({},s,{sectionBox:a.v, sectionAxis:null, sectionCustom:null});
+      case 'TOGGLE_CLASS_VIS': var hc2=Object.assign({},s.hiddenClasses); if(hc2[a.key])delete hc2[a.key];else hc2[a.key]=true; return Object.assign({},s,{hiddenClasses:hc2});
+      case 'SHOW_ALL_CLASSES': return Object.assign({},s,{hiddenClasses:{}});
+      case 'HIDE_ALL_CLASSES': var hca={}; if(s.classifications[a.view]){Object.keys(s.classifications[a.view]).forEach(function(k){hca[a.view+':'+k]=true;});} return Object.assign({},s,{hiddenClasses:hca});
+      case 'COLOR_BY_CLASS': return Object.assign({},s,{colorByClass:s.colorByClass===a.v?null:a.v});
+      case 'EXPLODE':      return Object.assign({},s,{explodeAmount:a.v});
+      case 'TREE':         return Object.assign({},s,{treeOpen:a.v});
       default:            return s;
     }
   }
@@ -425,6 +439,7 @@ function startApp() {
   IFC_TYPE_NAMES[1973544240] = 'IfcCovering'; IFC_TYPE_NAMES[3856911033] = 'IfcSpace';
 
   function loadIFC(buffer, fallbackColor, onProgress) {
+    var loadStart = performance.now();
     return getIfcAPI().then(function(api) {
       var modelID = api.OpenModel(new Uint8Array(buffer));
 
@@ -505,7 +520,8 @@ function startApp() {
             setTimeout(function(){ processChunk(end); }, 0);
           } else {
             api.CloseModel(modelID);
-            resolve({ meshes:meshes, elements:elements, storeys:Object.keys(allStoreys).sort() });
+            var loadTime = Math.round(performance.now() - loadStart);
+            resolve({ meshes:meshes, elements:elements, storeys:Object.keys(allStoreys).sort(), stats:{loadTime:loadTime, fileSize:buffer.byteLength, elementCount:elements.length, meshCount:meshes.length} });
           }
         }
         processChunk(0);
@@ -1020,6 +1036,16 @@ function startApp() {
         S.orbit.sync(); S.orbit.apply();
       };
 
+      // ── Section Box helper ──
+      _getSectionBoxFromScene = function(){
+        if(!S.mg||!S.mg.children.length) return null;
+        var box=new THREE.Box3().setFromObject(S.mg);
+        if(box.isEmpty()) return null;
+        // Add small padding
+        box.expandByScalar(0.5);
+        return box;
+      };
+
       // ── Items Finder: search and highlight elements by name/type ──
       _findAndHighlightElements = function(query, models) {
         _clearFoundElements();
@@ -1292,11 +1318,61 @@ function startApp() {
 
       var mg = new THREE.Group(); scene.add(mg); S.mg = mg;
 
+      // Mini-map: top-down orthographic camera
+      var miniCam = new THREE.OrthographicCamera(-50,50,50,-50,0.1,10000);
+      miniCam.position.set(0,200,0);
+      miniCam.lookAt(0,0,0);
+      S.miniCam = miniCam;
+      S.miniMapEnabled = true;
+      // Camera indicator for mini-map
+      var camIndicator = new THREE.Mesh(
+        new THREE.ConeGeometry(1.5,3,4),
+        new THREE.MeshBasicMaterial({color:0x3b82f6,transparent:true,opacity:0.9})
+      );
+      camIndicator.rotation.x = Math.PI;
+      scene.add(camIndicator);
+      S.camIndicator = camIndicator;
+
       // FPS tracking
       S.perf = {fps:0, frameCount:0, lastTime:performance.now(), tris:0, meshCount:0, drawCalls:0};
       function tick(){
         S.raf=requestAnimationFrame(tick);
+        // Main render
+        renderer.setViewport(0,0,el.clientWidth,el.clientHeight);
+        renderer.setScissorTest(false);
         renderer.render(scene,camera);
+        // Mini-map render
+        if(S.miniMapEnabled && S.mg && S.mg.children.length>0){
+          var mmSize = 140;
+          // Update mini-map camera to cover model bounds
+          var mmBox = new THREE.Box3().setFromObject(S.mg);
+          if(!mmBox.isEmpty()){
+            var mmCtr = mmBox.getCenter(new THREE.Vector3());
+            var mmSz = mmBox.getSize(new THREE.Vector3());
+            var extent = Math.max(mmSz.x, mmSz.z) * 0.7;
+            miniCam.left = -extent; miniCam.right = extent;
+            miniCam.top = extent; miniCam.bottom = -extent;
+            miniCam.position.set(mmCtr.x, mmCtr.y + Math.max(mmSz.y,50)*2, mmCtr.z);
+            miniCam.lookAt(mmCtr.x, mmCtr.y, mmCtr.z);
+            miniCam.updateProjectionMatrix();
+            // Update camera indicator position
+            camIndicator.position.copy(camera.position);
+            camIndicator.position.y = mmCtr.y + 0.5;
+            var lookDir = new THREE.Vector3();
+            camera.getWorldDirection(lookDir);
+            camIndicator.rotation.y = Math.atan2(lookDir.x, lookDir.z);
+            camIndicator.visible = true;
+          }
+          renderer.setViewport(el.clientWidth-mmSize-8, 8, mmSize, mmSize);
+          renderer.setScissor(el.clientWidth-mmSize-8, 8, mmSize, mmSize);
+          renderer.setScissorTest(true);
+          renderer.setClearColor(0x0c1222, 1);
+          renderer.clear();
+          renderer.render(scene, miniCam);
+          renderer.setClearColor(0x0f172a, 1);
+        } else {
+          if(camIndicator) camIndicator.visible = false;
+        }
         S.perf.frameCount++;
         var now = performance.now();
         if(now - S.perf.lastTime >= 1000) {
@@ -1335,6 +1411,7 @@ function startApp() {
       s.models.forEach(function(model){
         if(!S.map[model.id] && model.meshes && model.meshes.length) {
           var grp = new THREE.Group();
+          grp.userData.modelId = model.id;
           model.meshes.forEach(function(m){grp.add(m)});
           S.mg.add(grp); S.map[model.id] = grp;
           if(Object.keys(S.map).length===1){
@@ -1389,6 +1466,150 @@ function startApp() {
       S.renderer.clippingPlanes=planes;
       S.mg.traverse(function(obj){if(obj.isMesh&&obj.material){obj.material.clippingPlanes=planes;obj.material.needsUpdate=true;}});
     }, [s.sectionAxis, s.sectionPos, s.sectionCustom]);
+
+    // Section Box: 6 clipping planes forming a box
+    useEffect(function(){
+      var S = state3d.current; if(!S.renderer||!S.mg) return;
+      if(!s.sectionBox||!s.sectionBox.enabled) {
+        // Only clear if section box was active (don't interfere with regular section planes)
+        if(S._sectionBoxActive) {
+          S.renderer.clippingPlanes=[];
+          S.mg.traverse(function(obj){if(obj.isMesh&&obj.material){obj.material.clippingPlanes=[];obj.material.needsUpdate=true;}});
+          S._sectionBoxActive=false;
+        }
+        // Clean up box helper
+        if(S._sboxHelper){S.scene.remove(S._sboxHelper);S._sboxHelper=null;}
+        return;
+      }
+      var sb=s.sectionBox;
+      var planes=[
+        new THREE.Plane(new THREE.Vector3(1,0,0),-sb.min[0]),
+        new THREE.Plane(new THREE.Vector3(-1,0,0),sb.max[0]),
+        new THREE.Plane(new THREE.Vector3(0,1,0),-sb.min[1]),
+        new THREE.Plane(new THREE.Vector3(0,-1,0),sb.max[1]),
+        new THREE.Plane(new THREE.Vector3(0,0,1),-sb.min[2]),
+        new THREE.Plane(new THREE.Vector3(0,0,-1),sb.max[2])
+      ];
+      S.renderer.clippingPlanes=planes;
+      S.mg.traverse(function(obj){if(obj.isMesh&&obj.material){obj.material.clippingPlanes=planes;obj.material.needsUpdate=true;}});
+      S._sectionBoxActive=true;
+      // Box wireframe helper
+      if(S._sboxHelper){S.scene.remove(S._sboxHelper);S._sboxHelper=null;}
+      var bx=new THREE.Box3(new THREE.Vector3(sb.min[0],sb.min[1],sb.min[2]),new THREE.Vector3(sb.max[0],sb.max[1],sb.max[2]));
+      var helper=new THREE.Box3Helper(bx, 0x3b82f6);
+      helper.material.transparent=true; helper.material.opacity=0.5;
+      S.scene.add(helper);
+      S._sboxHelper=helper;
+    }, [s.sectionBox]);
+
+    // Classification visibility: hide/show groups
+    useEffect(function(){
+      var S = state3d.current; if(!S.mg) return;
+      var cls = s.classifications;
+      var hidden = s.hiddenClasses;
+      if(!cls||!Object.keys(hidden).length){
+        // Show all
+        S.mg.traverse(function(obj){if(obj.isMesh)obj.visible=true;});
+        return;
+      }
+      // Build a set of hidden expressIDs
+      var hiddenIds={};
+      Object.keys(hidden).forEach(function(key){
+        var parts=key.split(':'); var view=parts[0]; var grpKey=parts.slice(1).join(':');
+        var grp = cls[view]&&cls[view][grpKey];
+        if(grp&&grp.items){
+          grp.items.forEach(function(it){hiddenIds[it.modelId+'_'+it.expressId]=true;});
+        }
+      });
+      S.mg.traverse(function(obj){
+        if(!obj.isMesh) return;
+        var eid=obj.userData.expressID;
+        if(eid==null) return;
+        // Check all parent groups to find model
+        var parent=obj.parent;
+        var modelId=parent?parent.userData.modelId:null;
+        if(modelId&&hiddenIds[modelId+'_'+eid]){obj.visible=false;}
+        else{obj.visible=true;}
+      });
+    }, [s.hiddenClasses, s.classifications]);
+
+    // Color-by-classification: recolor meshes by group
+    var origColorsRef = useRef(null);
+    useEffect(function(){
+      var S = state3d.current; if(!S.mg) return;
+      var cls = s.classifications;
+      var CLASS_COLORS = ['#60a5fa','#f87171','#34d399','#fbbf24','#c084fc','#fb923c','#22d3ee','#e879f9','#a3e635','#f472b6','#38bdf8','#facc15','#4ade80','#f97316','#818cf8'];
+      if(!s.colorByClass){
+        // Restore original colors
+        if(origColorsRef.current){
+          origColorsRef.current.forEach(function(entry){
+            if(entry.mesh&&entry.mesh.material)entry.mesh.material.color.copy(entry.color);
+          });
+          origColorsRef.current=null;
+        }
+        return;
+      }
+      var view=s.colorByClass;
+      var groups = cls&&cls[view]?cls[view]:{};
+      var gKeys = Object.keys(groups).sort(function(a,b){return (groups[b].count||0)-(groups[a].count||0)});
+      // Build expressId -> colorIndex map
+      var colorMap={};
+      gKeys.forEach(function(k,idx){
+        var grp=groups[k];
+        if(grp&&grp.items){
+          grp.items.forEach(function(it){
+            colorMap[it.modelId+'_'+it.expressId]=idx;
+          });
+        }
+      });
+      // Save originals and apply
+      var saved=[];
+      S.mg.traverse(function(obj){
+        if(!obj.isMesh||!obj.material) return;
+        var eid=obj.userData.expressID;
+        var parent=obj.parent;
+        var modelId=parent?parent.userData.modelId:null;
+        if(eid==null||!modelId) return;
+        saved.push({mesh:obj, color:obj.material.color.clone()});
+        var ci=colorMap[modelId+'_'+eid];
+        if(ci!=null){
+          obj.material.color.set(CLASS_COLORS[ci%CLASS_COLORS.length]);
+        }
+      });
+      origColorsRef.current=saved;
+    }, [s.colorByClass, s.classifications]);
+
+    // Exploder: spread elements outward from center
+    var explodeOrigRef = useRef(null);
+    useEffect(function(){
+      var S = state3d.current; if(!S.mg) return;
+      if(s.explodeAmount<=0){
+        // Restore
+        if(explodeOrigRef.current){
+          explodeOrigRef.current.forEach(function(e){e.mesh.position.copy(e.pos);});
+          explodeOrigRef.current=null;
+        }
+        return;
+      }
+      // Save originals if not saved
+      if(!explodeOrigRef.current){
+        var saved=[];
+        S.mg.traverse(function(obj){if(obj.isMesh)saved.push({mesh:obj,pos:obj.position.clone()});});
+        explodeOrigRef.current=saved;
+      }
+      // Compute center
+      var box=new THREE.Box3().setFromObject(S.mg);
+      var center=box.getCenter(new THREE.Vector3());
+      var maxDist=box.getSize(new THREE.Vector3()).length()/2;
+      var factor=s.explodeAmount*2;
+      explodeOrigRef.current.forEach(function(e){
+        var meshBox=new THREE.Box3().setFromObject(e.mesh);
+        var meshCenter=meshBox.getCenter(new THREE.Vector3());
+        var dir=meshCenter.clone().sub(center);
+        if(dir.length()<0.001) return;
+        e.mesh.position.copy(e.pos).addScaledVector(dir.normalize(),dir.length()*factor);
+      });
+    }, [s.explodeAmount]);
 
     // Sync clash markers when clashes change
     useEffect(function(){
@@ -1633,6 +1854,55 @@ function startApp() {
           </button>
         </div>
       </div>`}
+      ${s.models.length>0 && html`<div style=${{position:'absolute',bottom:8,right:8,width:140,height:140,border:'1px solid #334155',borderRadius:4,pointerEvents:'auto',overflow:'hidden'}}>
+        <div style=${{position:'absolute',top:2,left:4,fontSize:'.45rem',color:'#475569',zIndex:1}}>Mini-map</div>
+      </div>`}
+    </div>`;
+  }
+
+  // ── Section Box UI ──────────────────────────────────────────
+  var _getSectionBoxFromScene = null; // set in Viewer
+  function SectionBoxUI(props) {
+    var s=props.s, d=props.d;
+    var sb=s.sectionBox;
+    var active=sb&&sb.enabled;
+    function toggleSectionBox(){
+      if(active){d({t:'SECTION_BOX',v:null});return;}
+      // Get bounding box of all models
+      if(_getSectionBoxFromScene){
+        var box=_getSectionBoxFromScene();
+        if(box) d({t:'SECTION_BOX',v:{enabled:true,min:[box.min.x,box.min.y,box.min.z],max:[box.max.x,box.max.y,box.max.z]}});
+      }
+    }
+    function updateAxis(axis, side, val){
+      if(!sb) return;
+      var newSb=Object.assign({},sb,{min:sb.min.slice(),max:sb.max.slice()});
+      if(side==='min') newSb.min[axis]=val;
+      else newSb.max[axis]=val;
+      d({t:'SECTION_BOX',v:newSb});
+    }
+    var axes=['X','Y','Z'];
+    return html`<div style=${{marginTop:'.4rem'}}>
+      <button onClick=${toggleSectionBox}
+        style=${{...S_BTN,width:'100%',padding:'.25rem',background:active?'#7c3aed':'#1e293b',color:active?'#fff':'#64748b',border:'1px solid '+(active?'#7c3aed':'#334155'),marginBottom:active?'.4rem':0}}>
+        ${active?'Section Box ON':'Section Box'}
+      </button>
+      ${active && html`<div style=${{display:'flex',flexDirection:'column',gap:'.25rem'}}>
+        ${[0,1,2].map(function(ax){
+          var range=sb.max[ax]-sb.min[ax];
+          var pad=range*0.5;
+          var lo=sb.min[ax]-pad, hi=sb.max[ax]+pad;
+          return html`<div key=${ax} style=${{display:'flex',alignItems:'center',gap:'.2rem',fontSize:'.55rem',color:'#64748b'}}>
+            <span style=${{width:10}}>${axes[ax]}</span>
+            <input type="range" min=${lo} max=${hi} step=${range/200||0.01} value=${sb.min[ax]}
+              onInput=${function(e){updateAxis(ax,'min',parseFloat(e.target.value));}}
+              style=${{flex:1,height:12}} />
+            <input type="range" min=${lo} max=${hi} step=${range/200||0.01} value=${sb.max[ax]}
+              onInput=${function(e){updateAxis(ax,'max',parseFloat(e.target.value));}}
+              style=${{flex:1,height:12}} />
+          </div>`;
+        })}
+      </div>`}
     </div>`;
   }
 
@@ -1689,15 +1959,29 @@ function startApp() {
 
   // ── Model Sidebar ──────────────────────────────────────────────
 
+  // Auto-detect discipline from IFC types
+  function detectDiscipline(elements) {
+    var mepTypes = {'IfcFlowSegment':1,'IfcFlowTerminal':1,'IfcFlowFitting':1,'IfcDistributionFlowElement':1,'IfcPipeSegment':1,'IfcDuctSegment':1};
+    var structTypes = {'IfcBeam':1,'IfcColumn':1,'IfcFooting':1,'IfcPile':1,'IfcMember':1,'IfcPlate':1};
+    var mepCount=0, structCount=0, archCount=0;
+    (elements||[]).forEach(function(el){
+      var t=(el.props&&el.props.ifcType)||'';
+      if(mepTypes[t]) mepCount++; else if(structTypes[t]) structCount++; else archCount++;
+    });
+    if(mepCount>structCount&&mepCount>archCount) return 'mep';
+    if(structCount>archCount) return 'structural';
+    return 'architectural';
+  }
+
   function ModelSidebar(props) {
     var s=props.s, d=props.d;
     var fileRef = useRef(null);
     var ld = useState(false), loading=ld[0], setLoading=ld[1];
     var lm = useState(''), loadMsg=lm[0], setLoadMsg=lm[1];
     var er = useState(''), err=er[0], setErr=er[1];
+    var dg = useState(false), dragging=dg[0], setDragging=dg[1];
 
-    function onFiles(e) {
-      var files = Array.prototype.slice.call(e.target.files||[]);
+    function processFiles(files) {
       setErr('');
       var chain = Promise.resolve();
       files.forEach(function(f) {
@@ -1708,7 +1992,12 @@ function startApp() {
           return f.arrayBuffer().then(function(buf) {
             var disc='structural', col=DISC[0].c;
             return loadIFC(buf, col, function(msg){ setLoadMsg(f.name + ': ' + msg); }).then(function(result) {
-              d({t:'ADD_MODEL', v:{id:uid(), name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[]}});
+              // Auto-detect discipline
+              disc = detectDiscipline(result.elements);
+              var dObj = DISC.find(function(x){return x.id===disc;});
+              col = dObj ? dObj.c : col;
+              var fSize = result.stats ? result.stats.fileSize : buf.byteLength;
+              d({t:'ADD_MODEL', v:{id:uid(), name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], stats:result.stats||{fileSize:fSize}}});
             });
           }).catch(function(er) {
             console.error(er);
@@ -1716,10 +2005,20 @@ function startApp() {
           }).then(function(){ setLoading(false); setLoadMsg(''); });
         });
       });
+    }
+    function onFiles(e) {
+      processFiles(Array.prototype.slice.call(e.target.files||[]));
       e.target.value='';
     }
+    function onDrop(e) {
+      e.preventDefault(); e.stopPropagation(); setDragging(false);
+      var files = Array.prototype.slice.call(e.dataTransfer.files||[]);
+      if(files.length) processFiles(files);
+    }
+    function onDragOver(e){e.preventDefault();e.stopPropagation();setDragging(true);}
+    function onDragLeave(e){e.preventDefault();e.stopPropagation();setDragging(false);}
 
-    return html`<aside style=${{...S_PANEL,width:240}}>
+    return html`<aside style=${{...S_PANEL,width:240}} onDrop=${onDrop} onDragOver=${onDragOver} onDragLeave=${onDragLeave}>
       <div style=${{padding:'.75rem',borderBottom:'1px solid #1e293b',flexShrink:0}}>
         <div style=${{display:'flex',justifyContent:'space-between',marginBottom:'.4rem'}}>
           <span style=${{fontSize:'.7rem',fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'.05em'}}>Models</span>
@@ -1727,8 +2026,8 @@ function startApp() {
         </div>
         <input ref=${fileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${onFiles} />
         <button onClick=${function(){setErr('');fileRef.current&&fileRef.current.click()}} disabled=${loading}
-          style=${{...S_BTN,width:'100%',background:'#1e293b',color:'#94a3b8',border:'1px dashed #334155',display:'flex',alignItems:'center',justifyContent:'center',gap:'.3rem'}}>
-          ${loading?html`<span class="spin">⟳</span> ${loadMsg||'Loading…'}`:'+ Add IFC'}
+          style=${{...S_BTN,width:'100%',background:dragging?'#1e3a5f':'#1e293b',color:dragging?'#93c5fd':'#94a3b8',border:dragging?'2px dashed #3b82f6':'1px dashed #334155',display:'flex',alignItems:'center',justifyContent:'center',gap:'.3rem',transition:'all .15s'}}>
+          ${loading?html`<span class="spin">⟳</span> ${loadMsg||'Loading…'}`:dragging?'Drop IFC files here':'+ Add IFC (or drag & drop)'}
         </button>
         ${err && html`<div style=${{marginTop:'.4rem',padding:'.4rem',background:'#450a0a',border:'1px solid #7f1d1d',borderRadius:6,fontSize:'.7rem',color:'#fca5a5',whiteSpace:'pre-line'}}>${err}</div>`}
       </div>
@@ -1737,23 +2036,33 @@ function startApp() {
         ${s.models.map(function(m){return html`<${ModelCard} key=${m.id} m=${m} d=${d} />`})}
       </div>
       <div style=${{padding:'.75rem',borderTop:'1px solid #1e293b',flexShrink:0}}>
-        <span style=${{fontSize:'.7rem',fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'.05em',display:'block',marginBottom:'.4rem'}}>Section Plane</span>
-        <div style=${{display:'flex',gap:'.2rem'}}>
-          ${['x','y','z'].map(function(ax){return html`<button key=${ax} onClick=${function(){d({t:'SECTION',axis:s.sectionAxis===ax?null:ax})}}
+        <span style=${{fontSize:'.7rem',fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'.05em',display:'block',marginBottom:'.4rem'}}>Section / Clipping</span>
+        <div style=${{display:'flex',gap:'.2rem',marginBottom:'.3rem'}}>
+          ${['x','y','z'].map(function(ax){return html`<button key=${ax} onClick=${function(){d({t:'SECTION_BOX',v:null});d({t:'SECTION',axis:s.sectionAxis===ax?null:ax});}}
             style=${{...S_BTN,flex:1,padding:'.25rem',background:s.sectionAxis===ax?'#2563eb':'#1e293b',color:s.sectionAxis===ax?'#fff':'#64748b'}}>${ax.toUpperCase()}</button>`})}
-          <button onClick=${function(){d({t:'SECTION',axis:null})}}
-            style=${{...S_BTN,flex:1,padding:'.25rem',background:!s.sectionAxis&&!s.sectionCustom?'#2563eb':'#1e293b',color:!s.sectionAxis&&!s.sectionCustom?'#fff':'#64748b'}}>Off</button>
+          <button onClick=${function(){d({t:'SECTION',axis:null});d({t:'SECTION_BOX',v:null});}}
+            style=${{...S_BTN,flex:1,padding:'.25rem',background:!s.sectionAxis&&!s.sectionCustom&&(!s.sectionBox||!s.sectionBox.enabled)?'#2563eb':'#1e293b',color:!s.sectionAxis&&!s.sectionCustom&&(!s.sectionBox||!s.sectionBox.enabled)?'#fff':'#64748b'}}>Off</button>
         </div>
         ${s.sectionCustom && html`<div style=${{marginTop:'.3rem',fontSize:'.6rem',color:'#93c5fd',background:'#1e3a5f',padding:'.2rem .4rem',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <span>Surface section active</span>
           <span style=${{fontSize:'.55rem',color:'#64748b'}}>Right-click to set</span>
         </div>`}
-        ${(s.sectionAxis||s.sectionCustom) && html`<div style=${{marginTop:'.4rem'}}>
+        ${(s.sectionAxis||s.sectionCustom) && html`<div style=${{marginTop:'.3rem'}}>
           <input type="range" min="0" max="1" step="0.005" value=${s.sectionPos}
             onInput=${function(e){var pos=parseFloat(e.target.value);if(s.sectionAxis)d({t:'SECTION',axis:s.sectionAxis,pos:pos});else if(s.sectionCustom)d({t:'SECTION_CUSTOM',v:s.sectionCustom,pos:pos});}}
             style=${{width:'100%'}} />
-          <span style=${{fontSize:'.7rem',color:'#475569'}}>${Math.round(s.sectionPos*100)}%</span>
+          <span style=${{fontSize:'.6rem',color:'#475569'}}>${Math.round(s.sectionPos*100)}%</span>
         </div>`}
+        <${SectionBoxUI} s=${s} d=${d} />
+      </div>
+      <div style=${{padding:'.5rem .75rem',borderTop:'1px solid #1e293b',flexShrink:0}}>
+        <span style=${{fontSize:'.65rem',fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'.05em',display:'block',marginBottom:'.3rem'}}>Exploder</span>
+        <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
+          <input type="range" min="0" max="1" step="0.01" value=${s.explodeAmount}
+            onInput=${function(e){d({t:'EXPLODE',v:parseFloat(e.target.value)});}}
+            style=${{flex:1}} />
+          <span style=${{fontSize:'.6rem',color:'#475569',minWidth:30,textAlign:'right'}}>${s.explodeAmount>0?Math.round(s.explodeAmount*100)+'%':'Off'}</span>
+        </div>
       </div>
     </aside>`;
   }
@@ -1782,7 +2091,11 @@ function startApp() {
           <span style=${{fontSize:'.7rem',color:'#475569'}}>Colour</span>
           <input type="color" value=${m.color} onChange=${function(e){d({t:'UPD_MODEL',id:m.id,u:{color:e.target.value}})}} style=${{width:24,height:20,border:'none',padding:0,background:'none',cursor:'pointer'}} />
         </div>
-        <span style=${{fontSize:'.65rem',color:'#334155'}}>${(m.elements&&m.elements.length||0)} elements</span>
+        <span style=${{fontSize:'.65rem',color:'#334155'}}>${(m.elements&&m.elements.length||0)} elements · ${(m.meshes&&m.meshes.length||0)} meshes</span>
+        ${m.stats && html`<div style=${{fontSize:'.55rem',color:'#334155',display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
+          ${m.stats.fileSize && html`<span>${(m.stats.fileSize/1048576).toFixed(1)} MB</span>`}
+          ${m.stats.loadTime && html`<span>${(m.stats.loadTime/1000).toFixed(1)}s load</span>`}
+        </div>`}
         ${m.storeys&&m.storeys.length>0 && html`<div style=${{borderTop:'1px solid #334155',paddingTop:'.35rem',marginTop:'.1rem'}}>
           <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.25rem'}}>
             <span style=${{fontSize:'.6rem',fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'.03em'}}>Levels</span>
@@ -1812,6 +2125,104 @@ function startApp() {
 
   // ── Issue Panel ────────────────────────────────────────────────
 
+  // ── Model Tree Panel ────────────────────────────────────────
+  function ModelTreePanel(props) {
+    var s=props.s, d=props.d;
+    var sq = useState(''), treeSearch=sq[0], setTreeSearch=sq[1];
+    var ex = useState({}), expanded=ex[0], setExpanded=ex[1];
+    function toggle(key){setExpanded(function(prev){var n=Object.assign({},prev);if(n[key])delete n[key];else n[key]=true;return n;});}
+    function expandAll(){
+      var all={};
+      s.models.forEach(function(m){
+        all['m_'+m.id]=true;
+        (m.storeys||[]).forEach(function(st){all['s_'+m.id+'_'+st]=true;});
+      });
+      setExpanded(all);
+    }
+    return html`<div style=${{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style=${{padding:'.4rem',borderBottom:'1px solid #1e293b',flexShrink:0}}>
+        <input type="text" placeholder="Search elements…" value=${treeSearch}
+          onInput=${function(e){setTreeSearch(e.target.value);}}
+          style=${{...S_INPUT,fontSize:'.65rem',padding:'.2rem .4rem',marginBottom:'.3rem'}} />
+        <div style=${{display:'flex',gap:'.2rem'}}>
+          <button onClick=${expandAll} style=${{...S_BTN,fontSize:'.5rem',padding:'.1rem .3rem',background:'#0f172a',color:'#64748b'}}>Expand all</button>
+          <button onClick=${function(){setExpanded({});}} style=${{...S_BTN,fontSize:'.5rem',padding:'.1rem .3rem',background:'#0f172a',color:'#64748b'}}>Collapse all</button>
+        </div>
+      </div>
+      <div style=${{flex:1,overflowY:'auto',fontSize:'.6rem'}}>
+        ${s.models.length===0 && html`<div style=${{textAlign:'center',color:'#334155',fontSize:'.7rem',padding:'2rem 1rem'}}>Load models to browse tree</div>`}
+        ${s.models.map(function(model){
+          var mKey = 'm_'+model.id;
+          var mOpen = !!expanded[mKey];
+          var disc = DISC.find(function(x){return x.id===model.discipline;});
+          // Group elements by storey
+          var storeyGroups = {};
+          var noStorey = [];
+          (model.elements||[]).forEach(function(el){
+            var st = (el.props&&el.props.storey)||'';
+            if(!st){noStorey.push(el);return;}
+            if(!storeyGroups[st]) storeyGroups[st]=[];
+            storeyGroups[st].push(el);
+          });
+          var storeyKeys = Object.keys(storeyGroups).sort();
+          var q = treeSearch.toLowerCase();
+          return html`<div key=${model.id}>
+            <div onClick=${function(){toggle(mKey);}} style=${{padding:'.3rem .5rem',cursor:'pointer',display:'flex',alignItems:'center',gap:'.3rem',background:mOpen?'#1e293b':'transparent',borderBottom:'1px solid #1e293b'}}>
+              <span style=${{color:'#475569',fontSize:'.5rem'}}>${mOpen?'▼':'▶'}</span>
+              <span style=${{width:8,height:8,borderRadius:'50%',background:disc?disc.c:'#64748b',flexShrink:0}}></span>
+              <span style=${{color:'#e2e8f0',fontWeight:500,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${model.name}</span>
+              <span style=${{color:'#475569'}}>${(model.elements||[]).length}</span>
+            </div>
+            ${mOpen && html`<div style=${{paddingLeft:'.5rem'}}>
+              ${storeyKeys.map(function(st){
+                var sKey='s_'+model.id+'_'+st;
+                var sOpen=!!expanded[sKey];
+                var els=storeyGroups[st];
+                var filtered = q ? els.filter(function(el){var p=el.props||{};return (p.name||'').toLowerCase().indexOf(q)!==-1||(p.ifcType||'').toLowerCase().indexOf(q)!==-1||String(el.expressId).indexOf(q)!==-1;}) : els;
+                if(q && filtered.length===0) return null;
+                return html`<div key=${st}>
+                  <div onClick=${function(){toggle(sKey);}} style=${{padding:'.2rem .4rem',cursor:'pointer',display:'flex',alignItems:'center',gap:'.25rem',borderBottom:'1px solid #0f172a'}}>
+                    <span style=${{color:'#475569',fontSize:'.45rem'}}>${sOpen?'▼':'▶'}</span>
+                    <span style=${{color:'#34d399',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${st}>${st}</span>
+                    <span style=${{color:'#475569'}}>${filtered.length}</span>
+                  </div>
+                  ${sOpen && html`<div style=${{paddingLeft:'.4rem'}}>
+                    ${filtered.slice(0,200).map(function(el){
+                      var p=el.props||{};
+                      return html`<div key=${el.expressId} onClick=${function(){if(_fitToElement)_fitToElement(el.expressId);if(_highlightById)_highlightById(el.expressId);}}
+                        style=${{padding:'.15rem .3rem',cursor:'pointer',display:'flex',alignItems:'center',gap:'.2rem',borderBottom:'1px solid #0f172a'}}>
+                        <span style=${{color:'#c084fc',flexShrink:0}}>${p.ifcType||'Element'}</span>
+                        <span style=${{color:'#94a3b8',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${p.name||'#'+el.expressId}</span>
+                      </div>`;
+                    })}
+                    ${filtered.length>200 && html`<div style=${{color:'#475569',padding:'.2rem',textAlign:'center'}}>+${filtered.length-200} more</div>`}
+                  </div>`}
+                </div>`;
+              })}
+              ${noStorey.length>0 && html`<div>
+                <div onClick=${function(){toggle('s_'+model.id+'_none');}} style=${{padding:'.2rem .4rem',cursor:'pointer',display:'flex',alignItems:'center',gap:'.25rem',borderBottom:'1px solid #0f172a',fontStyle:'italic'}}>
+                  <span style=${{color:'#475569',fontSize:'.45rem'}}>${expanded['s_'+model.id+'_none']?'▼':'▶'}</span>
+                  <span style=${{color:'#64748b',flex:1}}>(No storey)</span>
+                  <span style=${{color:'#475569'}}>${noStorey.length}</span>
+                </div>
+                ${expanded['s_'+model.id+'_none'] && html`<div style=${{paddingLeft:'.4rem'}}>
+                  ${noStorey.filter(function(el){if(!q)return true;var p=el.props||{};return (p.name||'').toLowerCase().indexOf(q)!==-1||(p.ifcType||'').toLowerCase().indexOf(q)!==-1;}).slice(0,100).map(function(el){
+                    var p=el.props||{};
+                    return html`<div key=${el.expressId} onClick=${function(){if(_fitToElement)_fitToElement(el.expressId);if(_highlightById)_highlightById(el.expressId);}}
+                      style=${{padding:'.15rem .3rem',cursor:'pointer',display:'flex',alignItems:'center',gap:'.2rem',borderBottom:'1px solid #0f172a'}}>
+                      <span style=${{color:'#c084fc',flexShrink:0}}>${p.ifcType||'Element'}</span>
+                      <span style=${{color:'#94a3b8',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${p.name||'#'+el.expressId}</span>
+                    </div>`;
+                  })}
+                </div>`}
+              </div>`}
+            </div>`}
+          </div>`;
+        })}
+      </div>
+    </div>`;
+  }
+
   function ClassifyPanel(props) {
     var s=props.s, d=props.d;
     var cls = s.classifications;
@@ -1825,26 +2236,50 @@ function startApp() {
     var keys = Object.keys(groups).sort(function(a,b){return (groups[b].count||0)-(groups[a].count||0)});
     var total = keys.reduce(function(sum,k){return sum+(groups[k].count||0)},0);
     var VIEWS=[{id:'byType',label:'IFC Type'},{id:'byStorey',label:'Storey'},{id:'byDiscipline',label:'Discipline'},{id:'byMaterial',label:'Material'}];
+    var hiddenCount = keys.filter(function(k){return s.hiddenClasses[classView+':'+k]}).length;
+    // Color palette for classification coloring
+    var CLASS_COLORS = ['#60a5fa','#f87171','#34d399','#fbbf24','#c084fc','#fb923c','#22d3ee','#e879f9','#a3e635','#f472b6','#38bdf8','#facc15','#4ade80','#f97316','#818cf8'];
     return html`<div style=${{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style=${{padding:'.4rem',borderBottom:'1px solid #1e293b',flexShrink:0}}>
         <div style=${{display:'flex',gap:'.2rem',flexWrap:'wrap'}}>
           ${VIEWS.map(function(v){return html`<button key=${v.id} onClick=${function(){setClassView(v.id)}}
             style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .35rem',background:classView===v.id?'#2563eb':'#1e293b',color:classView===v.id?'#fff':'#475569'}}>${v.label}</button>`})}
         </div>
-        ${total>0 && html`<div style=${{fontSize:'.55rem',color:'#475569',marginTop:'.3rem'}}>${keys.length} groups · ${total} elements</div>`}
+        ${total>0 && html`<div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'.3rem'}}>
+          <span style=${{fontSize:'.55rem',color:'#475569'}}>${keys.length} groups · ${total} elements</span>
+          <div style=${{display:'flex',gap:'.2rem'}}>
+            <button onClick=${function(){d({t:'COLOR_BY_CLASS',v:classView})}}
+              style=${{...S_BTN,fontSize:'.5rem',padding:'.1rem .3rem',background:s.colorByClass===classView?'#7c3aed':'#1e293b',color:s.colorByClass===classView?'#fff':'#475569'}}
+              title="Color elements by this classification">Color</button>
+            <button onClick=${function(){d({t:'SHOW_ALL_CLASSES'})}}
+              style=${{...S_BTN,fontSize:'.5rem',padding:'.1rem .3rem',background:'#0f172a',color:'#64748b'}}>Show all</button>
+            <button onClick=${function(){d({t:'HIDE_ALL_CLASSES',view:classView})}}
+              style=${{...S_BTN,fontSize:'.5rem',padding:'.1rem .3rem',background:'#0f172a',color:'#64748b'}}>Hide all</button>
+          </div>
+        </div>`}
+        ${hiddenCount>0 && html`<div style=${{fontSize:'.5rem',color:'#f59e0b',marginTop:'.15rem'}}>${hiddenCount} group${hiddenCount>1?'s':''} hidden</div>`}
       </div>
       <div style=${{flex:1,overflowY:'auto'}}>
         ${!hasCls && html`<div style=${{textAlign:'center',color:'#334155',fontSize:'.75rem',padding:'2rem 1rem'}}>Load models to see classification</div>`}
-        ${keys.map(function(k){
+        ${keys.map(function(k, idx){
           var grp = groups[k];
           var pct = total>0 ? Math.round(grp.count/total*100) : 0;
-          return html`<div key=${k} style=${{padding:'.4rem .6rem',borderBottom:'1px solid #1e293b'}}>
-            <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.2rem'}}>
-              <span style=${{fontSize:'.7rem',color:'#e2e8f0',fontWeight:500}}>${grp.label}</span>
-              <span style=${{fontSize:'.6rem',color:'#64748b'}}>${grp.count} (${pct}%)</span>
+          var visKey = classView+':'+k;
+          var isHidden = !!s.hiddenClasses[visKey];
+          var barColor = s.colorByClass===classView ? CLASS_COLORS[idx%CLASS_COLORS.length] : (classView==='byDiscipline'?'#60a5fa':classView==='byType'?'#c084fc':classView==='byStorey'?'#34d399':'#fbbf24');
+          return html`<div key=${k} style=${{padding:'.3rem .6rem',borderBottom:'1px solid #1e293b',opacity:isHidden?.4:1,transition:'opacity .2s'}}>
+            <div style=${{display:'flex',alignItems:'center',gap:'.3rem',marginBottom:'.15rem'}}>
+              <span onClick=${function(){d({t:'TOGGLE_CLASS_VIS',key:visKey})}}
+                style=${{width:12,height:12,borderRadius:2,border:'2px solid '+(isHidden?'#475569':'#3b82f6'),background:isHidden?'transparent':'#3b82f6',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                ${!isHidden && html`<span style=${{color:'#fff',fontSize:8}}>✓</span>`}
+              </span>
+              ${s.colorByClass===classView && html`<span style=${{width:8,height:8,borderRadius:'50%',background:barColor,flexShrink:0}}></span>`}
+              <span style=${{fontSize:'.65rem',color:isHidden?'#475569':'#e2e8f0',fontWeight:500,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${grp.label}>${grp.label}</span>
+              <span style=${{fontSize:'.55rem',color:'#64748b',flexShrink:0}}>${grp.count}</span>
+              <span style=${{fontSize:'.5rem',color:'#475569',flexShrink:0}}>${pct}%</span>
             </div>
-            <div style=${{height:4,background:'#1e293b',borderRadius:2,overflow:'hidden'}}>
-              <div style=${{height:'100%',width:pct+'%',background:classView==='byDiscipline'?'#60a5fa':classView==='byType'?'#c084fc':classView==='byStorey'?'#34d399':'#fbbf24',borderRadius:2,transition:'width .3s'}}></div>
+            <div style=${{height:3,background:'#1e293b',borderRadius:2,overflow:'hidden'}}>
+              <div style=${{height:'100%',width:pct+'%',background:barColor,borderRadius:2,transition:'width .3s'}}></div>
             </div>
           </div>`;
         })}
@@ -1922,14 +2357,15 @@ function startApp() {
 
     return html`<aside style=${{...S_PANELR,width:280}}>
       <div style=${{display:'flex',borderBottom:'1px solid #1e293b',flexShrink:0}}>
-        ${[{id:'clashes',label:'Clashes',n:oC,bg:'#ef4444'},{id:'issues',label:'Issues',n:oI,bg:'#f59e0b'},{id:'classify',label:'Classify',n:0,bg:'#3b82f6'}].map(function(t){return html`
+        ${[{id:'clashes',label:'Clashes',n:oC,bg:'#ef4444'},{id:'issues',label:'Issues',n:oI,bg:'#f59e0b'},{id:'classify',label:'Classify',n:0,bg:'#3b82f6'},{id:'tree',label:'Tree',n:0,bg:'#34d399'}].map(function(t){return html`
           <button key=${t.id} onClick=${function(){d({t:'TAB',v:t.id})}}
             style=${{...S_BTN,flex:1,background:'none',borderRadius:0,padding:'.6rem',color:s.tab===t.id?'#e2e8f0':'#475569',borderBottom:s.tab===t.id?'2px solid #3b82f6':'2px solid transparent'}}>
             ${t.label}${t.n>0?html`<span style=${{marginLeft:'.3rem',background:t.bg,color:'#fff',fontSize:'.6rem',padding:'.05rem .35rem',borderRadius:99}}>${t.n}</span>`:''}
           </button>`})}
       </div>
       ${isClassifyTab && html`<${ClassifyPanel} s=${s} d=${d} />`}
-      ${!isClassifyTab && html`<div style=${{padding:'.4rem',borderBottom:'1px solid #1e293b',flexShrink:0,display:'flex',gap:'.3rem'}}>
+      ${s.tab==='tree' && html`<${ModelTreePanel} s=${s} d=${d} />`}
+      ${!isClassifyTab && s.tab!=='tree' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid #1e293b',flexShrink:0,display:'flex',gap:'.3rem'}}>
         <input type="text" placeholder="Search…" value=${f.search} onInput=${function(e){d({t:'UPD_FILTERS',u:{search:e.target.value}})}}
           style=${{...S_INPUT,fontSize:'.7rem',padding:'.25rem .4rem',flex:1}} />
         <button onClick=${function(){setFiltersOpen(!filtersOpen)}}
@@ -1937,7 +2373,7 @@ function startApp() {
           ⚙ ${activeCount>0?activeCount:''}
         </button>
       </div>`}
-      ${!isClassifyTab && filtersOpen && html`<div style=${{padding:'.5rem',borderBottom:'1px solid #1e293b',flexShrink:0,display:'flex',flexDirection:'column',gap:'.4rem',background:'#0c1222'}}>
+      ${!isClassifyTab && s.tab!=='tree' && filtersOpen && html`<div style=${{padding:'.5rem',borderBottom:'1px solid #1e293b',flexShrink:0,display:'flex',flexDirection:'column',gap:'.4rem',background:'#0c1222'}}>
         <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <span style=${{fontSize:'.65rem',fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'.05em'}}>Filters</span>
           <button onClick=${function(){d({t:'RESET_FILTERS'})}} style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:'none',color:'#475569',textDecoration:'underline'}}>Clear all</button>
@@ -2026,10 +2462,10 @@ function startApp() {
 
         <div style=${{fontSize:'.6rem',color:'#334155',textAlign:'right'}}>${items.length} / ${rawItems.length} shown</div>
       </div>`}
-      ${!isClassifyTab && s.tab==='issues' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid #1e293b',flexShrink:0}}>
+      ${!isClassifyTab && s.tab!=='tree' && s.tab==='issues' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid #1e293b',flexShrink:0}}>
         <button onClick=${function(){d({t:'MODAL',v:true})}} style=${{...S_BTN,width:'100%',background:'#2563eb',color:'#fff'}}>+ New Issue</button>
       </div>`}
-      ${!isClassifyTab && html`<div style=${{flex:1,overflowY:'auto'}}>
+      ${!isClassifyTab && s.tab!=='tree' && html`<div style=${{flex:1,overflowY:'auto'}}>
         ${items.length===0 && html`<div style=${{textAlign:'center',color:'#334155',fontSize:'.75rem',padding:'2.5rem 1rem'}}>
           <div style=${{fontSize:'2rem',marginBottom:'.3rem'}}>${isClashTab?'✅':'📋'}</div>
           ${activeCount>0||f.search?'No matches':'No '+(isClashTab?'clashes found yet':'issues yet')}
