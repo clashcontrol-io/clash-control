@@ -76,5 +76,8 @@ CHANGELOG.md                — Version history (auto-updated on commit)
 README.md                   — Project readme with version badge
 LICENSE                     — License file
 OPEN_SOURCE_COMPONENTS.md   — Third-party library credits
+manifest.json               — PWA manifest for installable app
+sw.js                       — Service worker for offline caching
 scripts/bump-version.sh     — Pre-commit version bump script
+scripts/generate-sri.js     — Generate SRI hashes for CDN scripts
 ```
