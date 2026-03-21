@@ -171,7 +171,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.16',hash:'cd3eb74',date:'2026-03-21T20:13:27Z'};
+  var CC_VERSION = {v:'1.2.17',hash:'aa5e701',date:'2026-03-21T20:21:20Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -288,6 +288,64 @@ function startApp() {
       case 'SET_HIGHLIGHTED_STOREY': return Object.assign({},s,{_highlightedStorey:a.v});
       default:            return s;
     }
+  }
+
+  // ── IndexedDB persistence for IFC files ────────────────────────
+  var IDB_NAME = 'ClashControlFiles';
+  var IDB_STORE = 'ifcFiles';
+  var IDB_VERSION = 1;
+
+  function _openIDB() {
+    return new Promise(function(resolve, reject) {
+      var req = indexedDB.open(IDB_NAME, IDB_VERSION);
+      req.onupgradeneeded = function(e) { e.target.result.createObjectStore(IDB_STORE, {keyPath:'id'}); };
+      req.onsuccess = function(e) { resolve(e.target.result); };
+      req.onerror = function(e) { reject(e.target.error); };
+    });
+  }
+
+  function idbSaveFile(id, name, buffer) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put({id:id, name:name, buffer:buffer, savedAt:Date.now()});
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to save IFC to IndexedDB:', e); });
+  }
+
+  function idbDeleteFile(id) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).delete(id);
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to delete IFC from IndexedDB:', e); });
+  }
+
+  function idbGetAllFiles() {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_STORE, 'readonly');
+        var req = tx.objectStore(IDB_STORE).getAll();
+        req.onsuccess = function() { resolve(req.result||[]); };
+        req.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to read IndexedDB:', e); return []; });
+  }
+
+  function idbClearAll() {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).clear();
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to clear IndexedDB:', e); });
   }
 
   // ── IFC Loader (web-ifc, lazy) ─────────────────────────────────
@@ -2984,6 +3042,33 @@ function startApp() {
     var er = useState(''), err=er[0], setErr=er[1];
     var dg = useState(false), dragging=dg[0], setDragging=dg[1];
 
+    // Auto-load stored IFC files from IndexedDB on first mount
+    var didRestore = useRef(false);
+    useEffect(function(){
+      if(didRestore.current) return;
+      didRestore.current = true;
+      idbGetAllFiles().then(function(stored){
+        if(!stored.length) return;
+        var chain = Promise.resolve();
+        stored.forEach(function(entry){
+          chain = chain.then(function(){
+            setLoading(true);
+            setLoadMsg('Restoring ' + entry.name + '…');
+            var buf = entry.buffer;
+            var disc='structural', col=DISC[0].c;
+            return loadIFC(buf, col, function(msg){ setLoadMsg(entry.name + ': ' + msg); }).then(function(result){
+              disc = detectDiscipline(result.elements);
+              var dObj = DISC.find(function(x){return x.id===disc;});
+              col = dObj ? dObj.c : col;
+              var fSize = result.stats ? result.stats.fileSize : buf.byteLength;
+              d({t:'ADD_MODEL', v:{id:entry.id, name:entry.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
+            }).catch(function(e){ console.warn('Failed to restore '+entry.name+':', e); })
+              .then(function(){ setLoading(false); setLoadMsg(''); });
+          });
+        });
+      });
+    },[]);
+
     function processFiles(files) {
       setErr('');
       var chain = Promise.resolve();
@@ -3000,7 +3085,10 @@ function startApp() {
               var dObj = DISC.find(function(x){return x.id===disc;});
               col = dObj ? dObj.c : col;
               var fSize = result.stats ? result.stats.fileSize : buf.byteLength;
-              d({t:'ADD_MODEL', v:{id:uid(), name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
+              var modelId = uid();
+              d({t:'ADD_MODEL', v:{id:modelId, name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
+              // Persist raw IFC file for reload across sessions
+              idbSaveFile(modelId, f.name, buf);
             });
           }).catch(function(er) {
             console.error(er);
@@ -3183,7 +3271,7 @@ function startApp() {
         <span style=${{color:'var(--text-primary)',fontSize:'.75rem',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${m.name}>${m.name}</span>
         ${m._stub && html`<span style=${{fontSize:'.55rem',color:'#f59e0b',background:'var(--pill-amber-bg)',padding:'.05rem .3rem',borderRadius:4,flexShrink:0}}>stub</span>`}
         <button onClick=${function(){setOpen(!open)}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>${open?'▲':'▼'}</button>
-        <button onClick=${function(){d({t:'DEL_MODEL',id:m.id})}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>✕</button>
+        <button onClick=${function(){d({t:'DEL_MODEL',id:m.id});idbDeleteFile(m.id);}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>✕</button>
       </div>
       ${open && html`<div style=${{padding:'.5rem',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:'.35rem'}}>
         <select value=${m.discipline} onChange=${function(e){var p=DISC.find(function(x){return x.id===e.target.value});d({t:'UPD_MODEL',id:m.id,u:{discipline:e.target.value,color:p?p.c:m.color}})}}

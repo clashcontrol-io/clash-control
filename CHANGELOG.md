@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.17 (2026-03-21)
+- Rewrite README with proper project description and feature overview
+
 ## v1.2.16 (2026-03-21)
 - Add SRI integrity hashes to CDN script tags
 
