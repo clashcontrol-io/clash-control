@@ -1,23 +1,17 @@
 # Changelog
 
+## v1.2.27 (2026-03-22)
+- Restore element ghost effect on viewer click
+
 ## v1.2.26 (2026-03-22)
+- Restore element ghost effect on viewer click
+
+## v1.2.25 (2026-03-22)
+- Add natural language command panel (ClashControl AI)
 - Refocus NL panel on clash setup, Q&A and workflow — not spatial interactions
 
-## v1.2.30 (2026-03-22)
-- Add natural language command panel (ClashControl AI)
-
-## v1.2.29 (2026-03-22)
-- Bump version to 1.2.27; install pre-commit hook
-
-## v1.2.28 (2026-03-22)
-- UX: keep render style bar visible when element selected; add prominent issue button
-
-## v1.2.27 (2026-03-22)
-- UX: render style bar always visible; prominent Create Issue button
-- Fix viewer background turning blue on element click
-- Fix htm parser to skip HTML comments; bust SW cache
-- Fix crash when clicking elements (HTML comments in htm templates)
-- Fix IFC loading: load web-ifc directly from jsdelivr instead of esm.sh
+## v1.2.24 (2026-03-22)
+- Fix 8 code review issues: CSP, SRI, state mutation, stale closures, dead code
 
 ## v1.2.22 (2026-03-22)
 - Fix web-ifc import to use browser-specific entry point
