@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.20 (2026-03-22)
+- Add clash grouping, duplicate detection, tolerance, ortho/perspective, drag-orbit ViewCube
+
+## v1.2.19 (2026-03-22)
+- Add Revit-style 3D ViewCube, project system, and fix CSP/perf issues
+
+## v1.2.18 (2026-03-22)
+- Persist loaded IFC files across page reloads using IndexedDB
+
 ## v1.2.17 (2026-03-21)
 - Rewrite README with proper project description and feature overview
 

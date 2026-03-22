@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#0f172a">
 
   <!-- CSP: restrict resource loading to known CDN origins -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://esm.sh https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https://esm.sh https://cdn.jsdelivr.net blob:; worker-src blob:; img-src 'self' blob: data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://esm.sh https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com blob:; worker-src blob:; img-src 'self' blob: data:;">
 
   <!-- CDN deps: React, Three.js, JSZip — all UMD, all cdnjs -->
   <!-- SRI hashes: regenerate with `node scripts/generate-sri.js` if you change versions -->
@@ -16,6 +16,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
 
   <!-- htm — tagged template to React.createElement (hand-written, tested, 11/11 pass) -->
   <script>
@@ -171,7 +172,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.17',hash:'aa5e701',date:'2026-03-21T20:21:20Z'};
+  var CC_VERSION = {v:'1.2.20',hash:'1e53859',date:'2026-03-22T08:23:29Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -193,11 +194,11 @@ function startApp() {
   // ── Constants ──────────────────────────────────────────────────
 
   var DISC = [
-    { id:'structural',    label:'Structural',    c:'#60a5fa' },
-    { id:'mep',           label:'MEP',           c:'#f87171' },
-    { id:'architectural', label:'Architectural', c:'#c084fc' },
-    { id:'civil',         label:'Civil',         c:'#34d399' },
-    { id:'other',         label:'Other',         c:'#fbbf24' },
+    { id:'structural',    label:'Structural',    c:'#3b82f6', accent:'#1d4ed8' },
+    { id:'mep',           label:'MEP',           c:'#ef4444', accent:'#dc2626' },
+    { id:'architectural', label:'Architectural', c:'#a855f7', accent:'#7c3aed' },
+    { id:'civil',         label:'Civil',         c:'#10b981', accent:'#059669' },
+    { id:'other',         label:'Other',         c:'#f59e0b', accent:'#d97706' },
   ];
   var STAT = {
     open:        { label:'Open',        bg:'#ef4444' },
@@ -229,7 +230,8 @@ function startApp() {
   };
   var INIT = {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:'clashes',
-    rules:{ modelA:'all', modelB:'all', hard:true, soft:true, clearance:50 },
+    rules:{ modelA:'all', modelB:'all', hard:true, soft:false, clearance:50, hardTolerance:0, duplicates:false, changeAware:false },
+    clashGroupBy:'none', // 'none','storey','discipline','status','type'
     detecting:false, sectionAxis:null, sectionPos:0.5, sectionCustom:null,
     sectionBox:null, // {enabled, min:[x,y,z], max:[x,y,z]} – 6-plane box clipping
     filters:Object.assign({},INIT_FILTERS), floors:[],
@@ -246,7 +248,16 @@ function startApp() {
     treeOpen:false,
     // Floor plan cut
     floorPlan:null, // {storeyName, elevation, cutHeight} or null
-    _highlightedStorey:null
+    _highlightedStorey:null,
+    // Projects
+    activeProject:getActiveProjectId(),
+    projectList:ensureDefaultProject(),
+    // 2D Underlays
+    underlays:[], // [{id, name, type:'dxf'|'pdf', canvasData, offsetX, offsetY, scale, rotation, opacity, visible, storeyName, extentW, extentH, page}]
+    activeUnderlay:null,
+    underlayMode:null, // null, 'view2d', 'compare'
+    markups:[], // [{id, type:'line'|'rect'|'text'|'arrow', points, color, text}]
+    markupTool:null // null, 'line', 'rect', 'text', 'arrow', 'erase'
   };
   function reducer(s,a) {
     switch(a.t) {
@@ -286,6 +297,21 @@ function startApp() {
       case 'TREE':         return Object.assign({},s,{treeOpen:a.v});
       case 'FLOOR_PLAN':   return Object.assign({},s,{floorPlan:a.v, sectionAxis:null, sectionCustom:null, sectionBox:null});
       case 'SET_HIGHLIGHTED_STOREY': return Object.assign({},s,{_highlightedStorey:a.v});
+      case 'SET_PROJECT':  return Object.assign({},s,{activeProject:a.id});
+      case 'SET_PROJECT_LIST': return Object.assign({},s,{projectList:a.v});
+      case 'LOAD_PROJECT_STATE': return Object.assign({},s,a.data);
+      case 'CLASH_GROUP_BY': return Object.assign({},s,{clashGroupBy:a.v});
+      case 'TOGGLE_PROJECTION': return Object.assign({},s,{projection:s.projection==='ortho'?'perspective':'ortho'});
+      // 2D Underlays
+      case 'ADD_UNDERLAY':    return Object.assign({},s,{underlays:s.underlays.concat([a.v]),activeUnderlay:a.v.id});
+      case 'DEL_UNDERLAY':    return Object.assign({},s,{underlays:s.underlays.filter(function(u){return u.id!==a.id}),activeUnderlay:s.activeUnderlay===a.id?null:s.activeUnderlay});
+      case 'UPD_UNDERLAY':    return Object.assign({},s,{underlays:s.underlays.map(function(u){return u.id===a.id?Object.assign({},u,a.u):u})});
+      case 'SET_UNDERLAY':    return Object.assign({},s,{activeUnderlay:a.id});
+      case 'UNDERLAY_MODE':   return Object.assign({},s,{underlayMode:a.v});
+      case 'ADD_MARKUP':      return Object.assign({},s,{markups:s.markups.concat([a.v])});
+      case 'DEL_MARKUP':      return Object.assign({},s,{markups:s.markups.filter(function(m){return m.id!==a.id})});
+      case 'CLEAR_MARKUPS':   return Object.assign({},s,{markups:[]});
+      case 'MARKUP_TOOL':     return Object.assign({},s,{markupTool:a.v});
       default:            return s;
     }
   }
@@ -293,22 +319,27 @@ function startApp() {
   // ── IndexedDB persistence for IFC files ────────────────────────
   var IDB_NAME = 'ClashControlFiles';
   var IDB_STORE = 'ifcFiles';
-  var IDB_VERSION = 1;
+  var IDB_PROJSTORE = 'projects';
+  var IDB_VERSION = 2;
 
   function _openIDB() {
     return new Promise(function(resolve, reject) {
       var req = indexedDB.open(IDB_NAME, IDB_VERSION);
-      req.onupgradeneeded = function(e) { e.target.result.createObjectStore(IDB_STORE, {keyPath:'id'}); };
+      req.onupgradeneeded = function(e) {
+        var db = e.target.result;
+        if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, {keyPath:'id'});
+        if(!db.objectStoreNames.contains(IDB_PROJSTORE)) db.createObjectStore(IDB_PROJSTORE, {keyPath:'id'});
+      };
       req.onsuccess = function(e) { resolve(e.target.result); };
       req.onerror = function(e) { reject(e.target.error); };
     });
   }
 
-  function idbSaveFile(id, name, buffer) {
+  function idbSaveFile(id, name, buffer, projectId) {
     return _openIDB().then(function(db) {
       return new Promise(function(resolve, reject) {
         var tx = db.transaction(IDB_STORE, 'readwrite');
-        tx.objectStore(IDB_STORE).put({id:id, name:name, buffer:buffer, savedAt:Date.now()});
+        tx.objectStore(IDB_STORE).put({id:id, name:name, buffer:buffer, projectId:projectId||'default', savedAt:Date.now()});
         tx.oncomplete = function() { resolve(); };
         tx.onerror = function(e) { reject(e.target.error); };
       });
@@ -326,26 +357,89 @@ function startApp() {
     }).catch(function(e) { console.warn('Failed to delete IFC from IndexedDB:', e); });
   }
 
-  function idbGetAllFiles() {
+  function idbGetProjectFiles(projectId) {
     return _openIDB().then(function(db) {
       return new Promise(function(resolve, reject) {
         var tx = db.transaction(IDB_STORE, 'readonly');
         var req = tx.objectStore(IDB_STORE).getAll();
-        req.onsuccess = function() { resolve(req.result||[]); };
+        req.onsuccess = function() {
+          var all = req.result||[];
+          resolve(all.filter(function(f){ return f.projectId===(projectId||'default'); }));
+        };
         req.onerror = function(e) { reject(e.target.error); };
       });
     }).catch(function(e) { console.warn('Failed to read IndexedDB:', e); return []; });
   }
 
-  function idbClearAll() {
+  function idbDeleteProjectFiles(projectId) {
+    return idbGetProjectFiles(projectId).then(function(files){
+      return _openIDB().then(function(db){
+        return new Promise(function(resolve, reject){
+          var tx = db.transaction(IDB_STORE, 'readwrite');
+          var store = tx.objectStore(IDB_STORE);
+          files.forEach(function(f){ store.delete(f.id); });
+          tx.oncomplete = function(){ resolve(); };
+          tx.onerror = function(e){ reject(e.target.error); };
+        });
+      });
+    });
+  }
+
+  // ── Project session data (clashes, issues, rules, etc.) ───────
+  function idbSaveProjectData(projectId, data) {
     return _openIDB().then(function(db) {
       return new Promise(function(resolve, reject) {
-        var tx = db.transaction(IDB_STORE, 'readwrite');
-        tx.objectStore(IDB_STORE).clear();
+        var tx = db.transaction(IDB_PROJSTORE, 'readwrite');
+        tx.objectStore(IDB_PROJSTORE).put(Object.assign({id:projectId||'default'}, data));
         tx.oncomplete = function() { resolve(); };
         tx.onerror = function(e) { reject(e.target.error); };
       });
-    }).catch(function(e) { console.warn('Failed to clear IndexedDB:', e); });
+    }).catch(function(e) { console.warn('Failed to save project data:', e); });
+  }
+
+  function idbGetProjectData(projectId) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_PROJSTORE, 'readonly');
+        var req = tx.objectStore(IDB_PROJSTORE).get(projectId||'default');
+        req.onsuccess = function() { resolve(req.result||null); };
+        req.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to load project data:', e); return null; });
+  }
+
+  function idbDeleteProjectData(projectId) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_PROJSTORE, 'readwrite');
+        tx.objectStore(IDB_PROJSTORE).delete(projectId||'default');
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to delete project data:', e); });
+  }
+
+  // ── Project list (stored in localStorage) ─────────────────────
+  function getProjects() {
+    try { return JSON.parse(localStorage.getItem('cc_projects')||'[]'); }
+    catch(e) { return []; }
+  }
+  function saveProjects(list) {
+    try { localStorage.setItem('cc_projects', JSON.stringify(list)); } catch(e) {}
+  }
+  function getActiveProjectId() {
+    return localStorage.getItem('cc_activeProject')||'default';
+  }
+  function setActiveProjectId(id) {
+    try { localStorage.setItem('cc_activeProject', id); } catch(e) {}
+  }
+  function ensureDefaultProject() {
+    var list = getProjects();
+    if(!list.find(function(p){return p.id==='default';})){
+      list.unshift({id:'default', name:'Default Project', createdAt:Date.now()});
+      saveProjects(list);
+    }
+    return list;
   }
 
   // ── IFC Loader (web-ifc, lazy) ─────────────────────────────────
@@ -353,9 +447,9 @@ function startApp() {
   var _ifcAPI = null;
   function getIfcAPI() {
     if (_ifcAPI) return Promise.resolve(_ifcAPI);
-    return import('https://esm.sh/web-ifc@0.0.57').then(function(mod) {
+    return import('https://esm.sh/web-ifc@0.0.76').then(function(mod) {
       var api = new mod.IfcAPI();
-      api.SetWasmPath('https://cdn.jsdelivr.net/npm/web-ifc@0.0.57/');
+      api.SetWasmPath('https://cdn.jsdelivr.net/npm/web-ifc@0.0.76/');
       return api.Init().then(function() { _ifcAPI = api; return api; });
     });
   }
@@ -716,22 +810,84 @@ function startApp() {
 
   // ── Clash Detection ────────────────────────────────────────────
 
+  // Store element hashes for change-aware re-detection
+  var _prevElementHashes = {};
+
+  function _hashElement(el) {
+    var b = el.box;
+    return [el.expressId, b.min.x.toFixed(3), b.min.y.toFixed(3), b.min.z.toFixed(3),
+            b.max.x.toFixed(3), b.max.y.toFixed(3), b.max.z.toFixed(3)].join('|');
+  }
+
   function detectClashes(models, rules) {
     var pick = function(id) { return id === 'all' ? models : models.filter(function(m){return m.id===id}); };
     var grpA = pick(rules.modelA), grpB = pick(rules.modelB);
     var clashes = [], seen = {};
+    var hardTol = (rules.hardTolerance||0)/1000; // mm to m
+
+    // Change-aware: track which elements changed since last run
+    var newHashes = {};
+    var changedElements = {};
+    if (rules.changeAware) {
+      models.forEach(function(m) {
+        (m.elements||[]).forEach(function(el) {
+          var h = _hashElement(el);
+          var key = m.id + ':' + el.expressId;
+          newHashes[key] = h;
+          if (_prevElementHashes[key] !== h) changedElements[key] = true;
+        });
+      });
+    }
+
     grpA.forEach(function(mA) { grpB.forEach(function(mB) {
       var sameModel = mA.id === mB.id;
       var key = [mA.id, mB.id].sort().join('|');
       if (seen[key]) return; seen[key] = true;
       (mA.elements||[]).forEach(function(eA, iA) { (mB.elements||[]).forEach(function(eB, iB) {
         if (sameModel && iB <= iA) return;
+        // Change-aware: skip pairs where neither element changed
+        if (rules.changeAware && !changedElements[mA.id+':'+eA.expressId] && !changedElements[mB.id+':'+eB.expressId]) return;
+
         var bA = eA.box.clone(), bB = eB.box.clone();
-        var isHard = bA.intersectsBox(bB);
+
+        // Duplicate detection: identical bounding boxes at same location
+        if (rules.duplicates) {
+          var sizeA = bA.getSize(new THREE.Vector3());
+          var sizeB = bB.getSize(new THREE.Vector3());
+          var ctrA = bA.getCenter(new THREE.Vector3());
+          var ctrB = bB.getCenter(new THREE.Vector3());
+          var sizeDiff = Math.abs(sizeA.x-sizeB.x) + Math.abs(sizeA.y-sizeB.y) + Math.abs(sizeA.z-sizeB.z);
+          var posDiff = ctrA.distanceTo(ctrB);
+          if (sizeDiff < 0.01 && posDiff < 0.01) {
+            var pA=eA.props||{}, pB=eB.props||{};
+            var tA=pA.ifcType||'Element', tB=pB.ifcType||'Element';
+            var nA=pA.name||('#'+eA.expressId), nB=pB.name||('#'+eB.expressId);
+            clashes.push({
+              id:uid(), source:'auto', type:'duplicate', status:'open',
+              title:'Duplicate: '+tA,
+              description:nA+' ≡ '+nB+' (same location & size)',
+              modelAId:mA.id, modelBId:mB.id, elemA:eA.expressId, elemB:eB.expressId,
+              point:[ctrA.x,ctrA.y,ctrA.z], createdAt:new Date().toISOString(),
+              distance:0, elevation:Math.round(ctrA.y*1000)/1000,
+              disciplines:[mA.discipline,mB.discipline], selfClash:sameModel,
+              elemAType:tA, elemBType:tB, elemAName:nA, elemBName:nB,
+              elemAStorey:pA.storey||'', elemBStorey:pB.storey||'',
+              elemAMaterial:pA.material||'', elemBMaterial:pB.material||'',
+              propsA:pA, propsB:pB
+            });
+            return; // don't also report as hard/soft
+          }
+        }
+
+        // Hard clash with tolerance
+        var isHard = hardTol > 0
+          ? bA.clone().expandByScalar(-hardTol).intersectsBox(bB.clone().expandByScalar(-hardTol))
+          : bA.intersectsBox(bB);
+        if (!isHard && hardTol > 0) isHard = bA.intersectsBox(bB); // still intersecting without shrink = hard
+        // Soft/clearance clash
         var isSoft = !isHard && rules.soft && bA.clone().expandByScalar(rules.clearance/1000).intersectsBox(bB);
         if ((isHard && rules.hard) || isSoft) {
           var ctr = new THREE.Vector3(); bA.getCenter(ctr);
-          // Compute distance between bounding boxes (mm)
           var gx=Math.max(0,bB.min.x-bA.max.x,bA.min.x-bB.max.x);
           var gy=Math.max(0,bB.min.y-bA.max.y,bA.min.y-bB.max.y);
           var gz=Math.max(0,bB.min.z-bA.max.z,bA.min.z-bB.max.z);
@@ -755,6 +911,10 @@ function startApp() {
         }
       }); });
     }); });
+
+    // Update element hashes for next change-aware run
+    if (rules.changeAware) _prevElementHashes = newHashes;
+
     return clashes;
   }
 
@@ -1062,11 +1222,11 @@ function startApp() {
     window.addEventListener('mousemove', function(e) {
       if(!dragging&&!panning) return;
       var dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
-      if(dragging){ sph.theta-=dx*0.007; sph.phi-=dy*0.007; apply(); invalidate(); }
+      if(dragging){ sph.theta-=dx*0.007; sph.phi-=dy*0.007; orbit.apply(); invalidate(); }
       if(panning){
         var sp=sph.r*0.0008;
-        var right=new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()),new THREE.Vector3(0,1,0)).normalize();
-        target.addScaledVector(right,-dx*sp); target.y+=dy*sp; apply(); invalidate();
+        var right=new THREE.Vector3().crossVectors(orbit.camera.getWorldDirection(new THREE.Vector3()),new THREE.Vector3(0,1,0)).normalize();
+        target.addScaledVector(right,-dx*sp); target.y+=dy*sp; orbit.apply(); invalidate();
       }
     });
     window.addEventListener('mouseup', function(){dragging=false;panning=false});
@@ -1100,9 +1260,29 @@ function startApp() {
           return;
         }
       }
-      sph.r*=1+e.deltaY*0.0008;apply();invalidate();e.preventDefault();
+      var zoomFactor = 1+e.deltaY*0.0008;
+      sph.r *= zoomFactor;
+      // Also zoom orthographic camera if active
+      if(orbit.camera.isOrthographicCamera) {
+        orbit.camera.zoom = Math.max(0.01, orbit.camera.zoom / zoomFactor);
+        orbit.camera.updateProjectionMatrix();
+      }
+      orbit.apply();invalidate();e.preventDefault();
     },{passive:false});
-    return {target:target, sync:sync, apply:apply, sph:sph};
+    var orbit = {target:target, sync:sync, apply:apply, sph:sph, camera:camera};
+    // Override apply to use orbit.camera (supports projection switching)
+    var _origApply = apply;
+    orbit.apply = function() {
+      camera = orbit.camera; // keep local camera in sync
+      sph.phi = Math.max(0.05, Math.min(Math.PI-0.05, sph.phi));
+      sph.r   = Math.max(0.5, Math.min(5000, sph.r));
+      camera.position.set(
+        target.x + sph.r*Math.sin(sph.phi)*Math.sin(sph.theta),
+        target.y + sph.r*Math.cos(sph.phi),
+        target.z + sph.r*Math.sin(sph.phi)*Math.cos(sph.theta));
+      camera.lookAt(target);
+    };
+    return orbit;
   }
 
   // ── Three.js Viewer Component ──────────────────────────────────
@@ -1980,9 +2160,9 @@ function startApp() {
       // ── Viewpoint capture/restore ──
       _captureViewpoint = function(name, linkedId) {
         var dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        var up = camera.up.clone();
-        renderer.render(scene, camera);
+        S.camera.getWorldDirection(dir);
+        var up = S.camera.up.clone();
+        renderer.render(scene, S.camera);
         var snapshot = renderer.domElement.toDataURL('image/png');
         return {
           id:uid(), name:name||'Viewpoint', linkedId:linkedId||null,
@@ -2016,6 +2196,22 @@ function startApp() {
 
       var mg = new THREE.Group(); scene.add(mg); S.mg = mg;
 
+      // Clear all model meshes from scene (used by project switch)
+      window._ccClearScene = function() {
+        while(mg.children.length>0) {
+          var child = mg.children[0];
+          mg.remove(child);
+          if(child.traverse) child.traverse(function(c){
+            if(c.geometry) c.geometry.dispose();
+            if(c.material) {
+              if(Array.isArray(c.material)) c.material.forEach(function(m){m.dispose();});
+              else c.material.dispose();
+            }
+          });
+        }
+        invalidate();
+      };
+
       // FPS tracking
       S.perf = {fps:0, frameCount:0, lastTime:performance.now(), tris:0, meshCount:0, drawCalls:0};
       // ── Frustum culling + distance-based LOD ──
@@ -2029,7 +2225,7 @@ function startApp() {
       var lodSmallThreshold = 0.5; // objects smaller than 0.5m bounding sphere radius
 
       function updateCulling(){
-        projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        projScreenMatrix.multiplyMatrices(S.camera.projectionMatrix, S.camera.matrixWorldInverse);
         frustum.setFromProjectionMatrix(projScreenMatrix);
         var camPos = camera.position;
         S.mg.traverse(function(obj){
@@ -2070,7 +2266,10 @@ function startApp() {
           S.perf.lastTime = now;
           S.perf.drawCalls = renderer.info.render.calls;
           S.perf.tris = renderer.info.render.triangles;
-          S.perf.meshCount = renderer.info.memory.geometries;
+          // Count only model geometries (inside S.mg group), not scene helpers
+          var modelGeoCount = 0;
+          S.mg.traverse(function(c){ if(c.geometry) modelGeoCount++; });
+          S.perf.meshCount = modelGeoCount;
         }
         // Render on demand: skip if nothing changed
         if(_needsRender <= 0) return;
@@ -2085,15 +2284,22 @@ function startApp() {
         try {
           renderer.setViewport(0,0,el.clientWidth,el.clientHeight);
           renderer.setScissorTest(false);
-          renderer.render(scene,camera);
+          renderer.render(scene,S.camera);
         } catch(renderErr) { console.warn('Render error:', renderErr); }
         S.perf.frameCount++;
       }
       tick();
 
       var obs = new ResizeObserver(function(){
-        camera.aspect = el.clientWidth/el.clientHeight;
-        camera.updateProjectionMatrix();
+        var cam = S.camera; // may have been swapped to ortho
+        if (cam.isPerspectiveCamera) {
+          cam.aspect = el.clientWidth/el.clientHeight;
+        } else if (cam.isOrthographicCamera) {
+          var aspect = el.clientWidth/el.clientHeight;
+          var h = (cam.top - cam.bottom) / 2;
+          cam.left = -h * aspect; cam.right = h * aspect;
+        }
+        cam.updateProjectionMatrix();
         renderer.setSize(el.clientWidth, el.clientHeight);
         invalidate();
       });
@@ -2813,6 +3019,34 @@ function startApp() {
             return html`<button key=${rs} onClick=${function(){d({t:'UPD_PREFS',u:{renderStyle:rs}})}}
               style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .4rem',background:cur===rs?'var(--accent)':'transparent',color:cur===rs?'#fff':'var(--text-muted)',border:'1px solid '+(cur===rs?'var(--accent-hover)':'transparent')}}>${labels[rs]}</button>`;
           })}
+          <span style=${{width:1,background:'var(--border)',margin:'0 .1rem'}}></span>
+          <button onClick=${function(){
+            var S=state3d.current; if(!S||!S.camera) return;
+            var isOrtho = S.camera.isOrthographicCamera;
+            var el2=S.renderer.domElement.parentElement;
+            var aspect=el2.clientWidth/el2.clientHeight;
+            if(isOrtho) {
+              var newCam=new THREE.PerspectiveCamera(55,aspect,0.01,10000);
+              newCam.position.copy(S.camera.position);
+              newCam.quaternion.copy(S.camera.quaternion);
+              S.camera=newCam; S.orbit.camera=newCam;
+              S.orbit.sync(); S.orbit.apply();
+            } else {
+              var dist=S.camera.position.distanceTo(S.orbit.target);
+              var h=dist*Math.tan(THREE.MathUtils.degToRad(55/2));
+              var newCam=new THREE.OrthographicCamera(-h*aspect,h*aspect,h,-h,0.01,10000);
+              newCam.position.copy(S.camera.position);
+              newCam.quaternion.copy(S.camera.quaternion);
+              newCam.zoom=1;newCam.updateProjectionMatrix();
+              S.camera=newCam; S.orbit.camera=newCam;
+              S.orbit.sync(); S.orbit.apply();
+            }
+            invalidate();
+          }}
+            style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .4rem',background:'transparent',color:'var(--text-muted)',border:'1px solid transparent'}}
+            title=${(function(){var S=state3d.current;return S&&S.camera&&S.camera.isOrthographicCamera?'Switch to Perspective':'Switch to Orthographic'})()}>
+            ${(function(){var S=state3d.current;return S&&S.camera&&S.camera.isOrthographicCamera?'Persp':'Ortho'})()}
+          </button>
         </div>
       </div>`}
       <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end'}}>
@@ -2881,50 +3115,266 @@ function startApp() {
     </div>`;
   }
 
-  // ── View Cube (Revit-style navigation) ──────────────────────
+  // ── View Cube (Revit-style 3D cube with compass) ──────────────
   function ViewCube(props) {
     var state3d = props.state3d;
-    var views = [
-      {label:'Front', dir:[0,0,1]},
-      {label:'Back',  dir:[0,0,-1]},
-      {label:'Left',  dir:[-1,0,0]},
-      {label:'Right', dir:[1,0,0]},
-      {label:'Top',   dir:[0,1,0]},
-      {label:'Bottom',dir:[0,-1,0]}
+    var canvasRef = useRef(null);
+    var vcState = useRef(null);
+    var hoveredFace = useState(null), hovered=hoveredFace[0], setHovered=hoveredFace[1];
+
+    // Face definitions: label, normal direction, up vector
+    var FACES = [
+      {label:'FRONT',  normal:[0,0,1],   up:[0,1,0]},
+      {label:'BACK',   normal:[0,0,-1],  up:[0,1,0]},
+      {label:'RIGHT',  normal:[1,0,0],   up:[0,1,0]},
+      {label:'LEFT',   normal:[-1,0,0],  up:[0,1,0]},
+      {label:'TOP',    normal:[0,1,0],   up:[0,0,-1]},
+      {label:'BOTTOM', normal:[0,-1,0],  up:[0,0,1]}
     ];
+    // Edge definitions: midpoints between two face normals
+    var EDGES = [
+      {dir:[0,1,1],   up:[0,1,0]},   // front-top
+      {dir:[0,-1,1],  up:[0,-1,0]},  // front-bottom
+      {dir:[1,0,1],   up:[0,1,0]},   // front-right
+      {dir:[-1,0,1],  up:[0,1,0]},   // front-left
+      {dir:[0,1,-1],  up:[0,1,0]},   // back-top
+      {dir:[0,-1,-1], up:[0,-1,0]},  // back-bottom
+      {dir:[1,0,-1],  up:[0,1,0]},   // back-right
+      {dir:[-1,0,-1], up:[0,1,0]},   // back-left
+      {dir:[1,1,0],   up:[0,1,0]},   // top-right
+      {dir:[-1,1,0],  up:[0,1,0]},   // top-left
+      {dir:[1,-1,0],  up:[0,-1,0]},  // bottom-right
+      {dir:[-1,-1,0], up:[0,-1,0]}   // bottom-left
+    ];
+    // Corner definitions: all 8 corners
+    var CORNERS = [
+      {dir:[1,1,1]},  {dir:[-1,1,1]},  {dir:[1,-1,1]},  {dir:[-1,-1,1]},
+      {dir:[1,1,-1]}, {dir:[-1,1,-1]}, {dir:[1,-1,-1]}, {dir:[-1,-1,-1]}
+    ];
+
     function flyToDir(dir) {
       var S=state3d.current; if(!S||!S.orbit||!S.mg) return;
       var modelBox=S.mg.children.length>0?new THREE.Box3().setFromObject(S.mg):new THREE.Box3(new THREE.Vector3(-5,-5,-5),new THREE.Vector3(5,5,5));
       var ctr=modelBox.getCenter(new THREE.Vector3());
       var sz=modelBox.getSize(new THREE.Vector3());
       var dist=Math.max(sz.x,sz.y,sz.z)*1.5;
-      var viewDir=new THREE.Vector3(dir[0],dir[1],dir[2]);
-      if(Math.abs(viewDir.y)>0.9) viewDir.set(0.3,viewDir.y>0?0.85:-0.85,0.3).normalize();
+      var viewDir=new THREE.Vector3(dir[0],dir[1],dir[2]).normalize();
       var endPos=ctr.clone().addScaledVector(viewDir,dist);
       if(window._ccFlyToView) window._ccFlyToView(ctr,endPos);
     }
-    var wrapStyle = {position:'absolute',top:'.5rem',right:'.5rem',pointerEvents:'auto',
-      display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'2px',
-      background:'var(--vc-bg,rgba(30,41,59,.85))',borderRadius:6,padding:3,
-      backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',border:'1px solid var(--vc-border,rgba(71,85,105,.6))'};
-    var btnBase = {border:'none',cursor:'pointer',fontSize:'.55rem',fontWeight:600,fontFamily:'system-ui,sans-serif',
-      letterSpacing:'.03em',textTransform:'uppercase',borderRadius:3,padding:'4px 0',textAlign:'center',
-      transition:'background .15s,color .15s',lineHeight:1,
-      background:'var(--vc-btn,rgba(51,65,85,.7))',color:'var(--vc-text,#cbd5e1)'};
-    var btnHover = function(e){e.target.style.background='var(--accent)';e.target.style.color='#fff';};
-    var btnLeave = function(e){e.target.style.background='var(--vc-btn,rgba(51,65,85,.7))';e.target.style.color='var(--vc-text,#cbd5e1)';};
-    // Layout: row1=[_,Top,_] row2=[Left,Front,Right] row3=[_,Bottom,_] row4=[Back across 3 cols]
-    return html`<div style=${wrapStyle}>
-      <span />
-      <button style=${btnBase} onMouseEnter=${btnHover} onMouseLeave=${btnLeave} onClick=${function(){flyToDir(views[4].dir)}} title="Top view">Top</button>
-      <span />
-      <button style=${btnBase} onMouseEnter=${btnHover} onMouseLeave=${btnLeave} onClick=${function(){flyToDir(views[2].dir)}} title="Left view">Left</button>
-      <button style=${Object.assign({},btnBase,{background:'var(--vc-center,rgba(37,99,235,.5))',color:'var(--text-primary)'})} onMouseEnter=${btnHover} onMouseLeave=${btnLeave} onClick=${function(){flyToDir(views[0].dir)}} title="Front view">Front</button>
-      <button style=${btnBase} onMouseEnter=${btnHover} onMouseLeave=${btnLeave} onClick=${function(){flyToDir(views[3].dir)}} title="Right view">Right</button>
-      <span />
-      <button style=${btnBase} onMouseEnter=${btnHover} onMouseLeave=${btnLeave} onClick=${function(){flyToDir(views[5].dir)}} title="Bottom view">Bot</button>
-      <span />
-      <button style=${Object.assign({},btnBase,{gridColumn:'1/4',fontSize:'.5rem'})} onMouseEnter=${btnHover} onMouseLeave=${btnLeave} onClick=${function(){flyToDir(views[1].dir)}} title="Back view">Back</button>
+
+    // Create face texture with label
+    function makeFaceTexture(label, isHovered) {
+      var c = document.createElement('canvas');
+      c.width=128; c.height=128;
+      var ctx=c.getContext('2d');
+      // Background
+      ctx.fillStyle = isHovered ? '#3b82f6' : 'rgba(51,65,85,0.85)';
+      ctx.fillRect(0,0,128,128);
+      // Border
+      ctx.strokeStyle = 'rgba(148,163,184,0.4)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1,1,126,126);
+      // Label
+      ctx.fillStyle = isHovered ? '#ffffff' : '#cbd5e1';
+      ctx.font = 'bold 18px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, 64, 64);
+      var tex = new THREE.CanvasTexture(c);
+      tex.minFilter = THREE.LinearFilter;
+      return tex;
+    }
+
+    useEffect(function() {
+      var canvas = canvasRef.current;
+      if(!canvas || vcState.current) return;
+
+      var size = 120;
+      var renderer = new THREE.WebGLRenderer({canvas:canvas, alpha:true, antialias:true});
+      renderer.setSize(size, size);
+      renderer.setPixelRatio(window.devicePixelRatio);
+
+      var scene = new THREE.Scene();
+      var camera = new THREE.OrthographicCamera(-1.8,1.8,1.8,-1.8,0.1,10);
+      camera.position.set(2,2,2);
+      camera.lookAt(0,0,0);
+
+      // Ambient + directional light
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      var dLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dLight.position.set(2,3,2);
+      scene.add(dLight);
+
+      // Build cube from 6 face planes
+      var cubeGroup = new THREE.Group();
+      var faceMeshes = [];
+      FACES.forEach(function(f, i) {
+        var geo = new THREE.PlaneGeometry(0.98, 0.98);
+        var tex = makeFaceTexture(f.label, false);
+        var mat = new THREE.MeshBasicMaterial({map:tex, side:THREE.FrontSide, transparent:true});
+        var mesh = new THREE.Mesh(geo, mat);
+        // Position and orient face
+        var n = new THREE.Vector3(f.normal[0],f.normal[1],f.normal[2]);
+        mesh.position.copy(n.clone().multiplyScalar(0.5));
+        mesh.lookAt(n.clone().multiplyScalar(1.5));
+        mesh.userData = {faceIndex:i, label:f.label, normal:f.normal};
+        faceMeshes.push(mesh);
+        cubeGroup.add(mesh);
+      });
+
+      // Wireframe edges for the cube
+      var edgeGeo = new THREE.BoxGeometry(1,1,1);
+      var edgeMat = new THREE.LineBasicMaterial({color:0x94a3b8, transparent:true, opacity:0.6});
+      var edges = new THREE.LineSegments(new THREE.EdgesGeometry(edgeGeo), edgeMat);
+      cubeGroup.add(edges);
+
+      scene.add(cubeGroup);
+
+      // Compass ring
+      var compassGroup = new THREE.Group();
+      var ringGeo = new THREE.RingGeometry(1.25, 1.38, 64);
+      var ringMat = new THREE.MeshBasicMaterial({color:0x475569, side:THREE.DoubleSide, transparent:true, opacity:0.5});
+      var ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI/2;
+      ring.position.y = -0.01;
+      compassGroup.add(ring);
+
+      // Compass labels N/S/E/W
+      var compassLabels = [{l:'N',angle:0},{l:'E',angle:Math.PI/2},{l:'S',angle:Math.PI},{l:'W',angle:-Math.PI/2}];
+      compassLabels.forEach(function(cl){
+        var lc = document.createElement('canvas');
+        lc.width=32; lc.height=32;
+        var lctx=lc.getContext('2d');
+        lctx.fillStyle = cl.l==='N' ? '#ef4444' : '#94a3b8';
+        lctx.font = 'bold 22px system-ui';
+        lctx.textAlign='center'; lctx.textBaseline='middle';
+        lctx.fillText(cl.l, 16, 16);
+        var lt = new THREE.CanvasTexture(lc);
+        lt.minFilter = THREE.LinearFilter;
+        var lm = new THREE.MeshBasicMaterial({map:lt, transparent:true, side:THREE.DoubleSide, depthTest:false});
+        var ls = new THREE.Mesh(new THREE.PlaneGeometry(0.22,0.22), lm);
+        ls.position.set(Math.sin(cl.angle)*1.52, 0, -Math.cos(cl.angle)*1.52);
+        ls.rotation.x = -Math.PI/2;
+        compassGroup.add(ls);
+      });
+      scene.add(compassGroup);
+
+      // Raycaster for picking
+      var raycaster = new THREE.Raycaster();
+      var mouse = new THREE.Vector2();
+
+      vcState.current = {renderer:renderer, scene:scene, camera:camera, cubeGroup:cubeGroup,
+        faceMeshes:faceMeshes, compassGroup:compassGroup, raycaster:raycaster, mouse:mouse, needsRender:true};
+
+      // Animation loop synced to main camera
+      var animId;
+      function animate() {
+        animId = requestAnimationFrame(animate);
+        var S = state3d.current;
+        var vc = vcState.current;
+        if(!S || !S.camera || !vc) return;
+        // Mirror main camera orientation onto cube
+        vc.cubeGroup.quaternion.copy(S.camera.quaternion).invert();
+        // Compass stays world-aligned (only Y rotation from camera)
+        vc.compassGroup.quaternion.copy(S.camera.quaternion).invert();
+        // Keep compass labels facing camera
+        vc.compassGroup.children.forEach(function(child){
+          if(child.material && child.material.map) {
+            child.quaternion.copy(vc.compassGroup.quaternion).invert();
+            child.quaternion.premultiply(vc.cubeGroup.quaternion);
+          }
+        });
+        vc.renderer.render(vc.scene, vc.camera);
+      }
+      animate();
+
+      // Mouse interaction
+      function getMousePos(e) {
+        var rect = canvas.getBoundingClientRect();
+        vc.mouse.x = ((e.clientX-rect.left)/rect.width)*2-1;
+        vc.mouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
+      }
+      function onMove(e) {
+        var vc=vcState.current; if(!vc) return;
+        getMousePos(e);
+        vc.raycaster.setFromCamera(vc.mouse, vc.camera);
+        var hits = vc.raycaster.intersectObjects(vc.faceMeshes);
+        var newHover = hits.length>0 ? hits[0].object.userData.faceIndex : null;
+        if(newHover !== hovered) {
+          // Reset old hover
+          vc.faceMeshes.forEach(function(m,i){
+            m.material.map = makeFaceTexture(m.userData.label, i===newHover);
+            m.material.needsUpdate = true;
+          });
+          setHovered(newHover);
+        }
+      }
+      function onClick(e) {
+        var vc=vcState.current; if(!vc) return;
+        getMousePos(e);
+        vc.raycaster.setFromCamera(vc.mouse, vc.camera);
+        // Check faces first
+        var faceHits = vc.raycaster.intersectObjects(vc.faceMeshes);
+        if(faceHits.length>0) {
+          var f = FACES[faceHits[0].object.userData.faceIndex];
+          flyToDir(f.normal);
+          return;
+        }
+      }
+      // Drag-to-orbit: dragging on the cube orbits the main camera
+      var isDragging = false, dragStart = {x:0, y:0}, didDrag = false;
+      function onDown(e) {
+        isDragging = true;
+        didDrag = false;
+        dragStart.x = e.clientX;
+        dragStart.y = e.clientY;
+        canvas.style.cursor = 'grabbing';
+      }
+      function onDrag(e) {
+        if (!isDragging) { onMove(e); return; }
+        var dx = e.clientX - dragStart.x;
+        var dy = e.clientY - dragStart.y;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag = true;
+        if (!didDrag) return;
+        dragStart.x = e.clientX;
+        dragStart.y = e.clientY;
+        // Rotate the main camera orbit (same as dragging the 3D view)
+        var S = state3d.current;
+        if (S && S.orbit) {
+          S.orbit.sph.theta -= dx * 0.007;
+          S.orbit.sph.phi -= dy * 0.007;
+          S.orbit.apply();
+          invalidate();
+        }
+      }
+      function onUp(e) {
+        if (isDragging && !didDrag) onClick(e); // click if no drag
+        isDragging = false;
+        canvas.style.cursor = 'pointer';
+      }
+      canvas.addEventListener('mousedown', onDown);
+      canvas.addEventListener('mousemove', onDrag);
+      canvas.addEventListener('mouseup', onUp);
+      canvas.addEventListener('mouseleave', function(){
+        isDragging = false;
+        canvas.style.cursor = 'pointer';
+        var vc=vcState.current; if(!vc) return;
+        vc.faceMeshes.forEach(function(m){
+          m.material.map = makeFaceTexture(m.userData.label, false);
+          m.material.needsUpdate = true;
+        });
+        setHovered(null);
+      });
+
+      return function() {
+        cancelAnimationFrame(animId);
+        renderer.dispose();
+      };
+    }, []);
+
+    return html`<div style=${{position:'absolute',top:'.5rem',right:'.5rem',pointerEvents:'auto',width:120,height:120}}>
+      <canvas ref=${canvasRef} width="120" height="120" style=${{cursor:'pointer',width:'100%',height:'100%'}} />
     </div>`;
   }
 
@@ -2973,11 +3423,90 @@ function startApp() {
 
   // ── Header ─────────────────────────────────────────────────────
 
+  // ── Project switching helpers ─────────────────────────────────
+
+  function _saveCurrentProjectData(s) {
+    var pid = s.activeProject||'default';
+    var data = {
+      clashes:s.clashes, issues:s.issues, rules:s.rules, floors:s.floors,
+      viewpoints:(s.viewpoints||[]).map(function(v){return Object.assign({},v,{snapshot:undefined})}),
+      measurements:s.measurements||[], filters:s.filters,
+      modelMeta:s.models.map(function(m){return {id:m.id,name:m.name,discipline:m.discipline,color:m.color,visible:m.visible};})
+    };
+    return idbSaveProjectData(pid, data);
+  }
+
+  function _switchProject(newProjId, s, d) {
+    // Save current project first
+    _saveCurrentProjectData(s).then(function(){
+      // Clear current scene
+      if(window._ccClearScene) window._ccClearScene();
+      // Reset state to fresh
+      d({t:'LOAD_PROJECT_STATE', data:{
+        models:[], clashes:[], issues:[], activeId:null, detecting:false,
+        sectionAxis:null, sectionPos:0.5, sectionCustom:null, sectionBox:null,
+        filters:Object.assign({},INIT_FILTERS), floors:[],
+        measurements:[], measureMode:null, viewpoints:[],
+        classifications:{}, hiddenClasses:{}, colorByClass:null,
+        floorPlan:null, _highlightedStorey:null
+      }});
+      d({t:'SET_PROJECT', id:newProjId});
+      setActiveProjectId(newProjId);
+      // Trigger reload of stored files for new project (ModelSidebar will handle via effect)
+      window._ccProjectSwitch = newProjId;
+      window.dispatchEvent(new Event('cc-project-switch'));
+    });
+  }
+
   function Header(props) {
     var s=props.s, d=props.d;
     var all = s.clashes.concat(s.issues);
     var openN = all.filter(function(x){return x.status==='open'}).length;
     var isDark = (s.prefs.theme||'dark')==='dark';
+    var projects = s.projectList||[];
+    var activeProj = projects.find(function(p){return p.id===s.activeProject;})||projects[0]||{name:'Default Project'};
+    var po = useState(false), projOpen=po[0], setProjOpen=po[1];
+    var rn = useState(false), renaming=rn[0], setRenaming=rn[1];
+    var rnv = useState(''), renameVal=rnv[0], setRenameVal=rnv[1];
+
+    function createProject() {
+      var name = prompt('New project name:');
+      if(!name||!name.trim()) return;
+      var id = uid();
+      var list = getProjects().concat([{id:id, name:name.trim(), createdAt:Date.now()}]);
+      saveProjects(list);
+      d({t:'SET_PROJECT_LIST', v:list});
+      _switchProject(id, s, d);
+      setProjOpen(false);
+    }
+    function switchTo(id) {
+      if(id===s.activeProject) { setProjOpen(false); return; }
+      _switchProject(id, s, d);
+      setProjOpen(false);
+    }
+    function deleteProject(id) {
+      if(id==='default') return;
+      if(!confirm('Delete this project and all its stored IFC files?')) return;
+      idbDeleteProjectFiles(id);
+      idbDeleteProjectData(id);
+      var list = getProjects().filter(function(p){return p.id!==id;});
+      saveProjects(list);
+      d({t:'SET_PROJECT_LIST', v:list});
+      if(s.activeProject===id) _switchProject('default', s, d);
+      setProjOpen(false);
+    }
+    function startRename(p) {
+      setRenaming(p.id);
+      setRenameVal(p.name);
+    }
+    function finishRename(id) {
+      if(!renameVal.trim()) { setRenaming(false); return; }
+      var list = getProjects().map(function(p){return p.id===id?Object.assign({},p,{name:renameVal.trim()}):p;});
+      saveProjects(list);
+      d({t:'SET_PROJECT_LIST', v:list});
+      setRenaming(false);
+    }
+
     return html`<header style=${{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'.5rem 1rem',background:'var(--bg-primary)',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
       <div style=${{display:'flex',alignItems:'center',gap:'.75rem'}}>
         <div style=${{width:32,height:32,background:'var(--accent)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center'}}><span style=${{color:'#fff',fontWeight:900,fontSize:14}}>CC</span></div>
@@ -2985,16 +3514,38 @@ function startApp() {
           <span style=${{fontWeight:600}}>ClashControl</span>
           <span style=${{color:'var(--text-muted)',fontSize:'.7rem',marginLeft:'.4rem',cursor:'default'}} title=${'Released: '+new Date(CC_VERSION.date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})+' at '+new Date(CC_VERSION.date).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+'\nBuild: '+CC_VERSION.hash}>v${CC_VERSION.v}</span>
         </div>
+        <div style=${{position:'relative'}}>
+          <button onClick=${function(){setProjOpen(!projOpen)}}
+            style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'.3rem',fontSize:'.7rem',padding:'.3rem .6rem'}}>
+            <span style=${{fontSize:'.6rem'}}>📁</span> ${activeProj.name} <span style=${{fontSize:'.5rem',color:'var(--text-faint)'}}>${projOpen?'▲':'▼'}</span>
+          </button>
+          ${projOpen && html`<div style=${{position:'absolute',top:'100%',left:0,marginTop:4,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,.4)',minWidth:220,zIndex:100,overflow:'hidden'}}>
+            ${projects.map(function(p){
+              var isActive = p.id===s.activeProject;
+              return html`<div key=${p.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.4rem .6rem',cursor:'pointer',background:isActive?'var(--accent)':'transparent',borderBottom:'1px solid var(--border-subtle)'}}>
+                ${renaming===p.id ? html`<input type="text" value=${renameVal} autofocus
+                  onInput=${function(e){setRenameVal(e.target.value)}}
+                  onKeyDown=${function(e){if(e.key==='Enter')finishRename(p.id);if(e.key==='Escape')setRenaming(false);}}
+                  onBlur=${function(){finishRename(p.id)}}
+                  style=${{...S_INPUT,fontSize:'.65rem',padding:'.15rem .3rem',flex:1}} />` :
+                html`<span onClick=${function(){switchTo(p.id)}} style=${{flex:1,fontSize:'.7rem',color:isActive?'#fff':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${p.name}</span>`}
+                <button onClick=${function(e){e.stopPropagation();startRename(p)}} style=${{...S_BTN,padding:'0 3px',background:'none',color:isActive?'#fff':'var(--text-faint)',fontSize:'.55rem'}} title="Rename">✎</button>
+                ${p.id!=='default' && html`<button onClick=${function(e){e.stopPropagation();deleteProject(p.id)}} style=${{...S_BTN,padding:'0 3px',background:'none',color:isActive?'#fff':'var(--text-faint)',fontSize:'.55rem'}} title="Delete project">✕</button>`}
+              </div>`;
+            })}
+            <button onClick=${createProject} style=${{...S_BTN,width:'100%',textAlign:'left',padding:'.4rem .6rem',background:'none',color:'var(--accent)',fontSize:'.7rem',borderRadius:0}}>+ New Project</button>
+          </div>`}
+        </div>
       </div>
       <div style=${{display:'flex',alignItems:'center',gap:'.5rem'}}>
         ${openN>0 && html`<span style=${{background:'#ef4444',color:'#fff',fontSize:'.65rem',padding:'.1rem .5rem',borderRadius:99}}>${openN} open</span>`}
         <button onClick=${function(){loadProject(d)}}
-          style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>
-          ↑ Load Project
+          style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',fontSize:'.65rem'}}>
+          ↑ .ccproj
         </button>
         <button onClick=${function(){saveProject(s)}} disabled=${!all.length&&!s.models.length}
-          style=${{...S_BTN,background:s.models.length||all.length?'#0f4c81':'var(--bg-secondary)',color:s.models.length||all.length?'#93c5fd':'var(--text-faint)',cursor:s.models.length||all.length?'pointer':'not-allowed'}}>
-          ↓ Save Project
+          style=${{...S_BTN,background:s.models.length||all.length?'#0f4c81':'var(--bg-secondary)',color:s.models.length||all.length?'#93c5fd':'var(--text-faint)',cursor:s.models.length||all.length?'pointer':'not-allowed',fontSize:'.65rem'}}>
+          ↓ .ccproj
         </button>
         <button onClick=${function(){importBCF(d)}}
           style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>
@@ -3034,6 +3585,69 @@ function startApp() {
     return 'architectural';
   }
 
+  // ── 2D Underlay Import ────────────────────────────────────────
+  function UnderlayImport(props) {
+    var d = props.d;
+    var fRef = useRef(null);
+    var ldSt = useState(false), isLoading = ldSt[0], setLoading = ldSt[1];
+
+    function importFile(file) {
+      var name = file.name;
+      var ext = name.split('.').pop().toLowerCase();
+      setLoading(true);
+
+      if (ext === 'dxf') {
+        file.text().then(function(text) {
+          var dxfData = parseDXF(text);
+          if (dxfData.entities.length === 0) { alert('No entities found in DXF file.'); setLoading(false); return; }
+          var result = renderDXFToCanvas(dxfData, 2048, 2048);
+          var canvasData = result.canvas.toDataURL('image/png');
+          d({ t: 'ADD_UNDERLAY', v: {
+            id: uid(), name: name, type: 'dxf', canvasData: canvasData,
+            offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 0.7, visible: true,
+            extentW: result.extentW, extentH: result.extentH, storeyName: null
+          }});
+          d({ t: 'UNDERLAY_MODE', v: 'view2d' });
+          setLoading(false);
+        }).catch(function(e) { alert('DXF parse error: ' + e.message); setLoading(false); });
+      } else if (ext === 'pdf') {
+        file.arrayBuffer().then(function(buf) {
+          return loadPDFPage(buf, 1);
+        }).then(function(result) {
+          var canvasData = result.canvas.toDataURL('image/png');
+          d({ t: 'ADD_UNDERLAY', v: {
+            id: uid(), name: name, type: 'pdf', canvasData: canvasData,
+            offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 0.7, visible: true,
+            extentW: result.extentW, extentH: result.extentH, storeyName: null,
+            numPages: result.numPages, page: 1, _pdfBuffer: buf
+          }});
+          d({ t: 'UNDERLAY_MODE', v: 'view2d' });
+          setLoading(false);
+        }).catch(function(e) { alert('PDF load error: ' + e.message); setLoading(false); });
+      } else if (ext === 'dwg') {
+        alert('DWG is a proprietary Autodesk format and cannot be parsed in the browser.\n\nPlease convert to DXF first:\n• AutoCAD: SAVEAS → DXF\n• FreeCAD: File → Export as DXF\n• ODA File Converter (free): dwg → dxf\n\nAlternatively, export as PDF for visual reference.');
+        setLoading(false);
+      } else {
+        alert('Unsupported format. Use .dxf or .pdf files.');
+        setLoading(false);
+      }
+    }
+
+    function onFileChange(e) {
+      var files = Array.prototype.slice.call(e.target.files || []);
+      files.forEach(importFile);
+      e.target.value = '';
+    }
+
+    return html`<div style=${{ marginTop: '.3rem' }}>
+      <input ref=${fRef} type="file" accept=".dxf,.pdf,.dwg" style=${{ display: 'none' }} onChange=${onFileChange} />
+      <button onClick=${function() { fRef.current && fRef.current.click(); }} disabled=${isLoading}
+        style=${{ ...S_BTN, width: '100%', fontSize: '.65rem', padding: '.3rem', background: 'none', color: 'var(--text-faint)', border: '1px dashed var(--border-subtle)' }}>
+        ${isLoading ? html`<span class="spin">⟳</span> Loading…` : '+ 2D Underlay (DXF / PDF)'}
+      </button>
+    </div>`;
+  }
+
   function ModelSidebar(props) {
     var s=props.s, d=props.d;
     var fileRef = useRef(null);
@@ -3042,12 +3656,9 @@ function startApp() {
     var er = useState(''), err=er[0], setErr=er[1];
     var dg = useState(false), dragging=dg[0], setDragging=dg[1];
 
-    // Auto-load stored IFC files from IndexedDB on first mount
-    var didRestore = useRef(false);
-    useEffect(function(){
-      if(didRestore.current) return;
-      didRestore.current = true;
-      idbGetAllFiles().then(function(stored){
+    // Auto-load stored IFC files from IndexedDB for the active project
+    function _restoreProjectFiles(projectId) {
+      idbGetProjectFiles(projectId||'default').then(function(stored){
         if(!stored.length) return;
         var chain = Promise.resolve();
         stored.forEach(function(entry){
@@ -3067,12 +3678,63 @@ function startApp() {
           });
         });
       });
+    }
+
+    var didRestore = useRef(false);
+    useEffect(function(){
+      if(didRestore.current) return;
+      didRestore.current = true;
+      _restoreProjectFiles(s.activeProject);
+      // Also restore saved project session data (clashes, issues, etc.)
+      idbGetProjectData(s.activeProject).then(function(data){
+        if(data) d({t:'LOAD_PROJECT_STATE', data:Object.assign({}, data, {models:s.models})});
+      });
+    },[]);
+
+    // Listen for project switch events
+    useEffect(function(){
+      function onSwitch() {
+        var newProjId = window._ccProjectSwitch||'default';
+        _restoreProjectFiles(newProjId);
+        // Also load saved project session data (clashes, issues, etc.)
+        idbGetProjectData(newProjId).then(function(data){
+          if(data) d({t:'LOAD_PROJECT_STATE', data:Object.assign({}, data, {models:s.models})});
+        });
+      }
+      window.addEventListener('cc-project-switch', onSwitch);
+      return function(){ window.removeEventListener('cc-project-switch', onSwitch); };
     },[]);
 
     function processFiles(files) {
       setErr('');
       var chain = Promise.resolve();
       files.forEach(function(f) {
+        var ext = f.name.split('.').pop().toLowerCase();
+        if (ext === 'dxf' || ext === 'pdf' || ext === 'dwg') {
+          // Delegate to underlay import
+          if (ext === 'dwg') { alert('DWG cannot be parsed in-browser. Convert to DXF first (AutoCAD SAVEAS, ODA File Converter, or FreeCAD).'); return; }
+          if (ext === 'dxf') {
+            chain = chain.then(function() {
+              return f.text().then(function(text) {
+                var dxfData = parseDXF(text);
+                if (dxfData.entities.length === 0) return;
+                var result = renderDXFToCanvas(dxfData, 2048, 2048);
+                d({ t: 'ADD_UNDERLAY', v: { id: uid(), name: f.name, type: 'dxf', canvasData: result.canvas.toDataURL('image/png'),
+                  offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 0.7, visible: true,
+                  extentW: result.extentW, extentH: result.extentH, storeyName: null }});
+              });
+            });
+          } else if (ext === 'pdf') {
+            chain = chain.then(function() {
+              return f.arrayBuffer().then(function(buf) { return loadPDFPage(buf, 1); }).then(function(result) {
+                d({ t: 'ADD_UNDERLAY', v: { id: uid(), name: f.name, type: 'pdf', canvasData: result.canvas.toDataURL('image/png'),
+                  offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 0.7, visible: true,
+                  extentW: result.extentW, extentH: result.extentH, storeyName: null, numPages: result.numPages, page: 1 }});
+              });
+            });
+          }
+          return;
+        }
         if (!f.name.toLowerCase().match(/\.ifc$/)) return;
         chain = chain.then(function() {
           setLoading(true);
@@ -3088,7 +3750,7 @@ function startApp() {
               var modelId = uid();
               d({t:'ADD_MODEL', v:{id:modelId, name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
               // Persist raw IFC file for reload across sessions
-              idbSaveFile(modelId, f.name, buf);
+              idbSaveFile(modelId, f.name, buf, s.activeProject||'default');
             });
           }).catch(function(er) {
             console.error(er);
@@ -3132,16 +3794,34 @@ function startApp() {
           <span style=${{fontSize:'.7rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Models</span>
           <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>${s.models.length} loaded</span>
         </div>
-        <input ref=${fileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${onFiles} />
+        <input ref=${fileRef} type="file" accept=".ifc,.dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${onFiles} />
         <button onClick=${function(){setErr('');fileRef.current&&fileRef.current.click()}} disabled=${loading}
           style=${{...S_BTN,width:'100%',background:dragging?'#1e3a5f':'var(--bg-secondary)',color:dragging?'#93c5fd':'var(--text-secondary)',border:dragging?'2px dashed #3b82f6':'1px dashed var(--border)',display:'flex',alignItems:'center',justifyContent:'center',gap:'.3rem',transition:'all .15s'}}>
-          ${loading?html`<span class="spin">⟳</span> ${loadMsg||'Loading…'}`:dragging?'Drop IFC files here':'+ Add IFC (or drag & drop)'}
+          ${loading?html`<span class="spin">⟳</span> ${loadMsg||'Loading…'}`:dragging?'Drop files here':'+ Add IFC / DXF / PDF'}
         </button>
+        <${UnderlayImport} d=${d} />
         ${err && html`<div style=${{marginTop:'.4rem',padding:'.4rem',background:'#450a0a',border:'1px solid #7f1d1d',borderRadius:6,fontSize:'.7rem',color:'#fca5a5',whiteSpace:'pre-line'}}>${err}</div>`}
       </div>
       <div style=${{flex:splitPct,overflowY:'auto',padding:'.4rem',display:'flex',flexDirection:'column',gap:'.25rem',minHeight:0}}>
         ${s.models.length===0 && html`<div style=${{textAlign:'center',color:'var(--text-faint)',fontSize:'.75rem',padding:'2rem 0'}}><div style=${{fontSize:'2rem',marginBottom:'.3rem'}}>📁</div>No models loaded</div>`}
         ${s.models.map(function(m){return html`<${ModelCard} key=${m.id} m=${m} d=${d} />`})}
+        ${s.underlays.length > 0 && html`<div style=${{marginTop:'.4rem',borderTop:'1px solid var(--border-subtle)',paddingTop:'.4rem'}}>
+          <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}}>
+            <span style=${{fontSize:'.6rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>2D Underlays</span>
+            <button onClick=${function(){d({t:'UNDERLAY_MODE',v:'view2d'})}}
+              style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:'#7c3aed',color:'#fff'}}>View 2D</button>
+          </div>
+          ${s.underlays.map(function(ul){
+            return html`<div key=${ul.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.25rem .3rem',background:s.activeUnderlay===ul.id?'var(--bg-tertiary)':'transparent',borderRadius:4,cursor:'pointer'}}
+              onClick=${function(){d({t:'SET_UNDERLAY',id:ul.id})}}>
+              <span style=${{width:8,height:8,borderRadius:2,background:ul.type==='dxf'?'#22c55e':'#ef4444',flexShrink:0}}></span>
+              <span style=${{fontSize:'.6rem',color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${ul.name}</span>
+              <span style=${{fontSize:'.5rem',color:'var(--text-faint)',textTransform:'uppercase'}}>${ul.type}</span>
+              <button onClick=${function(e){e.stopPropagation();d({t:'DEL_UNDERLAY',id:ul.id})}}
+                style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>✕</button>
+            </div>`;
+          })}
+        </div>`}
       </div>
       <div onMouseDown=${onSplitDown}
         style=${{height:6,flexShrink:0,cursor:'row-resize',background:'var(--bg-secondary)',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -3618,7 +4298,7 @@ function startApp() {
         ${isClashTab && html`<div>
           <span style=${FL}>Type</span>
           <div style=${{display:'flex',gap:'.2rem'}}>
-            ${['all','hard','soft'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:'UPD_FILTERS',u:{type:v}})}}
+            ${['all','hard','soft','duplicate'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:'UPD_FILTERS',u:{type:v}})}}
               style=${PILL(f.type===v)}>${v==='all'?'All':v.charAt(0).toUpperCase()+v.slice(1)}</button>`})}
           </div>
         </div>`}
@@ -3733,7 +4413,12 @@ function startApp() {
       ${s.tab==='issues' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
         <button onClick=${function(){d({t:'MODAL',v:true})}} style=${{...S_BTN,width:'100%',background:'#2563eb',color:'#fff'}}>+ New Issue</button>
       </div>`}
-      ${!isExplorerTab && html`<${VirtualList} items=${items} activeId=${s.activeId} d=${d} isClash=${isClashTab} prefs=${s.prefs} />`}
+      ${!isExplorerTab && isClashTab && items.length>0 && html`<div style=${{padding:'.25rem .5rem',borderBottom:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:'.3rem',flexShrink:0}}>
+        <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Group:</span>
+        ${['none','storey','discipline','status','type'].map(function(g){return html`<button key=${g} onClick=${function(){d({t:'CLASH_GROUP_BY',v:g})}}
+          style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:s.clashGroupBy===g?'#2563eb':'var(--bg-secondary)',color:s.clashGroupBy===g?'#fff':'var(--text-faint)'}}>${g==='none'?'None':g.charAt(0).toUpperCase()+g.slice(1)}</button>`})}
+      </div>`}
+      ${!isExplorerTab && html`<${VirtualList} items=${items} activeId=${s.activeId} d=${d} isClash=${isClashTab} prefs=${s.prefs} groupBy=${isClashTab?s.clashGroupBy:'none'} />`}
     </aside>`;
   }
 
@@ -3790,18 +4475,69 @@ function startApp() {
     </div>`;
   }
 
+  // Group clashes by a field
+  function groupClashes(items, groupBy) {
+    if (!groupBy || groupBy === 'none') return null;
+    var groups = {};
+    items.forEach(function(it) {
+      var key;
+      switch(groupBy) {
+        case 'storey': key = it.elemAStorey || it.elemBStorey || 'Unknown'; break;
+        case 'discipline': key = (it.disciplines||[]).sort().join(' ↔ ') || 'Unknown'; break;
+        case 'status': key = it.status || 'open'; break;
+        case 'type': key = it.type || 'hard'; break;
+        default: key = 'All';
+      }
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(it);
+    });
+    return Object.keys(groups).sort().map(function(k) {
+      return { label: k, items: groups[k] };
+    });
+  }
+
   // Virtualized list: only render visible rows for large lists
   var ROW_HEIGHT = 65; // approx height of IssueRow in px
   function VirtualList(props) {
     var items=props.items, activeId=props.activeId, d=props.d, isClash=props.isClash, prefs=props.prefs;
+    var groupBy = props.groupBy || 'none';
     var scrollRef = useRef(null);
     var _st = useState(0), scrollTop=_st[0], setScrollTop=_st[1];
+    var coll = useState({}), collapsed=coll[0], setCollapsed=coll[1];
     if(items.length===0) return html`<div style=${{flex:1,overflowY:'auto'}}>
       <div style=${{textAlign:'center',color:'var(--text-faint)',fontSize:'.75rem',padding:'2.5rem 1rem'}}>
         <div style=${{fontSize:'2rem',marginBottom:'.3rem'}}>${isClash?'✅':'📋'}</div>
         ${'No '+(isClash?'clashes found yet':'issues yet')}
       </div>
     </div>`;
+    // Grouped rendering
+    var groups = groupClashes(items, groupBy);
+    if (groups) {
+      function toggleGroup(label) {
+        setCollapsed(function(prev) {
+          var n = Object.assign({}, prev);
+          n[label] = !n[label];
+          return n;
+        });
+      }
+      return html`<div style=${{flex:1,overflowY:'auto'}}>
+        ${groups.map(function(g) {
+          var isOpen = !collapsed[g.label];
+          var statusColors = {open:'#ef4444',in_progress:'#f59e0b',resolved:'#22c55e',closed:'#64748b',hard:'#ef4444',soft:'#f59e0b',duplicate:'#8b5cf6'};
+          var dotColor = statusColors[g.label] || '#3b82f6';
+          return html`<div key=${g.label}>
+            <div onClick=${function(){toggleGroup(g.label)}}
+              style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.35rem .5rem',cursor:'pointer',background:'var(--bg-tertiary)',borderBottom:'1px solid var(--border-subtle)',position:'sticky',top:0,zIndex:1}}>
+              <span style=${{fontSize:'.55rem',color:'var(--text-faint)'}}>${isOpen?'▼':'▶'}</span>
+              <span style=${{width:8,height:8,borderRadius:'50%',background:dotColor,flexShrink:0}}></span>
+              <span style=${{fontSize:'.65rem',fontWeight:600,color:'var(--text-primary)',flex:1}}>${g.label}</span>
+              <span style=${{fontSize:'.6rem',color:'var(--text-faint)',background:'var(--bg-secondary)',padding:'.1rem .35rem',borderRadius:10}}>${g.items.length}</span>
+            </div>
+            ${isOpen && g.items.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} />`})}
+          </div>`;
+        })}
+      </div>`;
+    }
     // For small lists, render all (no virtualization overhead)
     if(items.length <= 50) return html`<div style=${{flex:1,overflowY:'auto'}}>
       ${items.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} />`})}
@@ -3894,45 +4630,67 @@ function startApp() {
 
   function ClashBar(props) {
     var s=props.s, d=props.d, r=s.rules;
+    var adv=useState(false), showAdv=adv[0], setShowAdv=adv[1];
     function run() {
-      if(s.models.length<2){alert('Load at least 2 IFC models first.');return;}
+      if(s.models.length<1||(r.modelA!=='all'&&r.modelB!=='all'&&r.modelA===r.modelB&&s.models.length<1)){alert('Load IFC models first.');return;}
+      if(!r.hard&&!r.soft&&!r.duplicates){alert('Enable at least one detection type (Hard, Soft, or Duplicates).');return;}
       d({t:'DETECTING'});
       setTimeout(function(){ d({t:'SET_CLASHES',v:detectClashes(s.models,s.rules)}); d({t:'TAB',v:'clashes'}); },20);
     }
-    var canRun = !s.detecting && s.models.length>=2;
-    return html`<div style=${{background:'var(--bg-primary)',borderTop:'1px solid var(--border-subtle)',padding:'.45rem 1rem',display:'flex',alignItems:'center',gap:'.6rem',flexShrink:0,flexWrap:'wrap'}}>
-      <span style=${{fontSize:'.7rem',fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.05em',flexShrink:0}}>Clash Detection</span>
-      <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>A:</span>
-      <select value=${r.modelA} onChange=${function(e){d({t:'UPD_RULES',u:{modelA:e.target.value}})}}
-        style=${{fontSize:'.7rem',padding:'.15rem .3rem',borderRadius:4,maxWidth:100}}>
-        <option value="all">All</option>
-        ${s.models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
-      </select>
-      <span style=${{color:'var(--text-faint)'}}>↔</span>
-      <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>B:</span>
-      <select value=${r.modelB} onChange=${function(e){d({t:'UPD_RULES',u:{modelB:e.target.value}})}}
-        style=${{fontSize:'.7rem',padding:'.15rem .3rem',borderRadius:4,maxWidth:100}}>
-        <option value="all">All</option>
-        ${s.models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
-      </select>
-      <label style=${{display:'flex',alignItems:'center',gap:'.2rem',cursor:'pointer'}}>
-        <input type="checkbox" checked=${r.hard} onChange=${function(e){d({t:'UPD_RULES',u:{hard:e.target.checked}})}} />
-        <span style=${{fontSize:'.7rem',color:'var(--text-secondary)'}}>Hard</span>
-      </label>
-      <label style=${{display:'flex',alignItems:'center',gap:'.2rem',cursor:'pointer'}}>
-        <input type="checkbox" checked=${r.soft} onChange=${function(e){d({t:'UPD_RULES',u:{soft:e.target.checked}})}} />
-        <span style=${{fontSize:'.7rem',color:'var(--text-secondary)'}}>Soft clashes</span>
-      </label>
-      ${r.soft && html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem'}} title="Max gap between elements to count as a clash. Higher = more clashes detected.">
-        <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Max gap:</span>
-        <input type="range" min="0" max="500" step="5" value=${r.clearance}
-          onInput=${function(e){d({t:'UPD_RULES',u:{clearance:+e.target.value}})}} style=${{width:70}} />
-        <span style=${{fontSize:'.7rem',color:'var(--text-faint)',width:42}}>${r.clearance} mm</span>
+    var canRun = !s.detecting && s.models.length>=1;
+    var CBLBL={fontSize:'.65rem',color:'var(--text-secondary)',display:'flex',alignItems:'center',gap:'.2rem',cursor:'pointer'};
+    return html`<div style=${{background:'var(--bg-primary)',borderTop:'1px solid var(--border-subtle)',padding:'.45rem 1rem',display:'flex',flexDirection:'column',gap:'.3rem',flexShrink:0}}>
+      <div style=${{display:'flex',alignItems:'center',gap:'.6rem',flexWrap:'wrap'}}>
+        <span style=${{fontSize:'.7rem',fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.05em',flexShrink:0}}>Clash Detection</span>
+        <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>A:</span>
+        <select value=${r.modelA} onChange=${function(e){d({t:'UPD_RULES',u:{modelA:e.target.value}})}}
+          style=${{fontSize:'.7rem',padding:'.15rem .3rem',borderRadius:4,maxWidth:100}}>
+          <option value="all">All</option>
+          ${s.models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+        </select>
+        <span style=${{color:'var(--text-faint)'}}>↔</span>
+        <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>B:</span>
+        <select value=${r.modelB} onChange=${function(e){d({t:'UPD_RULES',u:{modelB:e.target.value}})}}
+          style=${{fontSize:'.7rem',padding:'.15rem .3rem',borderRadius:4,maxWidth:100}}>
+          <option value="all">All</option>
+          ${s.models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+        </select>
+        <label style=${CBLBL}>
+          <input type="checkbox" checked=${r.hard} onChange=${function(e){d({t:'UPD_RULES',u:{hard:e.target.checked}})}} />
+          <span>Hard</span>
+        </label>
+        <label style=${CBLBL}>
+          <input type="checkbox" checked=${r.soft} onChange=${function(e){d({t:'UPD_RULES',u:{soft:e.target.checked}})}} />
+          <span>Soft/Clearance</span>
+        </label>
+        <label style=${CBLBL}>
+          <input type="checkbox" checked=${r.duplicates} onChange=${function(e){d({t:'UPD_RULES',u:{duplicates:e.target.checked}})}} />
+          <span>Duplicates</span>
+        </label>
+        <button onClick=${function(){setShowAdv(!showAdv)}} style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .4rem',background:'none',color:'var(--text-faint)',textDecoration:'underline'}}>${showAdv?'Less ▲':'More ▼'}</button>
+        <button onClick=${run} disabled=${!canRun}
+          style=${{...S_BTN,marginLeft:'auto',background:canRun?'#2563eb':'var(--bg-secondary)',color:canRun?'#fff':'var(--text-faint)',cursor:canRun?'pointer':'not-allowed',fontWeight:600}}>
+          ${s.detecting?html`<span class="spin">⟳</span> …`:'▶ Run'}
+        </button>
+      </div>
+      ${showAdv && html`<div style=${{display:'flex',alignItems:'center',gap:'.8rem',flexWrap:'wrap',padding:'.2rem 0',borderTop:'1px solid var(--border-subtle)',paddingTop:'.4rem'}}>
+        ${r.soft && html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem'}} title="Max gap between elements for soft/clearance clash detection">
+          <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Clearance:</span>
+          <input type="range" min="0" max="500" step="5" value=${r.clearance}
+            onInput=${function(e){d({t:'UPD_RULES',u:{clearance:+e.target.value}})}} style=${{width:70}} />
+          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',width:42}}>${r.clearance}mm</span>
+        </div>`}
+        <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}} title="Ignore hard clashes with less than this penetration depth (mm)">
+          <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Hard tolerance:</span>
+          <input type="range" min="0" max="100" step="1" value=${r.hardTolerance||0}
+            onInput=${function(e){d({t:'UPD_RULES',u:{hardTolerance:+e.target.value}})}} style=${{width:60}} />
+          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',width:36}}>${r.hardTolerance||0}mm</span>
+        </div>
+        <label style=${CBLBL} title="Only re-check elements that changed since last run (faster for model updates)">
+          <input type="checkbox" checked=${r.changeAware} onChange=${function(e){d({t:'UPD_RULES',u:{changeAware:e.target.checked}})}} />
+          <span>Change-aware</span>
+        </label>
       </div>`}
-      <button onClick=${run} disabled=${!canRun}
-        style=${{...S_BTN,marginLeft:'auto',background:canRun?'#2563eb':'var(--bg-secondary)',color:canRun?'#fff':'var(--text-faint)',cursor:canRun?'pointer':'not-allowed',fontWeight:600}}>
-        ${s.detecting?html`<span class="spin">⟳</span> …`:'▶ Run'}
-      </button>
     </div>`;
   }
 
@@ -4145,6 +4903,505 @@ function startApp() {
     return EB;
   })();
 
+  // ── Minimal DXF Parser ────────────────────────────────────────
+  // Parses LINE, LWPOLYLINE, POLYLINE, CIRCLE, ARC, TEXT entities from DXF ASCII files
+  function parseDXF(text) {
+    var lines = text.split(/\r?\n/);
+    var entities = [], i = 0;
+    // Find ENTITIES section
+    while (i < lines.length) {
+      if (lines[i].trim() === 'ENTITIES') { i++; break; }
+      i++;
+    }
+    var bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    function addPt(x, y) {
+      if (x < bounds.minX) bounds.minX = x;
+      if (y < bounds.minY) bounds.minY = y;
+      if (x > bounds.maxX) bounds.maxX = x;
+      if (y > bounds.maxY) bounds.maxY = y;
+    }
+    function readEntity() {
+      var type = lines[i].trim(); i++;
+      var ent = { type: type, props: {} };
+      var pts = [];
+      while (i < lines.length - 1) {
+        var code = parseInt(lines[i].trim(), 10);
+        var val = (lines[i + 1] || '').trim();
+        i += 2;
+        if (code === 0) { i -= 2; break; }
+        if (code === 10 || code === 11) ent.props['x' + (code === 11 ? '2' : '1')] = parseFloat(val);
+        else if (code === 20 || code === 21) ent.props['y' + (code === 21 ? '2' : '1')] = parseFloat(val);
+        else if (code === 40) ent.props.radius = parseFloat(val);
+        else if (code === 50) ent.props.startAngle = parseFloat(val);
+        else if (code === 51) ent.props.endAngle = parseFloat(val);
+        else if (code === 1) ent.props.text = val;
+        else if (code === 8) ent.props.layer = val;
+        else if (code === 62) ent.props.color = parseInt(val, 10);
+        // LWPOLYLINE vertex collection
+        if (type === 'LWPOLYLINE') {
+          if (code === 10) { pts.push({ x: parseFloat(val) }); }
+          else if (code === 20 && pts.length > 0) { pts[pts.length - 1].y = parseFloat(val); }
+        }
+      }
+      if (type === 'LWPOLYLINE') ent.vertices = pts;
+      return ent;
+    }
+    while (i < lines.length) {
+      var code2 = parseInt(lines[i].trim(), 10);
+      if (code2 === 0) {
+        var val2 = (lines[i + 1] || '').trim();
+        i += 2;
+        if (val2 === 'ENDSEC' || val2 === 'EOF') break;
+        i -= 2; i += 2; // skip code 0
+        // Parse the entity
+        var ent = readEntity();
+        if (ent.type === 'LINE') {
+          addPt(ent.props.x1, ent.props.y1); addPt(ent.props.x2, ent.props.y2);
+          entities.push(ent);
+        } else if (ent.type === 'LWPOLYLINE' && ent.vertices) {
+          ent.vertices.forEach(function(v) { if (v.x != null && v.y != null) addPt(v.x, v.y); });
+          entities.push(ent);
+        } else if (ent.type === 'CIRCLE' || ent.type === 'ARC') {
+          var r = ent.props.radius || 0;
+          addPt(ent.props.x1 - r, ent.props.y1 - r);
+          addPt(ent.props.x1 + r, ent.props.y1 + r);
+          entities.push(ent);
+        } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+          addPt(ent.props.x1, ent.props.y1);
+          entities.push(ent);
+        }
+      } else { i++; }
+    }
+    return { entities: entities, bounds: bounds };
+  }
+
+  // Render DXF entities to a canvas
+  function renderDXFToCanvas(dxfData, width, height) {
+    var canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    var ctx = canvas.getContext('2d');
+    var b = dxfData.bounds;
+    var dw = b.maxX - b.minX || 1, dh = b.maxY - b.minY || 1;
+    var pad = 0.05;
+    var scale = Math.min(width * (1 - 2 * pad) / dw, height * (1 - 2 * pad) / dh);
+    var ox = (width - dw * scale) / 2 - b.minX * scale;
+    var oy = (height + dh * scale) / 2 + b.minY * scale; // flip Y
+    function tx(x) { return x * scale + ox; }
+    function ty(y) { return -y * scale + oy; }
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; ctx.lineCap = 'round';
+    dxfData.entities.forEach(function(ent) {
+      if (ent.type === 'LINE') {
+        ctx.beginPath();
+        ctx.moveTo(tx(ent.props.x1), ty(ent.props.y1));
+        ctx.lineTo(tx(ent.props.x2), ty(ent.props.y2));
+        ctx.stroke();
+      } else if (ent.type === 'LWPOLYLINE' && ent.vertices) {
+        ctx.beginPath();
+        ent.vertices.forEach(function(v, idx) {
+          if (v.x == null || v.y == null) return;
+          if (idx === 0) ctx.moveTo(tx(v.x), ty(v.y));
+          else ctx.lineTo(tx(v.x), ty(v.y));
+        });
+        ctx.stroke();
+      } else if (ent.type === 'CIRCLE') {
+        ctx.beginPath();
+        ctx.arc(tx(ent.props.x1), ty(ent.props.y1), (ent.props.radius || 1) * scale, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (ent.type === 'ARC') {
+        var sa = -(ent.props.startAngle || 0) * Math.PI / 180;
+        var ea = -(ent.props.endAngle || 360) * Math.PI / 180;
+        ctx.beginPath();
+        ctx.arc(tx(ent.props.x1), ty(ent.props.y1), (ent.props.radius || 1) * scale, sa, ea, true);
+        ctx.stroke();
+      } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = Math.max(8, 12 * scale / 100) + 'px monospace';
+        ctx.fillText(ent.props.text || '', tx(ent.props.x1), ty(ent.props.y1));
+      }
+    });
+    return { canvas: canvas, originX: ox, originY: oy, scale: scale, extentW: dw, extentH: dh };
+  }
+
+  // Load PDF page to canvas
+  function loadPDFPage(arrayBuffer, pageNum) {
+    if (!window.pdfjsLib) return Promise.reject(new Error('PDF.js not loaded'));
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    return pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise.then(function(doc) {
+      return doc.getPage(pageNum || 1).then(function(page) {
+        var vp = page.getViewport({ scale: 2 });
+        var canvas = document.createElement('canvas');
+        canvas.width = vp.width; canvas.height = vp.height;
+        var ctx = canvas.getContext('2d');
+        return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function() {
+          return { canvas: canvas, width: vp.width, height: vp.height, numPages: doc.numPages,
+                   extentW: vp.width / 2, extentH: vp.height / 2 }; // extent in "points"
+        });
+      });
+    });
+  }
+
+  // ── 2D View Component ──────────────────────────────────────────
+  function View2D(props) {
+    var s = props.s, d = props.d;
+    var canvasRef = useRef(null);
+    var panRef = useRef({ x: 0, y: 0, zoom: 1, dragging: false, lx: 0, ly: 0 });
+    var markupPtsRef = useRef([]);
+    var activeUl = s.underlays.find(function(u) { return u.id === s.activeUnderlay; });
+
+    function redraw() {
+      var cvs = canvasRef.current; if (!cvs) return;
+      var ctx = cvs.getContext('2d');
+      var w = cvs.width, h = cvs.height;
+      var pan = panRef.current;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(w / 2 + pan.x, h / 2 + pan.y);
+      ctx.scale(pan.zoom, pan.zoom);
+
+      // Draw grid
+      ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 0.5 / pan.zoom;
+      var gridStep = 50;
+      var range = Math.max(w, h) / pan.zoom;
+      for (var gx = -range; gx < range; gx += gridStep) {
+        ctx.beginPath(); ctx.moveTo(gx, -range); ctx.lineTo(gx, range); ctx.stroke();
+      }
+      for (var gy = -range; gy < range; gy += gridStep) {
+        ctx.beginPath(); ctx.moveTo(-range, gy); ctx.lineTo(range, gy); ctx.stroke();
+      }
+      // Origin cross
+      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2 / pan.zoom;
+      ctx.beginPath(); ctx.moveTo(-15 / pan.zoom, 0); ctx.lineTo(15 / pan.zoom, 0); ctx.stroke();
+      ctx.strokeStyle = '#22c55e';
+      ctx.beginPath(); ctx.moveTo(0, -15 / pan.zoom); ctx.lineTo(0, 15 / pan.zoom); ctx.stroke();
+
+      // Draw each visible underlay
+      s.underlays.forEach(function(ul) {
+        if (!ul.visible || !ul.canvasData) return;
+        ctx.save();
+        ctx.globalAlpha = ul.opacity != null ? ul.opacity : 0.7;
+        ctx.translate(ul.offsetX || 0, ul.offsetY || 0);
+        ctx.rotate((ul.rotation || 0) * Math.PI / 180);
+        var sc = ul.scale || 1;
+        var img = ul._imgEl;
+        if (!img) {
+          img = new Image();
+          img.src = ul.canvasData;
+          ul._imgEl = img;
+          img.onload = function() { redraw(); };
+        }
+        if (img.complete && img.naturalWidth > 0) {
+          var dw = (ul.extentW || img.naturalWidth) * sc;
+          var dh = (ul.extentH || img.naturalHeight) * sc;
+          ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+        }
+        ctx.restore();
+      });
+
+      // Draw 3D model floor plan outline (if in compare mode)
+      if (s.underlayMode === 'compare' && s.floorPlan && window._cc2DOutlines) {
+        ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2 / pan.zoom; ctx.globalAlpha = 0.8;
+        window._cc2DOutlines.forEach(function(seg) {
+          ctx.beginPath();
+          ctx.moveTo(seg[0], -seg[1]); // flip Z to Y
+          ctx.lineTo(seg[2], -seg[3]);
+          ctx.stroke();
+        });
+        ctx.globalAlpha = 1;
+      }
+
+      // Draw markups
+      ctx.lineWidth = 2 / pan.zoom; ctx.lineCap = 'round';
+      s.markups.forEach(function(mk) {
+        ctx.strokeStyle = mk.color || '#f59e0b'; ctx.fillStyle = mk.color || '#f59e0b';
+        if (mk.type === 'line' && mk.points && mk.points.length >= 4) {
+          ctx.beginPath();
+          ctx.moveTo(mk.points[0], mk.points[1]);
+          ctx.lineTo(mk.points[2], mk.points[3]);
+          ctx.stroke();
+        } else if (mk.type === 'rect' && mk.points && mk.points.length >= 4) {
+          ctx.strokeRect(mk.points[0], mk.points[1], mk.points[2] - mk.points[0], mk.points[3] - mk.points[1]);
+        } else if (mk.type === 'arrow' && mk.points && mk.points.length >= 4) {
+          ctx.beginPath();
+          ctx.moveTo(mk.points[0], mk.points[1]);
+          ctx.lineTo(mk.points[2], mk.points[3]);
+          ctx.stroke();
+          // Arrowhead
+          var dx = mk.points[2] - mk.points[0], dy = mk.points[3] - mk.points[1];
+          var ang = Math.atan2(dy, dx);
+          var hl = 10 / pan.zoom;
+          ctx.beginPath();
+          ctx.moveTo(mk.points[2], mk.points[3]);
+          ctx.lineTo(mk.points[2] - hl * Math.cos(ang - 0.4), mk.points[3] - hl * Math.sin(ang - 0.4));
+          ctx.moveTo(mk.points[2], mk.points[3]);
+          ctx.lineTo(mk.points[2] - hl * Math.cos(ang + 0.4), mk.points[3] - hl * Math.sin(ang + 0.4));
+          ctx.stroke();
+        } else if (mk.type === 'text' && mk.points && mk.text) {
+          ctx.font = Math.max(10, 14 / pan.zoom) + 'px sans-serif';
+          ctx.fillText(mk.text, mk.points[0], mk.points[1]);
+        }
+      });
+
+      // Current markup in progress
+      if (s.markupTool && markupPtsRef.current.length >= 2) {
+        ctx.strokeStyle = '#f59e0b'; ctx.setLineDash([5 / pan.zoom, 5 / pan.zoom]);
+        var mp = markupPtsRef.current;
+        if (s.markupTool === 'line' || s.markupTool === 'arrow') {
+          ctx.beginPath(); ctx.moveTo(mp[0], mp[1]); ctx.lineTo(mp[2] || mp[0], mp[3] || mp[1]); ctx.stroke();
+        } else if (s.markupTool === 'rect') {
+          ctx.strokeRect(mp[0], mp[1], (mp[2] || mp[0]) - mp[0], (mp[3] || mp[1]) - mp[1]);
+        }
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
+    }
+
+    useEffect(function() { redraw(); }, [s.underlays, s.activeUnderlay, s.markups, s.markupTool, s.underlayMode, s.floorPlan]);
+
+    useEffect(function() {
+      var cvs = canvasRef.current; if (!cvs) return;
+      var el = cvs.parentElement;
+      function resize() { cvs.width = el.clientWidth; cvs.height = el.clientHeight; redraw(); }
+      resize();
+      var obs = new ResizeObserver(resize);
+      obs.observe(el);
+      return function() { obs.disconnect(); };
+    }, []);
+
+    function toWorld(e) {
+      var cvs = canvasRef.current; if (!cvs) return [0, 0];
+      var rect = cvs.getBoundingClientRect();
+      var pan = panRef.current;
+      var px = e.clientX - rect.left - cvs.width / 2 - pan.x;
+      var py = e.clientY - rect.top - cvs.height / 2 - pan.y;
+      return [px / pan.zoom, py / pan.zoom];
+    }
+
+    function onDown(e) {
+      if (s.markupTool && s.markupTool !== 'erase') {
+        var pt = toWorld(e);
+        if (s.markupTool === 'text') {
+          var txt = prompt('Enter text:');
+          if (txt) d({ t: 'ADD_MARKUP', v: { id: uid(), type: 'text', points: pt, color: '#f59e0b', text: txt } });
+          return;
+        }
+        markupPtsRef.current = [pt[0], pt[1], pt[0], pt[1]];
+        return;
+      }
+      panRef.current.dragging = true;
+      panRef.current.lx = e.clientX; panRef.current.ly = e.clientY;
+    }
+    function onMove(e) {
+      if (s.markupTool && markupPtsRef.current.length >= 2) {
+        var pt = toWorld(e);
+        markupPtsRef.current[2] = pt[0]; markupPtsRef.current[3] = pt[1];
+        redraw();
+        return;
+      }
+      if (!panRef.current.dragging) return;
+      panRef.current.x += e.clientX - panRef.current.lx;
+      panRef.current.y += e.clientY - panRef.current.ly;
+      panRef.current.lx = e.clientX; panRef.current.ly = e.clientY;
+      redraw();
+    }
+    function onUp() {
+      if (s.markupTool && markupPtsRef.current.length >= 4) {
+        var mp = markupPtsRef.current;
+        d({ t: 'ADD_MARKUP', v: { id: uid(), type: s.markupTool, points: [mp[0], mp[1], mp[2], mp[3]], color: '#f59e0b' } });
+        markupPtsRef.current = [];
+      }
+      panRef.current.dragging = false;
+    }
+    function onWheel(e) {
+      e.preventDefault();
+      var factor = e.deltaY > 0 ? 0.9 : 1.1;
+      panRef.current.zoom = Math.max(0.05, Math.min(50, panRef.current.zoom * factor));
+      redraw();
+    }
+
+    var toolBtns = ['line', 'rect', 'arrow', 'text', 'erase'];
+    var toolIcons = { line: '╱', rect: '▭', arrow: '→', text: 'T', erase: '✕' };
+    return html`<div style=${{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+      <canvas ref=${canvasRef} onMouseDown=${onDown} onMouseMove=${onMove} onMouseUp=${onUp} onWheel=${onWheel}
+        style=${{ width: '100%', height: '100%', cursor: s.markupTool ? 'crosshair' : 'grab' }} />
+      <div style=${{ position: 'absolute', top: '.5rem', left: '.5rem', display: 'flex', gap: '.2rem', pointerEvents: 'auto' }}>
+        ${toolBtns.map(function(t) {
+          return html`<button key=${t} onClick=${function() { d({ t: 'MARKUP_TOOL', v: s.markupTool === t ? null : t }); }}
+            style=${{ ...S_BTN, fontSize: '.65rem', padding: '.25rem .4rem',
+              background: s.markupTool === t ? '#2563eb' : 'var(--overlay-bg)',
+              color: s.markupTool === t ? '#fff' : 'var(--text-muted)',
+              border: '1px solid var(--border)' }} title=${t}>${toolIcons[t]}</button>`;
+        })}
+        ${s.markups.length > 0 && html`<button onClick=${function() { d({ t: 'CLEAR_MARKUPS' }); }}
+          style=${{ ...S_BTN, fontSize: '.55rem', padding: '.25rem .4rem', background: 'var(--overlay-bg)', color: '#ef4444', border: '1px solid var(--border)' }}>Clear all</button>`}
+      </div>
+      <div style=${{ position: 'absolute', top: '.5rem', right: '.5rem', display: 'flex', gap: '.3rem', pointerEvents: 'auto' }}>
+        <button onClick=${function() { d({ t: 'UNDERLAY_MODE', v: null }); }}
+          style=${{ ...S_BTN, fontSize: '.6rem', padding: '.2rem .5rem', background: '#2563eb', color: '#fff', border: '1px solid #3b82f6' }}>Back to 3D</button>
+        ${s.floorPlan && html`<button onClick=${function() { d({ t: 'UNDERLAY_MODE', v: s.underlayMode === 'compare' ? 'view2d' : 'compare' }); }}
+          style=${{ ...S_BTN, fontSize: '.6rem', padding: '.2rem .5rem',
+            background: s.underlayMode === 'compare' ? '#7c3aed' : 'var(--overlay-bg)',
+            color: s.underlayMode === 'compare' ? '#fff' : 'var(--text-muted)',
+            border: '1px solid var(--border)' }}>${s.underlayMode === 'compare' ? 'Compare ON' : 'Compare'}</button>`}
+      </div>
+      ${activeUl && html`<div style=${{ position: 'absolute', bottom: '.5rem', left: '.5rem', background: 'var(--overlay-bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '.4rem .6rem', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', gap: '.3rem', maxWidth: 220 }}>
+        <div style=${{ fontSize: '.65rem', fontWeight: 600, color: 'var(--text-primary)' }}>${activeUl.name}</div>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '.3rem' }}>
+          Opacity <input type="range" min="0" max="100" value=${(activeUl.opacity || 0.7) * 100}
+            onInput=${function(e) { d({ t: 'UPD_UNDERLAY', id: activeUl.id, u: { opacity: +e.target.value / 100 } }); }}
+            style=${{ width: 80 }} /> ${Math.round((activeUl.opacity || 0.7) * 100)}%</label>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '.3rem' }}>
+          Scale <input type="range" min="1" max="500" value=${Math.round((activeUl.scale || 1) * 100)}
+            onInput=${function(e) { d({ t: 'UPD_UNDERLAY', id: activeUl.id, u: { scale: +e.target.value / 100 } }); }}
+            style=${{ width: 80 }} /> ${Math.round((activeUl.scale || 1) * 100)}%</label>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '.3rem' }}>
+          Rotate <input type="range" min="0" max="360" step="1" value=${activeUl.rotation || 0}
+            onInput=${function(e) { d({ t: 'UPD_UNDERLAY', id: activeUl.id, u: { rotation: +e.target.value } }); }}
+            style=${{ width: 80 }} /> ${activeUl.rotation || 0}°</label>
+        <div style=${{ display: 'flex', gap: '.2rem' }}>
+          <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)' }}>X <input type="number" step="1" value=${Math.round(activeUl.offsetX || 0)}
+            onInput=${function(e) { d({ t: 'UPD_UNDERLAY', id: activeUl.id, u: { offsetX: +e.target.value } }); }}
+            style=${{ ...S_INPUT, width: 50, fontSize: '.55rem', padding: '.1rem .2rem' }} /></label>
+          <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)' }}>Y <input type="number" step="1" value=${Math.round(activeUl.offsetY || 0)}
+            onInput=${function(e) { d({ t: 'UPD_UNDERLAY', id: activeUl.id, u: { offsetY: +e.target.value } }); }}
+            style=${{ ...S_INPUT, width: 50, fontSize: '.55rem', padding: '.1rem .2rem' }} /></label>
+        </div>
+      </div>`}
+      ${s.underlays.length > 1 && html`<div style=${{ position: 'absolute', bottom: '.5rem', right: '.5rem', background: 'var(--overlay-bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '.3rem', pointerEvents: 'auto', display: 'flex', flexDirection: 'column', gap: '.2rem' }}>
+        ${s.underlays.map(function(ul) {
+          return html`<div key=${ul.id} style=${{ display: 'flex', alignItems: 'center', gap: '.2rem' }}>
+            <input type="checkbox" checked=${ul.visible} onChange=${function() { d({ t: 'UPD_UNDERLAY', id: ul.id, u: { visible: !ul.visible } }); }} />
+            <span onClick=${function() { d({ t: 'SET_UNDERLAY', id: ul.id }); }}
+              style=${{ fontSize: '.55rem', color: s.activeUnderlay === ul.id ? '#3b82f6' : 'var(--text-muted)', cursor: 'pointer' }}>${ul.name}</span>
+          </div>`;
+        })}
+      </div>`}
+    </div>`;
+  }
+
+  // ── 2D Generation & Export ──────────────────────────────────────
+  // Generate floor plan outlines from 3D geometry at a given elevation
+  function generate2DOutlines(models, elevation, cutHeight) {
+    var outlines = [];
+    var cutAt = elevation + (cutHeight || 1.2);
+    models.forEach(function(m) {
+      if (!m.visible) return;
+      (m.elements || []).forEach(function(el) {
+        if (!el.box) return;
+        var b = el.box;
+        // Skip elements entirely above or below cut
+        if (b.min.y > cutAt || b.max.y < elevation) return;
+        // Project bounding box edges at cut level (XZ plane)
+        var x1 = b.min.x, z1 = b.min.z, x2 = b.max.x, z2 = b.max.z;
+        outlines.push([x1, z1, x2, z1]); // bottom
+        outlines.push([x2, z1, x2, z2]); // right
+        outlines.push([x2, z2, x1, z2]); // top
+        outlines.push([x1, z2, x1, z1]); // left
+      });
+    });
+    return outlines;
+  }
+
+  // Export outlines to DXF format string
+  function exportDXF(outlines, models, elevation) {
+    var dxf = '0\nSECTION\n2\nHEADER\n0\nENDSEC\n';
+    dxf += '0\nSECTION\n2\nTABLES\n0\nENDSEC\n';
+    dxf += '0\nSECTION\n2\nENTITIES\n';
+    outlines.forEach(function(seg) {
+      dxf += '0\nLINE\n8\nFloorPlan\n';
+      dxf += '10\n' + seg[0].toFixed(4) + '\n20\n' + seg[1].toFixed(4) + '\n30\n0.0\n';
+      dxf += '11\n' + seg[2].toFixed(4) + '\n21\n' + seg[3].toFixed(4) + '\n31\n0.0\n';
+    });
+    dxf += '0\nENDSEC\n0\nEOF\n';
+    return dxf;
+  }
+
+  // Export 2D view to PNG (captures the 2D canvas)
+  function export2DPNG(canvasEl) {
+    if (!canvasEl) return;
+    var link = document.createElement('a');
+    link.download = 'floorplan_' + new Date().toISOString().slice(0, 10) + '.png';
+    link.href = canvasEl.toDataURL('image/png');
+    link.click();
+  }
+
+  // Export 2D view to PDF using canvas
+  function export2DPDF(canvasEl) {
+    if (!canvasEl) return;
+    var imgData = canvasEl.toDataURL('image/png');
+    var w = canvasEl.width, h = canvasEl.height;
+    // Simple single-page PDF with embedded image
+    // Use A3 landscape if wide, A4 portrait otherwise
+    var isLand = w > h;
+    var pw = isLand ? 1190.7 : 841.89, ph = isLand ? 841.89 : 1190.7;
+    var scale = Math.min(pw / w, ph / h) * 0.95;
+    var sw = w * scale, sh = h * scale;
+    var ox = (pw - sw) / 2, oy = (ph - sh) / 2;
+    // Build minimal PDF
+    var imgBytes = atob(imgData.split(',')[1]);
+    var imgArr = new Uint8Array(imgBytes.length);
+    for (var i2 = 0; i2 < imgBytes.length; i2++) imgArr[i2] = imgBytes.charCodeAt(i2);
+    // Use blob approach: render to a temporary canvas at print resolution, then download as PNG
+    // For true PDF we'd need a PDF library — instead, open print dialog
+    var win = window.open('', '_blank');
+    if (win) {
+      win.document.write('<html><head><title>Floor Plan Export</title><style>@page{size:'+(isLand?'landscape':'portrait')+';margin:0}body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh}img{max-width:100%;max-height:100%}</style></head><body><img src="' + imgData + '" onload="window.print();"/></body></html>');
+      win.document.close();
+    }
+  }
+
+  // ── Export Bar (shown in 2D mode) ───────────────────────────────
+  function ExportBar(props) {
+    var s = props.s, d = props.d;
+
+    function doExportDXF() {
+      if (!s.floorPlan && !s.models.length) { alert('Load a model and activate a floor plan cut first.'); return; }
+      var elev = s.floorPlan ? s.floorPlan.elevation : 0;
+      var cutH = s.floorPlan ? s.floorPlan.cutHeight || 1.2 : 3;
+      var outlines = generate2DOutlines(s.models, elev, cutH);
+      if (outlines.length === 0) { alert('No geometry found at this elevation.'); return; }
+      var dxfStr = exportDXF(outlines, s.models, elev);
+      var blob = new Blob([dxfStr], { type: 'application/dxf' });
+      var link = document.createElement('a');
+      link.download = 'floorplan_' + (s.floorPlan ? s.floorPlan.storeyName || '' : '') + '.dxf';
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+
+    function doExportPNG() {
+      var cvs = document.querySelector('canvas');
+      if (cvs) export2DPNG(cvs);
+      else alert('No 2D view canvas found.');
+    }
+
+    function doExportPDF() {
+      var cvs = document.querySelector('canvas');
+      if (cvs) export2DPDF(cvs);
+      else alert('No 2D view canvas found.');
+    }
+
+    var EBTN = Object.assign({}, S_BTN, { fontSize: '.65rem', padding: '.25rem .6rem', border: '1px solid var(--border)' });
+    return html`<div style=${{ background: 'var(--bg-primary)', borderTop: '1px solid var(--border-subtle)', padding: '.45rem 1rem', display: 'flex', alignItems: 'center', gap: '.6rem', flexShrink: 0, flexWrap: 'wrap' }}>
+      <span style=${{ fontSize: '.7rem', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em' }}>2D Export</span>
+      <button onClick=${doExportDXF} style=${{ ...EBTN, background: '#1e3a5f', color: '#93c5fd' }}>DXF (AutoCAD)</button>
+      <button onClick=${doExportPNG} style=${{ ...EBTN, background: '#1e3a5f', color: '#93c5fd' }}>PNG (Image)</button>
+      <button onClick=${doExportPDF} style=${{ ...EBTN, background: '#1e3a5f', color: '#93c5fd' }}>PDF (Print)</button>
+      <span style=${{ fontSize: '.55rem', color: 'var(--text-faint)', marginLeft: 'auto' }}>DXF export generates floor plan from 3D model geometry at the active storey cut · PNG/PDF exports the current 2D view</span>
+    </div>`;
+  }
+
+  // ── ifc-lite Migration Notice ──────────────────────────────────
+  // NOTE: The 2D generation below uses bounding-box projections from web-ifc geometry.
+  // For higher-fidelity 2D plans (true wall outlines, door swings, MEP routing),
+  // consider migrating to ifc-lite (https://github.com/louistrue/ifc-lite) which
+  // provides native 2D floor plan, section, and elevation generation from the
+  // IFC4X3 schema with full geometric accuracy. Migration would replace the
+  // getIfcAPI() loader and generate2DOutlines() with ifc-lite's built-in pipeline.
+
   // ── App ────────────────────────────────────────────────────────
 
   function App() {
@@ -4154,14 +5411,32 @@ function startApp() {
     useEffect(function(){
       document.documentElement.setAttribute('data-theme', s.prefs.theme||'dark');
     }, [s.prefs.theme]);
+    // Auto-save project data (debounced) when clashes/issues/viewpoints change
+    useEffect(function(){
+      var timer = setTimeout(function(){
+        if(s.models.length||s.clashes.length||s.issues.length) _saveCurrentProjectData(s);
+      }, 2000);
+      return function(){ clearTimeout(timer); };
+    }, [s.clashes, s.issues, s.viewpoints, s.measurements, s.rules]);
+    // Generate 2D outlines for compare mode
+    useEffect(function() {
+      if (s.underlayMode === 'compare' && s.floorPlan && s.models.length) {
+        window._cc2DOutlines = generate2DOutlines(s.models, s.floorPlan.elevation, s.floorPlan.cutHeight);
+      } else {
+        window._cc2DOutlines = null;
+      }
+    }, [s.underlayMode, s.floorPlan, s.models]);
+
+    var is2D = s.underlayMode === 'view2d' || s.underlayMode === 'compare';
     return html`<div style=${{height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <${Header} s=${s} d=${d} />
       <div style=${{display:'flex',flex:1,overflow:'hidden'}}>
         <${ModelSidebar} s=${s} d=${d} />
-        <${Viewer} s=${s} d=${d} />
+        ${is2D ? html`<${View2D} s=${s} d=${d} />` : html`<${Viewer} s=${s} d=${d} />`}
         <${IssuePanel} s=${s} d=${d} />
       </div>
-      <${ClashBar} s=${s} d=${d} />
+      ${!is2D && html`<${ClashBar} s=${s} d=${d} />`}
+      ${is2D && html`<${ExportBar} s=${s} d=${d} />`}
       ${s.showModal && html`<${NewIssueModal} d=${d} el=${s.modalElement} prefs=${s.prefs} />`}
       ${s.showSettings && html`<${SettingsModal} d=${d} prefs=${s.prefs} />`}
     </div>`;
