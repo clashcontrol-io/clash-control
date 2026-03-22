@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.26 (2026-03-22)
+- Refocus NL panel on clash setup, Q&A and workflow — not spatial interactions
+
 ## v1.2.30 (2026-03-22)
 - Add natural language command panel (ClashControl AI)
 

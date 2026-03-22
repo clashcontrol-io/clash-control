@@ -175,7 +175,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.25',hash:'8116c28',date:'2026-03-22T19:21:05Z'};
+  var CC_VERSION = {v:'1.2.26',hash:'18460a2',date:'2026-03-22T19:37:01Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -2057,8 +2057,7 @@ function startApp() {
               hitNormal = [fn.x, fn.y, fn.z];
             }
             setSelectedEl(found ? {props:found.el.props||{}, modelName:found.model.name, expressId:eid, point:hitPt, box:hitBox, normal:hitNormal} : {props:{expressId:eid}, modelName:'Unknown', expressId:eid, point:hitPt, box:hitBox, normal:hitNormal});
-            // Normal click: outline only, no transparency
-            unghostAll();
+            ghostOthers([eid]);
             if(outlineRef.current){scene.remove(outlineRef.current);outlineRef.current=null;}
             // Fly to element on click (if autoFlyTo enabled)
             if(prefsRef.current.autoFlyTo!==false && _flyTo) {
