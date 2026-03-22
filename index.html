@@ -1507,35 +1507,7 @@ function startApp() {
 
           var grp = new THREE.Group();
 
-          // 1. Inverted hull outline: slightly scaled back-face shell creates silhouette border
-          try {
-            var hullGeo = found.geometry.clone();
-            var hullMat = new THREE.MeshBasicMaterial({
-              color:0x2563eb, side:THREE.BackSide,
-              transparent:true, opacity:0.95,
-              depthTest:true, depthWrite:false
-            });
-            var hullMesh = new THREE.Mesh(hullGeo, hullMat);
-            hullMesh.applyMatrix4(found.matrixWorld);
-            var hullBox = new THREE.Box3().setFromObject(hullMesh);
-            if(!hullBox.isEmpty()){
-              var hullCtr = hullBox.getCenter(new THREE.Vector3());
-              var hullSize = hullBox.getSize(new THREE.Vector3());
-              var borderWidth = 0.03;
-              var sx = 1 + (hullSize.x > 0.01 ? borderWidth*2/hullSize.x : 0.04);
-              var sy = 1 + (hullSize.y > 0.01 ? borderWidth*2/hullSize.y : 0.04);
-              var sz = 1 + (hullSize.z > 0.01 ? borderWidth*2/hullSize.z : 0.04);
-              if(isFinite(sx)&&isFinite(sy)&&isFinite(sz)){
-                hullMesh.position.sub(hullCtr);
-                hullMesh.scale.set(sx, sy, sz);
-                hullMesh.position.add(hullCtr);
-              }
-            }
-            hullMesh.renderOrder = 997;
-            grp.add(hullMesh);
-          } catch(e){}
-
-          // 2. Top hard edges only (skip for large geometries >50K faces to avoid freeze)
+          // Hard edges only (skip for large geometries >50K faces to avoid freeze)
           try {
             var faceCount = found.geometry.index ? found.geometry.index.count/3 : (found.geometry.attributes.position?found.geometry.attributes.position.count/3:0);
             if(faceCount < 50000) {
@@ -2053,29 +2025,6 @@ function startApp() {
               scene.remove(hlRef.current);hlRef.current=null;
             }
             var hlGrp = new THREE.Group();
-            try {
-              var hullGeo2 = hit.geometry.clone();
-              var hullMat2 = new THREE.MeshBasicMaterial({color:0x2563eb, side:THREE.BackSide, transparent:true, opacity:0.95, depthTest:true, depthWrite:false});
-              var hullMesh2 = new THREE.Mesh(hullGeo2, hullMat2);
-              hullMesh2.applyMatrix4(hit.matrixWorld);
-              var hb = new THREE.Box3().setFromObject(hullMesh2);
-              if(!hb.isEmpty()){
-                var hc = hb.getCenter(new THREE.Vector3());
-                var hs = hb.getSize(new THREE.Vector3());
-                var bw = 0.03;
-                var sx2 = 1+(hs.x>0.01?bw*2/hs.x:0.04);
-                var sy2 = 1+(hs.y>0.01?bw*2/hs.y:0.04);
-                var sz2 = 1+(hs.z>0.01?bw*2/hs.z:0.04);
-                // Guard against NaN/Infinity from degenerate geometry
-                if(isFinite(sx2)&&isFinite(sy2)&&isFinite(sz2)){
-                  hullMesh2.position.sub(hc);
-                  hullMesh2.scale.set(sx2,sy2,sz2);
-                  hullMesh2.position.add(hc);
-                }
-              }
-              hullMesh2.renderOrder = 997;
-              hlGrp.add(hullMesh2);
-            } catch(e){}
             try {
               var fc2 = hit.geometry.index ? hit.geometry.index.count/3 : (hit.geometry.attributes.position?hit.geometry.attributes.position.count/3:0);
               if(fc2 < 50000) {
