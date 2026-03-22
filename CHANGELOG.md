@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.19 (2026-03-22)
+- Add Revit-style 3D ViewCube, project system, and fix CSP/perf issues
+
 ## v1.2.18 (2026-03-22)
 - Persist loaded IFC files across page reloads using IndexedDB
 

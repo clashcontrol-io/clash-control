@@ -171,7 +171,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.18',hash:'9f5354b',date:'2026-03-22T07:23:57Z'};
+  var CC_VERSION = {v:'1.2.19',hash:'e7d0fb4',date:'2026-03-22T07:37:50Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -193,11 +193,11 @@ function startApp() {
   // ── Constants ──────────────────────────────────────────────────
 
   var DISC = [
-    { id:'structural',    label:'Structural',    c:'#60a5fa' },
-    { id:'mep',           label:'MEP',           c:'#f87171' },
-    { id:'architectural', label:'Architectural', c:'#c084fc' },
-    { id:'civil',         label:'Civil',         c:'#34d399' },
-    { id:'other',         label:'Other',         c:'#fbbf24' },
+    { id:'structural',    label:'Structural',    c:'#3b82f6', accent:'#1d4ed8' },
+    { id:'mep',           label:'MEP',           c:'#ef4444', accent:'#dc2626' },
+    { id:'architectural', label:'Architectural', c:'#a855f7', accent:'#7c3aed' },
+    { id:'civil',         label:'Civil',         c:'#10b981', accent:'#059669' },
+    { id:'other',         label:'Other',         c:'#f59e0b', accent:'#d97706' },
   ];
   var STAT = {
     open:        { label:'Open',        bg:'#ef4444' },
@@ -229,7 +229,8 @@ function startApp() {
   };
   var INIT = {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:'clashes',
-    rules:{ modelA:'all', modelB:'all', hard:true, soft:true, clearance:50 },
+    rules:{ modelA:'all', modelB:'all', hard:true, soft:false, clearance:50, hardTolerance:0, duplicates:false, changeAware:false },
+    clashGroupBy:'none', // 'none','storey','discipline','status','type'
     detecting:false, sectionAxis:null, sectionPos:0.5, sectionCustom:null,
     sectionBox:null, // {enabled, min:[x,y,z], max:[x,y,z]} – 6-plane box clipping
     filters:Object.assign({},INIT_FILTERS), floors:[],
@@ -292,6 +293,8 @@ function startApp() {
       case 'SET_PROJECT':  return Object.assign({},s,{activeProject:a.id});
       case 'SET_PROJECT_LIST': return Object.assign({},s,{projectList:a.v});
       case 'LOAD_PROJECT_STATE': return Object.assign({},s,a.data);
+      case 'CLASH_GROUP_BY': return Object.assign({},s,{clashGroupBy:a.v});
+      case 'TOGGLE_PROJECTION': return Object.assign({},s,{projection:s.projection==='ortho'?'perspective':'ortho'});
       default:            return s;
     }
   }
@@ -427,9 +430,9 @@ function startApp() {
   var _ifcAPI = null;
   function getIfcAPI() {
     if (_ifcAPI) return Promise.resolve(_ifcAPI);
-    return import('https://esm.sh/web-ifc@0.0.57').then(function(mod) {
+    return import('https://esm.sh/web-ifc@0.0.76').then(function(mod) {
       var api = new mod.IfcAPI();
-      api.SetWasmPath('https://cdn.jsdelivr.net/npm/web-ifc@0.0.57/');
+      api.SetWasmPath('https://cdn.jsdelivr.net/npm/web-ifc@0.0.76/');
       return api.Init().then(function() { _ifcAPI = api; return api; });
     });
   }
@@ -790,22 +793,84 @@ function startApp() {
 
   // ── Clash Detection ────────────────────────────────────────────
 
+  // Store element hashes for change-aware re-detection
+  var _prevElementHashes = {};
+
+  function _hashElement(el) {
+    var b = el.box;
+    return [el.expressId, b.min.x.toFixed(3), b.min.y.toFixed(3), b.min.z.toFixed(3),
+            b.max.x.toFixed(3), b.max.y.toFixed(3), b.max.z.toFixed(3)].join('|');
+  }
+
   function detectClashes(models, rules) {
     var pick = function(id) { return id === 'all' ? models : models.filter(function(m){return m.id===id}); };
     var grpA = pick(rules.modelA), grpB = pick(rules.modelB);
     var clashes = [], seen = {};
+    var hardTol = (rules.hardTolerance||0)/1000; // mm to m
+
+    // Change-aware: track which elements changed since last run
+    var newHashes = {};
+    var changedElements = {};
+    if (rules.changeAware) {
+      models.forEach(function(m) {
+        (m.elements||[]).forEach(function(el) {
+          var h = _hashElement(el);
+          var key = m.id + ':' + el.expressId;
+          newHashes[key] = h;
+          if (_prevElementHashes[key] !== h) changedElements[key] = true;
+        });
+      });
+    }
+
     grpA.forEach(function(mA) { grpB.forEach(function(mB) {
       var sameModel = mA.id === mB.id;
       var key = [mA.id, mB.id].sort().join('|');
       if (seen[key]) return; seen[key] = true;
       (mA.elements||[]).forEach(function(eA, iA) { (mB.elements||[]).forEach(function(eB, iB) {
         if (sameModel && iB <= iA) return;
+        // Change-aware: skip pairs where neither element changed
+        if (rules.changeAware && !changedElements[mA.id+':'+eA.expressId] && !changedElements[mB.id+':'+eB.expressId]) return;
+
         var bA = eA.box.clone(), bB = eB.box.clone();
-        var isHard = bA.intersectsBox(bB);
+
+        // Duplicate detection: identical bounding boxes at same location
+        if (rules.duplicates) {
+          var sizeA = bA.getSize(new THREE.Vector3());
+          var sizeB = bB.getSize(new THREE.Vector3());
+          var ctrA = bA.getCenter(new THREE.Vector3());
+          var ctrB = bB.getCenter(new THREE.Vector3());
+          var sizeDiff = Math.abs(sizeA.x-sizeB.x) + Math.abs(sizeA.y-sizeB.y) + Math.abs(sizeA.z-sizeB.z);
+          var posDiff = ctrA.distanceTo(ctrB);
+          if (sizeDiff < 0.01 && posDiff < 0.01) {
+            var pA=eA.props||{}, pB=eB.props||{};
+            var tA=pA.ifcType||'Element', tB=pB.ifcType||'Element';
+            var nA=pA.name||('#'+eA.expressId), nB=pB.name||('#'+eB.expressId);
+            clashes.push({
+              id:uid(), source:'auto', type:'duplicate', status:'open',
+              title:'Duplicate: '+tA,
+              description:nA+' ≡ '+nB+' (same location & size)',
+              modelAId:mA.id, modelBId:mB.id, elemA:eA.expressId, elemB:eB.expressId,
+              point:[ctrA.x,ctrA.y,ctrA.z], createdAt:new Date().toISOString(),
+              distance:0, elevation:Math.round(ctrA.y*1000)/1000,
+              disciplines:[mA.discipline,mB.discipline], selfClash:sameModel,
+              elemAType:tA, elemBType:tB, elemAName:nA, elemBName:nB,
+              elemAStorey:pA.storey||'', elemBStorey:pB.storey||'',
+              elemAMaterial:pA.material||'', elemBMaterial:pB.material||'',
+              propsA:pA, propsB:pB
+            });
+            return; // don't also report as hard/soft
+          }
+        }
+
+        // Hard clash with tolerance
+        var isHard = hardTol > 0
+          ? bA.clone().expandByScalar(-hardTol).intersectsBox(bB.clone().expandByScalar(-hardTol))
+          : bA.intersectsBox(bB);
+        if (!isHard && hardTol > 0) isHard = bA.intersectsBox(bB); // still intersecting without shrink = hard
+        // Soft/clearance clash
         var isSoft = !isHard && rules.soft && bA.clone().expandByScalar(rules.clearance/1000).intersectsBox(bB);
         if ((isHard && rules.hard) || isSoft) {
           var ctr = new THREE.Vector3(); bA.getCenter(ctr);
-          // Compute distance between bounding boxes (mm)
           var gx=Math.max(0,bB.min.x-bA.max.x,bA.min.x-bB.max.x);
           var gy=Math.max(0,bB.min.y-bA.max.y,bA.min.y-bB.max.y);
           var gz=Math.max(0,bB.min.z-bA.max.z,bA.min.z-bB.max.z);
@@ -829,6 +894,10 @@ function startApp() {
         }
       }); });
     }); });
+
+    // Update element hashes for next change-aware run
+    if (rules.changeAware) _prevElementHashes = newHashes;
+
     return clashes;
   }
 
@@ -1136,11 +1205,11 @@ function startApp() {
     window.addEventListener('mousemove', function(e) {
       if(!dragging&&!panning) return;
       var dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
-      if(dragging){ sph.theta-=dx*0.007; sph.phi-=dy*0.007; apply(); invalidate(); }
+      if(dragging){ sph.theta-=dx*0.007; sph.phi-=dy*0.007; orbit.apply(); invalidate(); }
       if(panning){
         var sp=sph.r*0.0008;
-        var right=new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()),new THREE.Vector3(0,1,0)).normalize();
-        target.addScaledVector(right,-dx*sp); target.y+=dy*sp; apply(); invalidate();
+        var right=new THREE.Vector3().crossVectors(orbit.camera.getWorldDirection(new THREE.Vector3()),new THREE.Vector3(0,1,0)).normalize();
+        target.addScaledVector(right,-dx*sp); target.y+=dy*sp; orbit.apply(); invalidate();
       }
     });
     window.addEventListener('mouseup', function(){dragging=false;panning=false});
@@ -1174,9 +1243,29 @@ function startApp() {
           return;
         }
       }
-      sph.r*=1+e.deltaY*0.0008;apply();invalidate();e.preventDefault();
+      var zoomFactor = 1+e.deltaY*0.0008;
+      sph.r *= zoomFactor;
+      // Also zoom orthographic camera if active
+      if(orbit.camera.isOrthographicCamera) {
+        orbit.camera.zoom = Math.max(0.01, orbit.camera.zoom / zoomFactor);
+        orbit.camera.updateProjectionMatrix();
+      }
+      orbit.apply();invalidate();e.preventDefault();
     },{passive:false});
-    return {target:target, sync:sync, apply:apply, sph:sph};
+    var orbit = {target:target, sync:sync, apply:apply, sph:sph, camera:camera};
+    // Override apply to use orbit.camera (supports projection switching)
+    var _origApply = apply;
+    orbit.apply = function() {
+      camera = orbit.camera; // keep local camera in sync
+      sph.phi = Math.max(0.05, Math.min(Math.PI-0.05, sph.phi));
+      sph.r   = Math.max(0.5, Math.min(5000, sph.r));
+      camera.position.set(
+        target.x + sph.r*Math.sin(sph.phi)*Math.sin(sph.theta),
+        target.y + sph.r*Math.cos(sph.phi),
+        target.z + sph.r*Math.sin(sph.phi)*Math.cos(sph.theta));
+      camera.lookAt(target);
+    };
+    return orbit;
   }
 
   // ── Three.js Viewer Component ──────────────────────────────────
@@ -2054,9 +2143,9 @@ function startApp() {
       // ── Viewpoint capture/restore ──
       _captureViewpoint = function(name, linkedId) {
         var dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        var up = camera.up.clone();
-        renderer.render(scene, camera);
+        S.camera.getWorldDirection(dir);
+        var up = S.camera.up.clone();
+        renderer.render(scene, S.camera);
         var snapshot = renderer.domElement.toDataURL('image/png');
         return {
           id:uid(), name:name||'Viewpoint', linkedId:linkedId||null,
@@ -2119,7 +2208,7 @@ function startApp() {
       var lodSmallThreshold = 0.5; // objects smaller than 0.5m bounding sphere radius
 
       function updateCulling(){
-        projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        projScreenMatrix.multiplyMatrices(S.camera.projectionMatrix, S.camera.matrixWorldInverse);
         frustum.setFromProjectionMatrix(projScreenMatrix);
         var camPos = camera.position;
         S.mg.traverse(function(obj){
@@ -2178,15 +2267,22 @@ function startApp() {
         try {
           renderer.setViewport(0,0,el.clientWidth,el.clientHeight);
           renderer.setScissorTest(false);
-          renderer.render(scene,camera);
+          renderer.render(scene,S.camera);
         } catch(renderErr) { console.warn('Render error:', renderErr); }
         S.perf.frameCount++;
       }
       tick();
 
       var obs = new ResizeObserver(function(){
-        camera.aspect = el.clientWidth/el.clientHeight;
-        camera.updateProjectionMatrix();
+        var cam = S.camera; // may have been swapped to ortho
+        if (cam.isPerspectiveCamera) {
+          cam.aspect = el.clientWidth/el.clientHeight;
+        } else if (cam.isOrthographicCamera) {
+          var aspect = el.clientWidth/el.clientHeight;
+          var h = (cam.top - cam.bottom) / 2;
+          cam.left = -h * aspect; cam.right = h * aspect;
+        }
+        cam.updateProjectionMatrix();
         renderer.setSize(el.clientWidth, el.clientHeight);
         invalidate();
       });
@@ -2906,6 +3002,34 @@ function startApp() {
             return html`<button key=${rs} onClick=${function(){d({t:'UPD_PREFS',u:{renderStyle:rs}})}}
               style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .4rem',background:cur===rs?'var(--accent)':'transparent',color:cur===rs?'#fff':'var(--text-muted)',border:'1px solid '+(cur===rs?'var(--accent-hover)':'transparent')}}>${labels[rs]}</button>`;
           })}
+          <span style=${{width:1,background:'var(--border)',margin:'0 .1rem'}}></span>
+          <button onClick=${function(){
+            var S=state3d.current; if(!S||!S.camera) return;
+            var isOrtho = S.camera.isOrthographicCamera;
+            var el2=S.renderer.domElement.parentElement;
+            var aspect=el2.clientWidth/el2.clientHeight;
+            if(isOrtho) {
+              var newCam=new THREE.PerspectiveCamera(55,aspect,0.01,10000);
+              newCam.position.copy(S.camera.position);
+              newCam.quaternion.copy(S.camera.quaternion);
+              S.camera=newCam; S.orbit.camera=newCam;
+              S.orbit.sync(); S.orbit.apply();
+            } else {
+              var dist=S.camera.position.distanceTo(S.orbit.target);
+              var h=dist*Math.tan(THREE.MathUtils.degToRad(55/2));
+              var newCam=new THREE.OrthographicCamera(-h*aspect,h*aspect,h,-h,0.01,10000);
+              newCam.position.copy(S.camera.position);
+              newCam.quaternion.copy(S.camera.quaternion);
+              newCam.zoom=1;newCam.updateProjectionMatrix();
+              S.camera=newCam; S.orbit.camera=newCam;
+              S.orbit.sync(); S.orbit.apply();
+            }
+            invalidate();
+          }}
+            style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .4rem',background:'transparent',color:'var(--text-muted)',border:'1px solid transparent'}}
+            title=${(function(){var S=state3d.current;return S&&S.camera&&S.camera.isOrthographicCamera?'Switch to Perspective':'Switch to Orthographic'})()}>
+            ${(function(){var S=state3d.current;return S&&S.camera&&S.camera.isOrthographicCamera?'Persp':'Ortho'})()}
+          </button>
         </div>
       </div>`}
       <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end'}}>
@@ -3181,9 +3305,43 @@ function startApp() {
           return;
         }
       }
-      canvas.addEventListener('mousemove', onMove);
-      canvas.addEventListener('click', onClick);
+      // Drag-to-orbit: dragging on the cube orbits the main camera
+      var isDragging = false, dragStart = {x:0, y:0}, didDrag = false;
+      function onDown(e) {
+        isDragging = true;
+        didDrag = false;
+        dragStart.x = e.clientX;
+        dragStart.y = e.clientY;
+        canvas.style.cursor = 'grabbing';
+      }
+      function onDrag(e) {
+        if (!isDragging) { onMove(e); return; }
+        var dx = e.clientX - dragStart.x;
+        var dy = e.clientY - dragStart.y;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag = true;
+        if (!didDrag) return;
+        dragStart.x = e.clientX;
+        dragStart.y = e.clientY;
+        // Rotate the main camera orbit (same as dragging the 3D view)
+        var S = state3d.current;
+        if (S && S.orbit) {
+          S.orbit.sph.theta -= dx * 0.007;
+          S.orbit.sph.phi -= dy * 0.007;
+          S.orbit.apply();
+          invalidate();
+        }
+      }
+      function onUp(e) {
+        if (isDragging && !didDrag) onClick(e); // click if no drag
+        isDragging = false;
+        canvas.style.cursor = 'pointer';
+      }
+      canvas.addEventListener('mousedown', onDown);
+      canvas.addEventListener('mousemove', onDrag);
+      canvas.addEventListener('mouseup', onUp);
       canvas.addEventListener('mouseleave', function(){
+        isDragging = false;
+        canvas.style.cursor = 'pointer';
         var vc=vcState.current; if(!vc) return;
         vc.faceMeshes.forEach(function(m){
           m.material.map = makeFaceTexture(m.userData.label, false);
@@ -4016,7 +4174,7 @@ function startApp() {
         ${isClashTab && html`<div>
           <span style=${FL}>Type</span>
           <div style=${{display:'flex',gap:'.2rem'}}>
-            ${['all','hard','soft'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:'UPD_FILTERS',u:{type:v}})}}
+            ${['all','hard','soft','duplicate'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:'UPD_FILTERS',u:{type:v}})}}
               style=${PILL(f.type===v)}>${v==='all'?'All':v.charAt(0).toUpperCase()+v.slice(1)}</button>`})}
           </div>
         </div>`}
@@ -4131,7 +4289,12 @@ function startApp() {
       ${s.tab==='issues' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
         <button onClick=${function(){d({t:'MODAL',v:true})}} style=${{...S_BTN,width:'100%',background:'#2563eb',color:'#fff'}}>+ New Issue</button>
       </div>`}
-      ${!isExplorerTab && html`<${VirtualList} items=${items} activeId=${s.activeId} d=${d} isClash=${isClashTab} prefs=${s.prefs} />`}
+      ${!isExplorerTab && isClashTab && items.length>0 && html`<div style=${{padding:'.25rem .5rem',borderBottom:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:'.3rem',flexShrink:0}}>
+        <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Group:</span>
+        ${['none','storey','discipline','status','type'].map(function(g){return html`<button key=${g} onClick=${function(){d({t:'CLASH_GROUP_BY',v:g})}}
+          style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:s.clashGroupBy===g?'#2563eb':'var(--bg-secondary)',color:s.clashGroupBy===g?'#fff':'var(--text-faint)'}}>${g==='none'?'None':g.charAt(0).toUpperCase()+g.slice(1)}</button>`})}
+      </div>`}
+      ${!isExplorerTab && html`<${VirtualList} items=${items} activeId=${s.activeId} d=${d} isClash=${isClashTab} prefs=${s.prefs} groupBy=${isClashTab?s.clashGroupBy:'none'} />`}
     </aside>`;
   }
 
@@ -4188,18 +4351,69 @@ function startApp() {
     </div>`;
   }
 
+  // Group clashes by a field
+  function groupClashes(items, groupBy) {
+    if (!groupBy || groupBy === 'none') return null;
+    var groups = {};
+    items.forEach(function(it) {
+      var key;
+      switch(groupBy) {
+        case 'storey': key = it.elemAStorey || it.elemBStorey || 'Unknown'; break;
+        case 'discipline': key = (it.disciplines||[]).sort().join(' ↔ ') || 'Unknown'; break;
+        case 'status': key = it.status || 'open'; break;
+        case 'type': key = it.type || 'hard'; break;
+        default: key = 'All';
+      }
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(it);
+    });
+    return Object.keys(groups).sort().map(function(k) {
+      return { label: k, items: groups[k] };
+    });
+  }
+
   // Virtualized list: only render visible rows for large lists
   var ROW_HEIGHT = 65; // approx height of IssueRow in px
   function VirtualList(props) {
     var items=props.items, activeId=props.activeId, d=props.d, isClash=props.isClash, prefs=props.prefs;
+    var groupBy = props.groupBy || 'none';
     var scrollRef = useRef(null);
     var _st = useState(0), scrollTop=_st[0], setScrollTop=_st[1];
+    var coll = useState({}), collapsed=coll[0], setCollapsed=coll[1];
     if(items.length===0) return html`<div style=${{flex:1,overflowY:'auto'}}>
       <div style=${{textAlign:'center',color:'var(--text-faint)',fontSize:'.75rem',padding:'2.5rem 1rem'}}>
         <div style=${{fontSize:'2rem',marginBottom:'.3rem'}}>${isClash?'✅':'📋'}</div>
         ${'No '+(isClash?'clashes found yet':'issues yet')}
       </div>
     </div>`;
+    // Grouped rendering
+    var groups = groupClashes(items, groupBy);
+    if (groups) {
+      function toggleGroup(label) {
+        setCollapsed(function(prev) {
+          var n = Object.assign({}, prev);
+          n[label] = !n[label];
+          return n;
+        });
+      }
+      return html`<div style=${{flex:1,overflowY:'auto'}}>
+        ${groups.map(function(g) {
+          var isOpen = !collapsed[g.label];
+          var statusColors = {open:'#ef4444',in_progress:'#f59e0b',resolved:'#22c55e',closed:'#64748b',hard:'#ef4444',soft:'#f59e0b',duplicate:'#8b5cf6'};
+          var dotColor = statusColors[g.label] || '#3b82f6';
+          return html`<div key=${g.label}>
+            <div onClick=${function(){toggleGroup(g.label)}}
+              style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.35rem .5rem',cursor:'pointer',background:'var(--bg-tertiary)',borderBottom:'1px solid var(--border-subtle)',position:'sticky',top:0,zIndex:1}}>
+              <span style=${{fontSize:'.55rem',color:'var(--text-faint)'}}>${isOpen?'▼':'▶'}</span>
+              <span style=${{width:8,height:8,borderRadius:'50%',background:dotColor,flexShrink:0}}></span>
+              <span style=${{fontSize:'.65rem',fontWeight:600,color:'var(--text-primary)',flex:1}}>${g.label}</span>
+              <span style=${{fontSize:'.6rem',color:'var(--text-faint)',background:'var(--bg-secondary)',padding:'.1rem .35rem',borderRadius:10}}>${g.items.length}</span>
+            </div>
+            ${isOpen && g.items.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} />`})}
+          </div>`;
+        })}
+      </div>`;
+    }
     // For small lists, render all (no virtualization overhead)
     if(items.length <= 50) return html`<div style=${{flex:1,overflowY:'auto'}}>
       ${items.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} />`})}
@@ -4292,45 +4506,67 @@ function startApp() {
 
   function ClashBar(props) {
     var s=props.s, d=props.d, r=s.rules;
+    var adv=useState(false), showAdv=adv[0], setShowAdv=adv[1];
     function run() {
-      if(s.models.length<2){alert('Load at least 2 IFC models first.');return;}
+      if(s.models.length<1||(r.modelA!=='all'&&r.modelB!=='all'&&r.modelA===r.modelB&&s.models.length<1)){alert('Load IFC models first.');return;}
+      if(!r.hard&&!r.soft&&!r.duplicates){alert('Enable at least one detection type (Hard, Soft, or Duplicates).');return;}
       d({t:'DETECTING'});
       setTimeout(function(){ d({t:'SET_CLASHES',v:detectClashes(s.models,s.rules)}); d({t:'TAB',v:'clashes'}); },20);
     }
-    var canRun = !s.detecting && s.models.length>=2;
-    return html`<div style=${{background:'var(--bg-primary)',borderTop:'1px solid var(--border-subtle)',padding:'.45rem 1rem',display:'flex',alignItems:'center',gap:'.6rem',flexShrink:0,flexWrap:'wrap'}}>
-      <span style=${{fontSize:'.7rem',fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.05em',flexShrink:0}}>Clash Detection</span>
-      <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>A:</span>
-      <select value=${r.modelA} onChange=${function(e){d({t:'UPD_RULES',u:{modelA:e.target.value}})}}
-        style=${{fontSize:'.7rem',padding:'.15rem .3rem',borderRadius:4,maxWidth:100}}>
-        <option value="all">All</option>
-        ${s.models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
-      </select>
-      <span style=${{color:'var(--text-faint)'}}>↔</span>
-      <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>B:</span>
-      <select value=${r.modelB} onChange=${function(e){d({t:'UPD_RULES',u:{modelB:e.target.value}})}}
-        style=${{fontSize:'.7rem',padding:'.15rem .3rem',borderRadius:4,maxWidth:100}}>
-        <option value="all">All</option>
-        ${s.models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
-      </select>
-      <label style=${{display:'flex',alignItems:'center',gap:'.2rem',cursor:'pointer'}}>
-        <input type="checkbox" checked=${r.hard} onChange=${function(e){d({t:'UPD_RULES',u:{hard:e.target.checked}})}} />
-        <span style=${{fontSize:'.7rem',color:'var(--text-secondary)'}}>Hard</span>
-      </label>
-      <label style=${{display:'flex',alignItems:'center',gap:'.2rem',cursor:'pointer'}}>
-        <input type="checkbox" checked=${r.soft} onChange=${function(e){d({t:'UPD_RULES',u:{soft:e.target.checked}})}} />
-        <span style=${{fontSize:'.7rem',color:'var(--text-secondary)'}}>Soft clashes</span>
-      </label>
-      ${r.soft && html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem'}} title="Max gap between elements to count as a clash. Higher = more clashes detected.">
-        <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Max gap:</span>
-        <input type="range" min="0" max="500" step="5" value=${r.clearance}
-          onInput=${function(e){d({t:'UPD_RULES',u:{clearance:+e.target.value}})}} style=${{width:70}} />
-        <span style=${{fontSize:'.7rem',color:'var(--text-faint)',width:42}}>${r.clearance} mm</span>
+    var canRun = !s.detecting && s.models.length>=1;
+    var CBLBL={fontSize:'.65rem',color:'var(--text-secondary)',display:'flex',alignItems:'center',gap:'.2rem',cursor:'pointer'};
+    return html`<div style=${{background:'var(--bg-primary)',borderTop:'1px solid var(--border-subtle)',padding:'.45rem 1rem',display:'flex',flexDirection:'column',gap:'.3rem',flexShrink:0}}>
+      <div style=${{display:'flex',alignItems:'center',gap:'.6rem',flexWrap:'wrap'}}>
+        <span style=${{fontSize:'.7rem',fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.05em',flexShrink:0}}>Clash Detection</span>
+        <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>A:</span>
+        <select value=${r.modelA} onChange=${function(e){d({t:'UPD_RULES',u:{modelA:e.target.value}})}}
+          style=${{fontSize:'.7rem',padding:'.15rem .3rem',borderRadius:4,maxWidth:100}}>
+          <option value="all">All</option>
+          ${s.models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+        </select>
+        <span style=${{color:'var(--text-faint)'}}>↔</span>
+        <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>B:</span>
+        <select value=${r.modelB} onChange=${function(e){d({t:'UPD_RULES',u:{modelB:e.target.value}})}}
+          style=${{fontSize:'.7rem',padding:'.15rem .3rem',borderRadius:4,maxWidth:100}}>
+          <option value="all">All</option>
+          ${s.models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+        </select>
+        <label style=${CBLBL}>
+          <input type="checkbox" checked=${r.hard} onChange=${function(e){d({t:'UPD_RULES',u:{hard:e.target.checked}})}} />
+          <span>Hard</span>
+        </label>
+        <label style=${CBLBL}>
+          <input type="checkbox" checked=${r.soft} onChange=${function(e){d({t:'UPD_RULES',u:{soft:e.target.checked}})}} />
+          <span>Soft/Clearance</span>
+        </label>
+        <label style=${CBLBL}>
+          <input type="checkbox" checked=${r.duplicates} onChange=${function(e){d({t:'UPD_RULES',u:{duplicates:e.target.checked}})}} />
+          <span>Duplicates</span>
+        </label>
+        <button onClick=${function(){setShowAdv(!showAdv)}} style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .4rem',background:'none',color:'var(--text-faint)',textDecoration:'underline'}}>${showAdv?'Less ▲':'More ▼'}</button>
+        <button onClick=${run} disabled=${!canRun}
+          style=${{...S_BTN,marginLeft:'auto',background:canRun?'#2563eb':'var(--bg-secondary)',color:canRun?'#fff':'var(--text-faint)',cursor:canRun?'pointer':'not-allowed',fontWeight:600}}>
+          ${s.detecting?html`<span class="spin">⟳</span> …`:'▶ Run'}
+        </button>
+      </div>
+      ${showAdv && html`<div style=${{display:'flex',alignItems:'center',gap:'.8rem',flexWrap:'wrap',padding:'.2rem 0',borderTop:'1px solid var(--border-subtle)',paddingTop:'.4rem'}}>
+        ${r.soft && html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem'}} title="Max gap between elements for soft/clearance clash detection">
+          <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Clearance:</span>
+          <input type="range" min="0" max="500" step="5" value=${r.clearance}
+            onInput=${function(e){d({t:'UPD_RULES',u:{clearance:+e.target.value}})}} style=${{width:70}} />
+          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',width:42}}>${r.clearance}mm</span>
+        </div>`}
+        <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}} title="Ignore hard clashes with less than this penetration depth (mm)">
+          <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Hard tolerance:</span>
+          <input type="range" min="0" max="100" step="1" value=${r.hardTolerance||0}
+            onInput=${function(e){d({t:'UPD_RULES',u:{hardTolerance:+e.target.value}})}} style=${{width:60}} />
+          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',width:36}}>${r.hardTolerance||0}mm</span>
+        </div>
+        <label style=${CBLBL} title="Only re-check elements that changed since last run (faster for model updates)">
+          <input type="checkbox" checked=${r.changeAware} onChange=${function(e){d({t:'UPD_RULES',u:{changeAware:e.target.checked}})}} />
+          <span>Change-aware</span>
+        </label>
       </div>`}
-      <button onClick=${run} disabled=${!canRun}
-        style=${{...S_BTN,marginLeft:'auto',background:canRun?'#2563eb':'var(--bg-secondary)',color:canRun?'#fff':'var(--text-faint)',cursor:canRun?'pointer':'not-allowed',fontWeight:600}}>
-        ${s.detecting?html`<span class="spin">⟳</span> …`:'▶ Run'}
-      </button>
     </div>`;
   }
 
