@@ -42,6 +42,7 @@
         while (i < len) {
           if (tpl[i] === '<') {
             if (tpl[i+1] === '/') { while (i < len && tpl[i] !== '>') i++; i++; return ch; }
+            if (tpl[i+1] === '!' && tpl[i+2] === '-' && tpl[i+3] === '-') { while (i < len && !(tpl[i] === '-' && tpl[i+1] === '-' && tpl[i+2] === '>')) i++; i+=3; continue; }
             i++;
             ch.push(parseElement());
           } else if (tpl[i] === HOLE) {
