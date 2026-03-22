@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.30 (2026-03-22)
+- Add natural language command panel (ClashControl AI)
+
 ## v1.2.29 (2026-03-22)
 - Bump version to 1.2.27; install pre-commit hook
 
