@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.55 (2026-03-23)
+- Redesign welcome popup with polished card-based UI
+
 ## v1.2.54 (2026-03-23)
 - Add first-visit welcome popup with LLM setup instructions
 
