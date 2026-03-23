@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.30 (2026-03-23)
+- Fix LLM model load: q4f16→q4, add error details and retry button
+
 ## v1.2.29 (2026-03-23)
 - Add in-browser LLM to NL command panel (Qwen2.5-0.5B via Transformers.js)
 

@@ -175,7 +175,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.29',hash:'7aa6859',date:'2026-03-23T07:50:31Z'};
+  var CC_VERSION = {v:'1.2.30',hash:'fb14b08',date:'2026-03-23T07:56:06Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -5516,12 +5516,12 @@ function startApp() {
     var text = raw.trim().toLowerCase();
 
     // ── Help ───────────────────────────────────────────────────────
-    if (/^help$|what can you do|how do i use this/.test(text)) {
-      return 'You can describe a clash check in plain English — e.g. "check structural vs MEP with 50mm clearance" or "run hard clashes only". Ask questions like "how many open clashes?" or "what models are loaded?" You can also filter, group, and export: "show only new clashes", "group by storey", "export BCF".';
+    if (/^help$|what can you do|how (?:do i|to) use|what.*commands?/.test(text)) {
+      return 'You can describe a clash check in plain English — e.g. "check structural vs MEP with 50mm clearance" or "find conflicts between pipes and beams". Ask questions like "how many open clashes?" or "what models are loaded?" You can also filter ("show only resolved"), group ("group by storey"), and export ("export BCF").';
     }
 
     // ── Q&A ────────────────────────────────────────────────────────
-    if (/how many clashes|clash count|number of clashes/.test(text)) {
+    if (/how many clashes?|clash count|number of clashes?|clashes? (?:found|detected|total|do we have)/.test(text)) {
       if (!s.clashes.length) return 'No clashes detected yet. Describe a check and I\'ll run it — e.g. "check all models for hard clashes".';
       var total = s.clashes.length;
       var byStatus = {};
@@ -5529,23 +5529,23 @@ function startApp() {
       var parts = Object.keys(byStatus).map(function(k){ return byStatus[k] + ' ' + k; });
       return total + ' clash' + (total===1?'':'es') + ' — ' + parts.join(', ') + '.';
     }
-    if (/how many issues|issue count|number of issues/.test(text)) {
+    if (/how many issues?|issue count|number of issues?/.test(text)) {
       if (!s.issues.length) return 'No issues yet. Open a clash and use "Create Issue" to log one.';
       var ti = s.issues.length;
       var oi = s.issues.filter(function(i){return (i.status||'open')==='open';}).length;
       return ti + ' issue' + (ti===1?'':'s') + ' — ' + oi + ' open, ' + (ti-oi) + ' closed.';
     }
-    if (/what models|models loaded|which models|list models/.test(text)) {
+    if (/what models?|models? loaded|which models?|list models?|what.*(?:files?|ifc).*loaded|what.*loaded/.test(text)) {
       if (!s.models.length) return 'No models loaded yet. Drag and drop IFC files onto the viewer.';
       return 'Loaded: ' + s.models.map(function(m){ return m.name + (m.hidden?' (hidden)':''); }).join(', ') + '.';
     }
-    if (/what.*rules?|current.*settings?|clash.*settings?|current.*rules?/.test(text)) {
+    if (/what.*rules?|current.*(?:settings?|setup|config)|clash.*settings?|what(?:'s| is) set up/.test(text)) {
       var r = s.rules;
       var types = [r.hard&&'hard', r.soft&&'soft'].filter(Boolean).join(' + ') || 'none';
       var against = r.modelA==='all'&&r.modelB==='all' ? 'all models against all' : (r.modelA||'all') + ' vs ' + (r.modelB||'all');
-      return 'Current setup: ' + types + ' clashes, ' + against + ', clearance ' + (r.clearance||50) + 'mm' + (r.hardTolerance?' tolerance '+r.hardTolerance+'mm':'') + (r.duplicates?', including duplicates':'.') ;
+      return 'Current setup: ' + types + ' clashes, ' + against + ', clearance ' + (r.clearance||50) + 'mm' + (r.hardTolerance?' tolerance '+r.hardTolerance+'mm':'') + (r.duplicates?', including duplicates':'.');
     }
-    if (/what.*storey|worst.*storey|most clashes.*storey/.test(text)) {
+    if (/(?:what|which).*storey|worst.*storey|most clashes.*storey|storey.*most/.test(text)) {
       if (!s.clashes.length) return 'No clashes to analyse yet.';
       var storeyCounts = {};
       s.clashes.forEach(function(c){ var st = c.storey||'Unknown'; storeyCounts[st]=(storeyCounts[st]||0)+1; });
@@ -5557,69 +5557,93 @@ function startApp() {
       return proj ? 'Active project: ' + proj.name + '.' : 'No active project.';
     }
 
-    // ── Clash setup via natural language ───────────────────────────
-    // "check structural vs MEP", "compare arch against structure", "run pipes vs beams"
-    var setupMatch = text.match(/(?:check|compare|run|detect|find clashes?(?:\s+(?:between|in))?)\s+(.+?)\s+(?:vs\.?|versus|against|with|and)\s+(.+?)(?:\s+with\s+(.+))?$/);
-    if (setupMatch) {
+    // ── Clash setup ────────────────────────────────────────────────
+    // Parse a length value from text → mm (handles mm, cm, m)
+    function parseMM(t) {
+      var m = t.match(/(\d+(?:\.\d+)?)\s*mm/); if (m) return Math.round(parseFloat(m[1]));
+      m = t.match(/(\d+(?:\.\d+)?)\s*cm/);     if (m) return Math.round(parseFloat(m[1]) * 10);
+      m = t.match(/(\d+(?:\.\d+)?)\s*m(?!m)/); if (m) return Math.round(parseFloat(m[1]) * 1000);
+      return null;
+    }
+    function applyClashOpts(updRules) {
+      var clr = parseMM(text); if (clr !== null) updRules.clearance = clr;
+      if (/\bsoft\b/.test(text) && !/no\s+soft|disable\s+soft|exclude\s+soft/.test(text)) { updRules.soft=true; updRules.hard=true; }
+      if (/hard\s+only|no\s+soft|soft\s+(?:clashes?\s+)?off/.test(text)) { updRules.hard=true; updRules.soft=false; }
+      if (/\bduplicates?\b/.test(text) && !/no\s+dup|exclude\s+dup|ignore\s+dup/.test(text)) updRules.duplicates=true;
+      return updRules;
+    }
+    function resolveModel(hint) {
+      if (!hint || /^all$/.test(hint.trim())) return null;
+      var h = hint.trim();
+      return s.models.find(function(m){ return m.name.toLowerCase().indexOf(h) !== -1; }) || null;
+    }
+    function runSetup(rawA, rawB) {
       if (!s.models.length) return 'No models loaded yet — drop IFC files onto the viewer first.';
-      var rawA = setupMatch[1].trim(), rawB = setupMatch[2].trim(), opts = setupMatch[3]||'';
-      var foundA = s.models.find(function(m){return m.name.toLowerCase().indexOf(rawA)!==-1;}) || (rawA==='all'?{id:'all'}:null);
-      var foundB = s.models.find(function(m){return m.name.toLowerCase().indexOf(rawB)!==-1;}) || (rawB==='all'?{id:'all'}:null);
-      var updRules = { modelA: foundA?foundA.id:'all', modelB: foundB?foundB.id:'all' };
-      var clrMatch = opts.match(/(\d+)\s*mm\s*clearance|clearance\s*(?:of\s*)?(\d+)\s*mm/);
-      if (clrMatch) updRules.clearance = parseInt(clrMatch[1]||clrMatch[2]);
-      if (/soft/.test(opts)||/soft/.test(text)) { updRules.soft=true; updRules.hard=true; }
-      if (/hard only/.test(opts)||/hard only/.test(text)) { updRules.hard=true; updRules.soft=false; }
-      if (/duplicates/.test(opts)||/duplicates/.test(text)) updRules.duplicates=true;
+      var mA = resolveModel(rawA), mB = resolveModel(rawB);
+      var updRules = applyClashOpts({ modelA: mA?mA.id:'all', modelB: mB?mB.id:'all' });
       d({t:'UPD_RULES', u:updRules});
       if (s.detecting) return 'Rules updated — detection already running.';
       d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
-      setTimeout(function(){d({t:'SET_CLASHES',v:detectClashes(s.models,Object.assign({},s.rules,updRules))});},20);
-      var aName = foundA&&foundA.id!=='all'?foundA.name:'all models';
-      var bName = foundB&&foundB.id!=='all'?foundB.name:'all models';
-      return 'Running: ' + aName + ' vs ' + bName + (updRules.clearance?' with '+updRules.clearance+'mm clearance':'') + '…';
+      setTimeout(function(){ d({t:'SET_CLASHES', v:detectClashes(s.models, Object.assign({},s.rules,updRules))}); }, 20);
+      var aN = mA?mA.name:'all models', bN = mB?mB.name:'all models';
+      return 'Running: ' + aN + ' vs ' + bN + (updRules.clearance?' with '+updRules.clearance+'mm clearance':'') + '…';
     }
 
-    // Adjust individual rule settings
-    var clrSet = text.match(/(?:set\s+)?clearance\s+(?:to\s+)?(\d+)\s*mm/);
+    // "X vs/versus/against Y"
+    var vsMatch = text.match(/(.+?)\s+(?:vs\.?|versus|against)\s+(.+?)(?:\s+with\s+.*)?$/);
+    if (vsMatch) return runSetup(vsMatch[1].replace(/^(?:check|compare|run|detect|find|look\s+for|scan|anal[yz]se?|test|search\s+for)\s+(?:(?:for\s+)?(?:clashes?|conflicts?|collisions?)\s+)?/,'').trim(), vsMatch[2].split(/\s+with\s+/)[0].trim());
+
+    // "between X and Y"
+    var betweenMatch = text.match(/between\s+(.+?)\s+and\s+(.+?)(?:\s+with\s+.*)?$/);
+    if (betweenMatch && /check|compare|find|detect|look|scan|anal[yz]se?|run|clashes?|conflicts?|collisions?/.test(text))
+      return runSetup(betweenMatch[1].trim(), betweenMatch[2].split(/\s+with\s+/)[0].trim());
+
+    // ── Individual rule settings ────────────────────────────────────
+    var clrSet = text.match(/clearance\s+(?:to\s+|of\s+)?(\d+(?:\.\d+)?)\s*(mm|cm)|(\d+(?:\.\d+)?)\s*(mm|cm)\s+(?:clearance|gap)/);
     if (clrSet) {
-      d({t:'UPD_RULES', u:{clearance:parseInt(clrSet[1])}});
-      return 'Clearance set to ' + clrSet[1] + 'mm. Run clash detection to apply.';
+      var cv = clrSet[1]||clrSet[3], cu = clrSet[2]||clrSet[4];
+      var cmm = cu==='cm' ? Math.round(parseFloat(cv)*10) : Math.round(parseFloat(cv));
+      d({t:'UPD_RULES', u:{clearance:cmm}});
+      return 'Clearance set to ' + cmm + 'mm. Re-run detection to apply.';
     }
-    var tolSet = text.match(/(?:set\s+)?tolerance\s+(?:to\s+)?(\d+)\s*mm/);
+    var tolSet = text.match(/tolerance\s+(?:to\s+|of\s+)?(\d+(?:\.\d+)?)\s*(mm|cm)|(\d+(?:\.\d+)?)\s*(mm|cm)\s+tolerance/);
     if (tolSet) {
-      d({t:'UPD_RULES', u:{hardTolerance:parseInt(tolSet[1])}});
-      return 'Hard clash tolerance set to ' + tolSet[1] + 'mm.';
+      var tv = tolSet[1]||tolSet[3], tu = tolSet[2]||tolSet[4];
+      var tmm = tu==='cm' ? Math.round(parseFloat(tv)*10) : Math.round(parseFloat(tv));
+      d({t:'UPD_RULES', u:{hardTolerance:tmm}});
+      return 'Tolerance set to ' + tmm + 'mm.';
     }
-    if (/include soft|enable soft|soft clashes on/.test(text)) { d({t:'UPD_RULES',u:{soft:true}}); return 'Soft clashes enabled. Re-run detection to apply.'; }
-    if (/exclude soft|disable soft|hard only|soft clashes off/.test(text)) { d({t:'UPD_RULES',u:{soft:false}}); return 'Soft clashes off — hard clashes only.'; }
-    if (/include duplicates|enable duplicates/.test(text)) { d({t:'UPD_RULES',u:{duplicates:true}}); return 'Duplicate clashes will be included.'; }
-    if (/exclude duplicates|ignore duplicates|no duplicates/.test(text)) { d({t:'UPD_RULES',u:{duplicates:false}}); return 'Duplicate clashes will be filtered out.'; }
+    if (/(?:include|enable|add|turn\s+on)\s+soft|soft\s+clashes?\s+on/.test(text)) { d({t:'UPD_RULES',u:{soft:true}}); return 'Soft clashes enabled. Re-run detection to apply.'; }
+    if (/(?:exclude|disable|remove|turn\s+off)\s+soft|hard\s+only|soft\s+(?:clashes?\s+)?off/.test(text)) { d({t:'UPD_RULES',u:{soft:false}}); return 'Soft clashes off — hard clashes only.'; }
+    if (/(?:include|enable)\s+duplicates?/.test(text)) { d({t:'UPD_RULES',u:{duplicates:true}}); return 'Duplicates included.'; }
+    if (/(?:exclude|ignore|no)\s+duplicates?/.test(text)) { d({t:'UPD_RULES',u:{duplicates:false}}); return 'Duplicates excluded.'; }
 
-    // Plain "run" without vs
-    if (/^(?:run|go|start|detect|check for clashes?)$/.test(text) || /^run\s+(?:it|detection|clashes?)$/.test(text)) {
+    // ── Plain run ──────────────────────────────────────────────────
+    if (/^(?:run|go|start|detect|execute|scan|proceed)$/.test(text) ||
+        /^(?:run|start|do|execute)\s+(?:it|the\s+)?(?:detection|clashes?|check|scan)?$/.test(text) ||
+        /^(?:find|detect|check\s+for|scan\s+for)\s+(?:all\s+)?(?:clashes?|conflicts?|collisions?)$/.test(text)) {
       if (!s.models.length) return 'No models loaded yet.';
       if (s.detecting) return 'Already running…';
       d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
-      setTimeout(function(){d({t:'SET_CLASHES',v:detectClashes(s.models,s.rules)});},20);
+      setTimeout(function(){ d({t:'SET_CLASHES', v:detectClashes(s.models,s.rules)}); }, 20);
       var r2 = s.rules, types2 = [r2.hard&&'hard',r2.soft&&'soft'].filter(Boolean).join('+');
       return 'Running ' + types2 + ' clash detection with ' + (r2.clearance||50) + 'mm clearance…';
     }
 
     // ── Result filtering & grouping ────────────────────────────────
     var statusMap = {open:'open',new:'new',active:'open',resolved:'resolved',closed:'resolved',all:'all'};
-    var statusMatch = text.match(/\b(open|new|active|resolved|closed|all)\b/) && /filter|show|display/.test(text);
-    if (statusMatch) {
-      var sw = text.match(/\b(open|new|active|resolved|closed|all)\b/)[1];
-      d({t:'UPD_FILTERS', u:{status:statusMap[sw]||'all'}});
-      d({t:'TAB',v:'clashes'});
+    var swMatch = text.match(/\b(open|new|active|resolved|closed|all)\b/);
+    if (swMatch && /show|display|filter|view|see|only|just|list|give|get|want|need|find|clashes?|issues?/.test(text)) {
+      var sw = swMatch[1];
+      d({t:'UPD_FILTERS', u:{status:statusMap[sw]||'all'}}); d({t:'TAB',v:'clashes'});
       return sw==='all' ? 'Showing all clashes.' : 'Filtered to ' + sw + ' clashes.';
     }
-    if (/reset filters?|clear filters?|show all/.test(text)) {
+    if (/reset\s+filters?|clear\s+filters?|show\s+all|remove\s+filters?|no\s+filter/.test(text)) {
       d({t:'RESET_FILTERS'});
       return 'Filters cleared.';
     }
-    var groupMatch = text.match(/group\s+by\s+(storey|floor|level|discipline|status|type|none)/);
+    var groupMatch = text.match(/(?:group|grouped|organize|organise|sort|arrange|categorize|categorise)\s+(?:\w+\s+)?by\s+(storey|floor|level|discipline|status|type|none)/);
+    if (!groupMatch) groupMatch = text.match(/by\s+(storey|floor|level|discipline|status|type)\b/);
     if (groupMatch) {
       var gv = {storey:'storey',floor:'storey',level:'storey',discipline:'discipline',status:'status',type:'type',none:'none'}[groupMatch[1]];
       d({t:'CLASH_GROUP_BY',v:gv}); d({t:'TAB',v:'clashes'});
@@ -5627,7 +5651,7 @@ function startApp() {
     }
 
     // ── Export ─────────────────────────────────────────────────────
-    if (/export\s+bcf|bcf\s+export|download\s+bcf/.test(text)) {
+    if (/(?:export|download|save|get)\s+(?:as\s+)?bcf|bcf\s+(?:export|download|file)|save\s+as\s+bcf/.test(text)) {
       if (!s.issues.length && !s.clashes.length) return 'Nothing to export yet.';
       var items = s.issues.length ? s.issues : s.clashes;
       exportBCF(items, '2.1', s.viewpoints);
