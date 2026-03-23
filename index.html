@@ -182,7 +182,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.48',hash:'c1e4bc8',date:'2026-03-23T16:02:43Z'};
+  var CC_VERSION = {v:'1.2.49',hash:'96d5cd1',date:'2026-03-23T16:05:00Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -6202,11 +6202,46 @@ function startApp() {
     if (betweenMatch && /check|compare|find|detect|look|scan|anal[yz]se?|run|clashes?|conflicts?|collisions?/.test(text))
       return runSetup(betweenMatch[1].trim(), betweenMatch[2].split(/\s+with\s+/)[0].trim());
 
-    // ── "run clash …" with inline options (no vs/between needed) ──
-    // Matches: "run clash on both models, exclude self, with clearance of 10mm"
-    //          "detect clashes with 50mm clearance exclude self"
-    //          "run detection soft clashes 20mm clearance"
-    if (/(?:run|start|do|execute|detect|find|check|scan|re-?run|again)\s+(?:the\s+)?(?:clash|detection|conflicts?|collisions?|scan|check)/i.test(text) && !/\b(?:vs\.?|versus|against|between)\b/.test(text)) {
+    // ── Word-based: scan for action words + discipline/model keywords ──
+    // Handles loose input like "run architectural structural", "check mep structural 50mm"
+    var actionWords = /\b(?:run|start|do|execute|detect|find|check|scan|re-?run|again|clashcontrol|clash)\b/i;
+    if (actionWords.test(text)) {
+      // Collect all words that match a discipline or model name
+      var words = text.toLowerCase().replace(/[,;:!?.]+/g,' ').split(/\s+/);
+      var foundRefs = [];
+      var usedWords = {};
+      words.forEach(function(w){
+        if(usedWords[w]) return;
+        // Check disciplines
+        var disc = DISC.find(function(dd){ return dd.id===w || dd.label.toLowerCase()===w; });
+        if(disc && s.models.some(function(m){return m.discipline===disc.id;})){
+          foundRefs.push({type:'disc', id:'disc:'+disc.id, name:disc.label+' model', word:w});
+          usedWords[w]=true; return;
+        }
+        // Check model names (skip noise words)
+        if(/^(?:run|start|do|execute|detect|find|check|scan|again|clash|clashcontrol|on|the|with|and|for|of|a|an|model|models|re-?run|clashes|detection|conflicts?|collisions?)$/.test(w)) return;
+        var byName = s.models.find(function(m){ return m.name.toLowerCase().indexOf(w)!==-1; });
+        if(byName && !usedWords[byName.id]){
+          foundRefs.push({type:'model', id:byName.id, name:byName.name, word:w});
+          usedWords[byName.id]=true;
+        }
+      });
+      if(foundRefs.length>=2) return runSetup(foundRefs[0].word, foundRefs[1].word);
+      if(foundRefs.length===1) {
+        // One reference found → run it against all others
+        if(!s.models.length) return 'No models loaded yet.';
+        var ref = foundRefs[0];
+        var updSingle = applyClashOpts({ modelA:ref.id, modelB:'all' });
+        d({t:'UPD_RULES', u:updSingle});
+        if(!s.detecting){ d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
+          setTimeout(function(){ d({t:'SET_CLASHES', v:detectClashes(s.models, Object.assign({},s.rules,updSingle))}); }, 20);
+        }
+        return 'Running: ' + ref.name + ' vs all others…';
+      }
+    }
+
+    // ── "run clash …" generic fallback (no model/discipline found) ──
+    if (/(?:run|start|do|execute|detect|find|check|scan|re-?run|again)\s+(?:the\s+)?(?:clash|detection|conflicts?|collisions?|scan|check|clashcontrol)/i.test(text)) {
       if (!s.models.length) return 'No models loaded yet.';
       var updRun = applyClashOpts({ modelA:'all', modelB:'all' });
       d({t:'UPD_RULES', u:updRun});

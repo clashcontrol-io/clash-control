@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.49 (2026-03-23)
+- Replace distance filter with dual-range slider
+
 ## v1.2.48 (2026-03-23)
 - Support discipline-based model selection in clash detection
 
