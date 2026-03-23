@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.52 (2026-03-23)
+- Add soft clash / proximity detection via chatbox distance input
+
 ## v1.2.51 (2026-03-23)
 - Hide unchecked model elements from all filter lists and panels
 
