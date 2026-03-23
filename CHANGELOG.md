@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.41 (2026-03-23)
+- Replace triangle spatial hash with dual-BVH traversal
+
 ## v1.2.40 (2026-03-23)
 - Replace vertex-distance hard clash with triangle-triangle intersection
 

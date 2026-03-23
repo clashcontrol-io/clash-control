@@ -178,7 +178,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.40',hash:'0c6dd52',date:'2026-03-23T14:45:52Z'};
+  var CC_VERSION = {v:'1.2.41',hash:'73ad61c',date:'2026-03-23T14:49:42Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -3841,6 +3841,7 @@ function startApp() {
     var po = useState(false), projOpen=po[0], setProjOpen=po[1];
     var rn = useState(false), renaming=rn[0], setRenaming=rn[1];
     var rnv = useState(''), renameVal=rnv[0], setRenameVal=rnv[1];
+    var cf = useState(null), confirmDelete=cf[0], setConfirmDelete=cf[1];
 
     function createProject() {
       var name = prompt('New project name:');
@@ -3853,19 +3854,19 @@ function startApp() {
       setProjOpen(false);
     }
     function switchTo(id) {
-      if(id===s.activeProject) { setProjOpen(false); return; }
+      if(id===s.activeProject) { setProjOpen(false); setConfirmDelete(null); return; }
       _switchProject(id, s, d);
-      setProjOpen(false);
+      setProjOpen(false); setConfirmDelete(null);
     }
     function deleteProject(id) {
-      if(id==='default') return;
-      if(!confirm('Delete this project and all its stored IFC files?')) return;
       idbDeleteProjectFiles(id);
       idbDeleteProjectData(id);
       var list = getProjects().filter(function(p){return p.id!==id;});
+      if(!list.length) { list = [{id:'default', name:'Default Project', createdAt:Date.now()}]; }
       saveProjects(list);
       d({t:'SET_PROJECT_LIST', v:list});
-      if(s.activeProject===id) _switchProject('default', s, d);
+      if(s.activeProject===id) _switchProject(list[0].id, s, d);
+      setConfirmDelete(null);
       setProjOpen(false);
     }
     function startRename(p) {
@@ -3895,15 +3896,30 @@ function startApp() {
           ${projOpen && html`<div style=${{position:'absolute',top:'100%',left:0,marginTop:4,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,.4)',minWidth:220,zIndex:100,overflow:'hidden'}}>
             ${projects.map(function(p){
               var isActive = p.id===s.activeProject;
-              return html`<div key=${p.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.4rem .6rem',cursor:'pointer',background:isActive?'var(--accent)':'transparent',borderBottom:'1px solid var(--border-subtle)'}}>
-                ${renaming===p.id ? html`<input type="text" value=${renameVal} autofocus
-                  onInput=${function(e){setRenameVal(e.target.value)}}
-                  onKeyDown=${function(e){if(e.key==='Enter')finishRename(p.id);if(e.key==='Escape')setRenaming(false);}}
-                  onBlur=${function(){finishRename(p.id)}}
-                  style=${{...S_INPUT,fontSize:'.65rem',padding:'.15rem .3rem',flex:1}} />` :
-                html`<span onClick=${function(){switchTo(p.id)}} style=${{flex:1,fontSize:'.7rem',color:isActive?'#fff':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${p.name}</span>`}
-                <button onClick=${function(e){e.stopPropagation();startRename(p)}} style=${{...S_BTN,padding:'0 3px',background:'none',color:isActive?'#fff':'var(--text-faint)',fontSize:'.55rem'}} title="Rename">✎</button>
-                ${p.id!=='default' && html`<button onClick=${function(e){e.stopPropagation();deleteProject(p.id)}} style=${{...S_BTN,padding:'0 3px',background:'none',color:isActive?'#fff':'var(--text-faint)',fontSize:'.55rem'}} title="Delete project">✕</button>`}
+              var isConfirming = confirmDelete===p.id;
+              var rowBg = isActive ? 'var(--accent)' : 'transparent';
+              var txtCol = isActive ? '#fff' : 'var(--text-primary)';
+              var mutedCol = isActive ? 'rgba(255,255,255,.6)' : 'var(--text-faint)';
+              return html`<div key=${p.id} style=${{borderBottom:'1px solid var(--border-subtle)',background:rowBg}}>
+                <div style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.4rem .6rem'}}>
+                  ${renaming===p.id ? html`<input type="text" value=${renameVal} autofocus
+                    onInput=${function(e){setRenameVal(e.target.value)}}
+                    onKeyDown=${function(e){if(e.key==='Enter')finishRename(p.id);if(e.key==='Escape')setRenaming(false);}}
+                    onBlur=${function(){finishRename(p.id)}}
+                    style=${{...S_INPUT,fontSize:'.65rem',padding:'.15rem .3rem',flex:1}} />` :
+                  html`<span onClick=${function(){switchTo(p.id)}} style=${{flex:1,fontSize:'.7rem',color:txtCol,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer'}}>${p.name}</span>`}
+                  <button onClick=${function(e){e.stopPropagation();startRename(p)}} style=${{...S_BTN,padding:'2px 4px',background:'none',color:mutedCol,fontSize:'.6rem',lineHeight:1}} title="Rename">✎</button>
+                  <button onClick=${function(e){e.stopPropagation();setConfirmDelete(isConfirming?null:p.id);setRenaming(false);}}
+                    style=${{...S_BTN,padding:'2px 5px',background:isConfirming?(isActive?'rgba(255,255,255,.2)':'rgba(239,68,68,.15)'):'none',color:isConfirming?'#ef4444':mutedCol,fontSize:'.65rem',lineHeight:1,borderRadius:4,border:isConfirming?'1px solid rgba(239,68,68,.4)':'1px solid transparent'}}
+                    title="Delete project">🗑</button>
+                </div>
+                ${isConfirming && html`<div style=${{padding:'.35rem .6rem .45rem',borderTop:'1px solid '+(isActive?'rgba(255,255,255,.2)':'var(--border-subtle)'),display:'flex',alignItems:'center',gap:'.4rem',background:isActive?'rgba(0,0,0,.15)':'rgba(239,68,68,.06)'}}>
+                  <span style=${{flex:1,fontSize:'.62rem',color:isActive?'rgba(255,255,255,.85)':'var(--text-secondary)'}}>Delete "${p.name}"?</span>
+                  <button onClick=${function(e){e.stopPropagation();deleteProject(p.id)}}
+                    style=${{...S_BTN,padding:'2px 8px',background:'#ef4444',color:'#fff',fontSize:'.62rem',fontWeight:600}}>Delete</button>
+                  <button onClick=${function(e){e.stopPropagation();setConfirmDelete(null)}}
+                    style=${{...S_BTN,padding:'2px 8px',background:'none',color:isActive?'rgba(255,255,255,.7)':'var(--text-muted)',fontSize:'.62rem',border:'1px solid '+(isActive?'rgba(255,255,255,.3)':'var(--border)')}}>Cancel</button>
+                </div>`}
               </div>`;
             })}
             <button onClick=${createProject} style=${{...S_BTN,width:'100%',textAlign:'left',padding:'.4rem .6rem',background:'none',color:'var(--accent)',fontSize:'.7rem',borderRadius:0}}>+ New Project</button>
