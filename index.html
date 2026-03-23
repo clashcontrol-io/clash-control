@@ -178,7 +178,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.28',hash:'e432726',date:'2026-03-23T12:12:26Z'};
+  var CC_VERSION = {v:'1.2.29',hash:'ba0a83f',date:'2026-03-23T12:21:06Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -326,7 +326,8 @@ function startApp() {
   var IDB_NAME = 'ClashControlFiles';
   var IDB_STORE = 'ifcFiles';
   var IDB_PROJSTORE = 'projects';
-  var IDB_VERSION = 2;
+  var IDB_GEOCACHE = 'geoCache';
+  var IDB_VERSION = 3;
 
   function _openIDB() {
     return new Promise(function(resolve, reject) {
@@ -335,6 +336,7 @@ function startApp() {
         var db = e.target.result;
         if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, {keyPath:'id'});
         if(!db.objectStoreNames.contains(IDB_PROJSTORE)) db.createObjectStore(IDB_PROJSTORE, {keyPath:'id'});
+        if(!db.objectStoreNames.contains(IDB_GEOCACHE)) db.createObjectStore(IDB_GEOCACHE, {keyPath:'id'});
       };
       req.onsuccess = function(e) { resolve(e.target.result); };
       req.onerror = function(e) { reject(e.target.error); };
@@ -412,6 +414,99 @@ function startApp() {
         req.onerror = function(e) { reject(e.target.error); };
       });
     }).catch(function(e) { console.warn('Failed to load project data:', e); return null; });
+  }
+
+  // ── Geometry cache (fast project-switch without re-parsing IFC) ─
+  // TODO(fragments): If this project moves to a multi-file / bundled architecture,
+  // replace this cache with ThatOpen Company's Fragments (@thatopen/fragments).
+  // Fragments offers better binary compression, GPU instancing, and full ThatOpen
+  // ecosystem compatibility — but requires ESM bundling and Three.js version alignment.
+
+  function idbSaveGeoCache(fileId, data) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_GEOCACHE, 'readwrite');
+        tx.objectStore(IDB_GEOCACHE).put({id:fileId, data:data, savedAt:Date.now()});
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to save geo cache:', e); });
+  }
+
+  function idbGetGeoCache(fileId) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_GEOCACHE, 'readonly');
+        var req = tx.objectStore(IDB_GEOCACHE).get(fileId);
+        req.onsuccess = function() { resolve(req.result ? req.result.data : null); };
+        req.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to read geo cache:', e); return null; });
+  }
+
+  function idbDeleteGeoCache(fileId) {
+    return _openIDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_GEOCACHE, 'readwrite');
+        tx.objectStore(IDB_GEOCACHE).delete(fileId);
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function(e) { reject(e.target.error); };
+      });
+    }).catch(function(e) { console.warn('Failed to delete geo cache:', e); });
+  }
+
+  // Serialise a loadIFC result to plain objects/ArrayBuffers for IDB storage.
+  function _geoSerialize(result) {
+    var meshData = result.meshes.map(function(m) {
+      var g = m.geometry, mat = m.material;
+      // Explicitly copy typed arrays — web-ifc returns views of WASM heap that may be freed
+      return {
+        eid: m.userData.expressID,
+        pos: new Float32Array(g.attributes.position.array).buffer,
+        nrm: new Float32Array(g.attributes.normal.array).buffer,
+        idx: new Uint32Array(g.index.array).buffer,
+        mtx: Array.from(m.matrix.elements),
+        col: [mat.color.r, mat.color.g, mat.color.b, mat.opacity],
+        tr:  mat.transparent ? 1 : 0
+      };
+    });
+    var elData = result.elements.map(function(el) {
+      return {
+        eid:  el.expressId,
+        box:  [el.box.min.x, el.box.min.y, el.box.min.z, el.box.max.x, el.box.max.y, el.box.max.z],
+        props: el.props
+      };
+    });
+    return {v:1, meshData:meshData, elData:elData, storeys:result.storeys, storeyData:result.storeyData, stats:result.stats};
+  }
+
+  // Reconstruct Three.js objects from a serialised geo cache entry.
+  function _geoDeserialize(cached) {
+    var meshByEid = {};
+    var meshes = cached.meshData.map(function(md) {
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(md.pos), 3));
+      geo.setAttribute('normal',   new THREE.BufferAttribute(new Float32Array(md.nrm), 3));
+      geo.setIndex(new THREE.BufferAttribute(new Uint32Array(md.idx), 1));
+      var c = md.col;
+      var mat = new THREE.MeshPhongMaterial({color:new THREE.Color(c[0],c[1],c[2]), opacity:c[3], transparent:!!md.tr, side:THREE.DoubleSide});
+      var mesh = new THREE.Mesh(geo, mat);
+      mesh.applyMatrix4(new THREE.Matrix4().fromArray(md.mtx));
+      mesh.userData.expressID = md.eid;
+      if(!meshByEid[md.eid]) meshByEid[md.eid] = [];
+      meshByEid[md.eid].push(mesh);
+      return mesh;
+    });
+    var elements = cached.elData.map(function(ed) {
+      var b = ed.box;
+      return {
+        expressId: ed.eid,
+        meshes: meshByEid[ed.eid] || [],
+        box:    new THREE.Box3(new THREE.Vector3(b[0],b[1],b[2]), new THREE.Vector3(b[3],b[4],b[5])),
+        props:  ed.props
+      };
+    });
+    return {meshes:meshes, elements:elements, storeys:cached.storeys, storeyData:cached.storeyData, stats:cached.stats};
   }
 
   function idbDeleteProjectData(projectId) {
@@ -3548,13 +3643,21 @@ function startApp() {
           chain = chain.then(function(){
             setLoading(true);
             setLoadMsg('Restoring ' + entry.name + '…');
-            var buf = entry.buffer;
             var disc='structural', col=DISC[0].c;
-            return loadIFC(buf, col, function(msg){ setLoadMsg(entry.name + ': ' + msg); }).then(function(result){
+            // Check geometry cache first — avoids re-running web-ifc WASM parser
+            return idbGetGeoCache(entry.id).then(function(cached) {
+              if(cached && cached.v === 1) return _geoDeserialize(cached);
+              // Cache miss: parse raw IFC, then save result for next time
+              return loadIFC(entry.buffer, col, function(msg){ setLoadMsg(entry.name + ': ' + msg); })
+                .then(function(result) {
+                  idbSaveGeoCache(entry.id, _geoSerialize(result)); // fire-and-forget
+                  return result;
+                });
+            }).then(function(result){
               disc = detectDiscipline(result.elements);
               var dObj = DISC.find(function(x){return x.id===disc;});
               col = dObj ? dObj.c : col;
-              var fSize = result.stats ? result.stats.fileSize : buf.byteLength;
+              var fSize = result.stats ? result.stats.fileSize : entry.buffer.byteLength;
               d({t:'ADD_MODEL', v:{id:entry.id, name:entry.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
             }).catch(function(e){ console.warn('Failed to restore '+entry.name+':', e); })
               .then(function(){ setLoading(false); setLoadMsg(''); });
@@ -3646,6 +3749,7 @@ function startApp() {
               var modelId = uid();
               d({t:'ADD_MODEL', v:{id:modelId, name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
               idbSaveFile(modelId, f.name, buf, s.activeProject||'default');
+              idbSaveGeoCache(modelId, _geoSerialize(result)); // cache geometry for fast project-switch restore
             });
           }).catch(function(er) {
             console.error(er);
@@ -3862,7 +3966,7 @@ function startApp() {
         <span style=${{color:'var(--text-primary)',fontSize:'.75rem',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${m.name}>${m.name}</span>
         ${m._stub && html`<span style=${{fontSize:'.55rem',color:'#f59e0b',background:'var(--pill-amber-bg)',padding:'.05rem .3rem',borderRadius:4,flexShrink:0}}>stub</span>`}
         <button onClick=${function(){setOpen(!open)}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>${open?'▲':'▼'}</button>
-        <button onClick=${function(){d({t:'DEL_MODEL',id:m.id});idbDeleteFile(m.id);}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>✕</button>
+        <button onClick=${function(){d({t:'DEL_MODEL',id:m.id});idbDeleteFile(m.id);idbDeleteGeoCache(m.id);}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>✕</button>
       </div>
       ${open && html`<div style=${{padding:'.5rem',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:'.35rem'}}>
         <select value=${m.discipline} onChange=${function(e){var p=DISC.find(function(x){return x.id===e.target.value});d({t:'UPD_MODEL',id:m.id,u:{discipline:e.target.value,color:p?p.c:m.color}})}}

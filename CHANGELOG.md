@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.29 (2026-03-23)
+- Speed up project switch by not blocking on IDB save
+
 ## v1.2.28 (2026-03-23)
 - Remove Development Tools section from OPEN_SOURCE_COMPONENTS.md
 
