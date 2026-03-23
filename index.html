@@ -178,7 +178,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.34',hash:'9b7ee5a',date:'2026-03-23T13:46:39Z'};
+  var CC_VERSION = {v:'1.2.35',hash:'a581d4d',date:'2026-03-23T14:00:43Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -3505,6 +3505,44 @@ function startApp() {
     return idbSaveProjectData(pid, data);
   }
 
+  // ── Project file restoration (standalone, usable from App) ─────
+  function _restoreProjectFilesGlobal(projectId, d) {
+    var pid = projectId || 'default';
+    function _setGlobalLoading(v) {
+      window._ccModelLoading = !!v;
+      window.dispatchEvent(new CustomEvent('cc-model-loading', {detail:{loading:!!v}}));
+    }
+    idbGetProjectFiles(pid).then(function(stored){
+      if(!stored.length) { d({t:'SWITCHING_PROJECT', v:false}); return; }
+      var chain = Promise.resolve();
+      stored.forEach(function(entry){
+        chain = chain.then(function(){
+          _setGlobalLoading(true);
+          return idbGetGeoCache(entry.id).then(function(cached) {
+            if(cached && cached.v === 1) return _geoDeserialize(cached);
+            return loadIFC(entry.buffer, DISC[0].c, function(){})
+              .then(function(result) {
+                idbSaveGeoCache(entry.id, _geoSerialize(result));
+                return result;
+              });
+          }).then(function(result){
+            var disc = detectDiscipline(result.elements);
+            var dObj = DISC.find(function(x){return x.id===disc;});
+            var col = dObj ? dObj.c : DISC[0].c;
+            var fSize = result.stats ? result.stats.fileSize : entry.buffer.byteLength;
+            d({t:'ADD_MODEL', v:{id:entry.id, name:entry.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
+          }).catch(function(e){ console.warn('Failed to restore '+entry.name+':', e); })
+            .then(function(){ _setGlobalLoading(false); });
+        });
+      });
+      chain.then(function(){ d({t:'SWITCHING_PROJECT', v:false}); });
+    });
+    // Also restore saved session data
+    idbGetProjectData(pid).then(function(data){
+      if(data) d({t:'LOAD_PROJECT_STATE', data:data});
+    });
+  }
+
   function _switchProject(newProjId, s, d) {
     d({t:'SWITCHING_PROJECT', v:true});
     // Save current project in background — don't block the switch on it
@@ -3668,68 +3706,8 @@ function startApp() {
     var dg = useState(false), dragging=dg[0], setDragging=dg[1];
     var dragCounter = useRef(0);
 
-    // Auto-load stored IFC files from IndexedDB for the active project
-    function _restoreProjectFiles(projectId) {
-      idbGetProjectFiles(projectId||'default').then(function(stored){
-        if(!stored.length) { d({t:'SWITCHING_PROJECT', v:false}); return; }
-        var chain = Promise.resolve();
-        stored.forEach(function(entry){
-          chain = chain.then(function(){
-            setLoading(true);
-            setLoadMsg('Restoring ' + entry.name + '…');
-            var disc='structural', col=DISC[0].c;
-            // Check geometry cache first — avoids re-running web-ifc WASM parser
-            return idbGetGeoCache(entry.id).then(function(cached) {
-              if(cached && cached.v === 1) return _geoDeserialize(cached);
-              // Cache miss: parse raw IFC, then save result for next time
-              return loadIFC(entry.buffer, col, function(msg){ setLoadMsg(entry.name + ': ' + msg); })
-                .then(function(result) {
-                  idbSaveGeoCache(entry.id, _geoSerialize(result)); // fire-and-forget
-                  return result;
-                });
-            }).then(function(result){
-              disc = detectDiscipline(result.elements);
-              var dObj = DISC.find(function(x){return x.id===disc;});
-              col = dObj ? dObj.c : col;
-              var fSize = result.stats ? result.stats.fileSize : entry.buffer.byteLength;
-              d({t:'ADD_MODEL', v:{id:entry.id, name:entry.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
-            }).catch(function(e){ console.warn('Failed to restore '+entry.name+':', e); })
-              .then(function(){ setLoading(false); setLoadMsg(''); });
-          });
-        });
-        chain.then(function(){ d({t:'SWITCHING_PROJECT', v:false}); });
-      });
-    }
-
-    useEffect(function(){
-      // Use a window-level flag so restoration doesn't re-run when the tab unmounts/remounts
-      var key = '_ccRestored_' + (s.activeProject || 'default');
-      if(window[key]) return;
-      window[key] = true;
-      _restoreProjectFiles(s.activeProject);
-      // Also restore saved project session data (clashes, issues, etc.)
-      idbGetProjectData(s.activeProject).then(function(data){
-        if(data) d({t:'LOAD_PROJECT_STATE', data:Object.assign({}, data, {models:s.models})});
-      });
-    },[]);
-
-    // Listen for project switch events
-    useEffect(function(){
-      function onSwitch() {
-        var newProjId = window._ccProjectSwitch||'default';
-        // Clear stale caches from previous project
-        _prevElementHashes = {};
-        _underlayImgCache = {};
-        _underlayImgDataCache = {};
-        _restoreProjectFiles(newProjId);
-        // Also load saved project session data (clashes, issues, etc.)
-        idbGetProjectData(newProjId).then(function(data){
-          if(data) d({t:'LOAD_PROJECT_STATE', data:Object.assign({}, data, {models:s.models})});
-        });
-      }
-      window.addEventListener('cc-project-switch', onSwitch);
-      return function(){ window.removeEventListener('cc-project-switch', onSwitch); };
-    },[]);
+    // Project file restoration now handled at App level (runs immediately on load,
+    // no need to open the models tab first). See _restoreProjectFilesGlobal().
 
     function processFiles(files) {
       setErr('');
@@ -6268,6 +6246,25 @@ function startApp() {
       document.documentElement.setAttribute('data-theme', t);
       try { localStorage.setItem('cc_theme', t); } catch(e) {}
     }, [s.prefs.theme]);
+    // ── Restore project files on initial load (runs once, before any tab is opened) ──
+    useEffect(function(){
+      var key = '_ccRestored_' + (s.activeProject || 'default');
+      if(window[key]) return;
+      window[key] = true;
+      _restoreProjectFilesGlobal(s.activeProject, d);
+    },[]);
+    // ── Listen for project-switch events (from project selector) ──
+    useEffect(function(){
+      function onSwitch() {
+        var newProjId = window._ccProjectSwitch||'default';
+        _prevElementHashes = {};
+        _underlayImgCache = {};
+        _underlayImgDataCache = {};
+        _restoreProjectFilesGlobal(newProjId, d);
+      }
+      window.addEventListener('cc-project-switch', onSwitch);
+      return function(){ window.removeEventListener('cc-project-switch', onSwitch); };
+    },[]);
     // Auto-save project data (debounced) when clashes/issues/viewpoints change
     var _latestSRef = useRef(s);
     _latestSRef.current = s;

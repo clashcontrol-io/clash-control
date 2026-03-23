@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.35 (2026-03-23)
+- Add Ollama-first LLM with in-browser fallback and idle auto-unload
+
 ## v1.2.34 (2026-03-23)
 - Reduce memory usage by ~2GB: remove LLM, trim clash data, reuse boxes
 
