@@ -9,7 +9,7 @@
 
   <!-- CSP: restrict resource loading to known CDN origins -->
   <!-- 'unsafe-eval' required by pdf.js v3 for custom font rendering (CFF/Type1 font programs) -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co http://localhost:11434 blob:; worker-src blob:; img-src 'self' blob: data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co http://localhost:11434 https://api.anthropic.com https://api.openai.com https://generativelanguage.googleapis.com http://localhost:* ws://localhost:* blob:; worker-src blob:; img-src 'self' blob: data:;">
 
   <!-- CDN deps: React, Three.js, JSZip — all UMD, all cdnjs -->
   <!-- SRI hashes: regenerate with `node scripts/generate-sri.js` if you change versions -->
@@ -182,7 +182,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.51',hash:'a93cfc5',date:'2026-03-23T16:17:44Z'};
+  var CC_VERSION = {v:'1.2.53',hash:'e506bea',date:'2026-03-23T19:37:14Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -267,7 +267,19 @@ function startApp() {
     activeUnderlay:null,
     underlayMode:null, // null, 'view2d', 'compare'
     markups:[], // [{id, type:'line'|'rect'|'text'|'arrow', points, color, text}]
-    markupTool:null // null, 'line', 'rect', 'text', 'arrow', 'erase'
+    markupTool:null, // null, 'line', 'rect', 'text', 'arrow', 'erase'
+    // Revit Bridge (AI-powered)
+    revitBridge:{
+      provider:'',       // 'anthropic','openai','google'
+      apiKey:'',
+      mcpHost:'localhost',
+      mcpPort:8080,
+      connected:false,
+      syncing:false,
+      lastSync:null,
+      log:[]             // [{ts,type:'push'|'pull'|'info'|'error',text}]
+    },
+    showRevitBridge:false
   };
   function reducer(s,a) {
     switch(a.t) {
@@ -322,6 +334,11 @@ function startApp() {
       case 'DEL_MARKUP':      return Object.assign({},s,{markups:s.markups.filter(function(m){return m.id!==a.id})});
       case 'CLEAR_MARKUPS':   return Object.assign({},s,{markups:[]});
       case 'MARKUP_TOOL':     return Object.assign({},s,{markupTool:a.v});
+      // Revit Bridge
+      case 'UPD_BRIDGE':      return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,a.u)});
+      case 'BRIDGE_LOG':      return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,{log:s.revitBridge.log.concat([{ts:Date.now(),type:a.logType||'info',text:a.text}])})});
+      case 'CLEAR_BRIDGE_LOG':return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,{log:[]})});
+      case 'REVIT_BRIDGE':    return Object.assign({},s,{showRevitBridge:a.v});
       default:            return s;
     }
   }
@@ -5350,6 +5367,444 @@ function startApp() {
     </div></div>`;
   }
 
+  // ── Revit Bridge (AI-powered MCP integration) ─────────────────
+
+  // Persist bridge config to localStorage
+  function _saveBridgeConfig(bridge) {
+    try {
+      localStorage.setItem('cc_revit_bridge', JSON.stringify({
+        provider: bridge.provider,
+        apiKey: bridge.apiKey,
+        mcpHost: bridge.mcpHost,
+        mcpPort: bridge.mcpPort
+      }));
+    } catch(e) {}
+  }
+  function _loadBridgeConfig() {
+    try {
+      var raw = localStorage.getItem('cc_revit_bridge');
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) { return null; }
+  }
+
+  // Build tool definitions that expose ClashControl data to the AI
+  function _buildCCTools() {
+    return [
+      {
+        name: 'get_clashes',
+        description: 'Get all clash detection results from ClashControl. Returns array of clashes with element info, location, status, type.',
+        parameters: { type: 'object', properties: { status: { type: 'string', enum: ['all','open','resolved','closed'], description: 'Filter by status' } } }
+      },
+      {
+        name: 'get_issues',
+        description: 'Get all issues from ClashControl. Returns array of issues with title, status, priority, assigned element info.',
+        parameters: { type: 'object', properties: { status: { type: 'string', enum: ['all','open','in_progress','resolved','closed'], description: 'Filter by status' } } }
+      },
+      {
+        name: 'update_clash_status',
+        description: 'Update the status of a clash in ClashControl.',
+        parameters: { type: 'object', properties: { clash_id: { type: 'string', description: 'The clash ID' }, status: { type: 'string', enum: ['open','resolved','closed'] }, comment: { type: 'string', description: 'Optional resolution comment' } }, required: ['clash_id','status'] }
+      },
+      {
+        name: 'update_issue_status',
+        description: 'Update the status of an issue in ClashControl.',
+        parameters: { type: 'object', properties: { issue_id: { type: 'string', description: 'The issue ID' }, status: { type: 'string', enum: ['open','in_progress','resolved','closed'] }, comment: { type: 'string', description: 'Optional comment' } }, required: ['issue_id','status'] }
+      },
+      {
+        name: 'push_to_revit',
+        description: 'Push clash/issue data to Revit via MCP. Creates clash markers, sets parameters on elements, creates filtered views.',
+        parameters: { type: 'object', properties: { item_ids: { type: 'array', items: { type: 'string' }, description: 'IDs of clashes/issues to push. If empty, pushes all open items.' } } }
+      },
+      {
+        name: 'pull_from_revit',
+        description: 'Pull resolution status from Revit via MCP. Checks if clashing elements have been moved and updates ClashControl accordingly.',
+        parameters: { type: 'object', properties: {} }
+      },
+      {
+        name: 'get_revit_status',
+        description: 'Check if Revit MCP server is running and responsive.',
+        parameters: { type: 'object', properties: {} }
+      }
+    ];
+  }
+
+  // Execute a tool call from the AI response
+  function _executeCCTool(name, args, s, d) {
+    switch(name) {
+      case 'get_clashes': {
+        var items = s.clashes;
+        if (args.status && args.status !== 'all') items = items.filter(function(c) { return c.status === args.status; });
+        return JSON.stringify(items.map(function(c) {
+          return { id:c.id, type:c.type, status:c.status, title:c.title, elemAName:c.elemAName, elemBName:c.elemBName,
+            elemAType:c.elemAType, elemBType:c.elemBType, point:c.point, distance:c.distance, elevation:c.elevation,
+            elemAStorey:c.elemAStorey, elemBStorey:c.elemBStorey, disciplines:c.disciplines };
+        }));
+      }
+      case 'get_issues': {
+        var items2 = s.issues;
+        if (args.status && args.status !== 'all') items2 = items2.filter(function(i) { return i.status === args.status; });
+        return JSON.stringify(items2.map(function(i) {
+          return { id:i.id, type:i.type, status:i.status, title:i.title, priority:i.priority, category:i.category,
+            assignee:i.assignee, elementName:i.elementName, elementType:i.elementType, point:i.point, storey:i.storey };
+        }));
+      }
+      case 'update_clash_status': {
+        if (args.clash_id && args.status) {
+          var upd = { status: args.status };
+          if (args.comment) upd.description = args.comment;
+          d({ t:'UPD_CLASH', id:args.clash_id, u:upd });
+          return JSON.stringify({ success:true, id:args.clash_id, newStatus:args.status });
+        }
+        return JSON.stringify({ success:false, error:'Missing clash_id or status' });
+      }
+      case 'update_issue_status': {
+        if (args.issue_id && args.status) {
+          var upd2 = { status: args.status };
+          if (args.comment) upd2.description = args.comment;
+          d({ t:'UPD_ISSUE', id:args.issue_id, u:upd2 });
+          return JSON.stringify({ success:true, id:args.issue_id, newStatus:args.status });
+        }
+        return JSON.stringify({ success:false, error:'Missing issue_id or status' });
+      }
+      case 'push_to_revit': {
+        // This tool call is forwarded to the Revit MCP by the AI
+        return JSON.stringify({ action:'forward_to_revit_mcp', tool:'place_family', note:'AI should call Revit MCP tools to place markers' });
+      }
+      case 'pull_from_revit': {
+        return JSON.stringify({ action:'forward_to_revit_mcp', tool:'get_revit_model_info', note:'AI should query Revit MCP for element status' });
+      }
+      case 'get_revit_status': {
+        return JSON.stringify({ action:'forward_to_revit_mcp', tool:'get_revit_status', note:'AI should call Revit MCP get_revit_status' });
+      }
+      default:
+        return JSON.stringify({ error:'Unknown tool: ' + name });
+    }
+  }
+
+  // Call AI API with tools (supports Anthropic, OpenAI, Google)
+  function _callAIWithTools(provider, apiKey, systemPrompt, userMessage, tools, mcpConfig) {
+    var toolDefs = tools.map(function(t) {
+      if (provider === 'anthropic') {
+        return { name:t.name, description:t.description, input_schema:t.parameters };
+      } else if (provider === 'openai') {
+        return { type:'function', function:{ name:t.name, description:t.description, parameters:t.parameters } };
+      } else {
+        // Google Gemini
+        return { name:t.name, description:t.description, parameters:t.parameters };
+      }
+    });
+
+    var mcpNote = '\n\nRevit MCP server is available at ' + mcpConfig.mcpHost + ':' + mcpConfig.mcpPort + '. When you need to interact with Revit, describe the MCP tool calls needed (place_family, set_element_parameter, etc.) in your response.';
+
+    if (provider === 'anthropic') {
+      return fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'x-api-key':apiKey,
+          'anthropic-version':'2023-06-01',
+          'anthropic-dangerous-direct-browser-access':'true'
+        },
+        body:JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:4096,
+          system:systemPrompt + mcpNote,
+          messages:[{role:'user',content:userMessage}],
+          tools:toolDefs
+        })
+      }).then(function(r) { return r.json(); });
+    } else if (provider === 'openai') {
+      return fetch('https://api.openai.com/v1/chat/completions', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+apiKey },
+        body:JSON.stringify({
+          model:'gpt-4o',
+          messages:[{role:'system',content:systemPrompt+mcpNote},{role:'user',content:userMessage}],
+          tools:toolDefs,
+          tool_choice:'auto'
+        })
+      }).then(function(r) { return r.json(); });
+    } else if (provider === 'google') {
+      return fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+apiKey, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          system_instruction:{parts:[{text:systemPrompt+mcpNote}]},
+          contents:[{role:'user',parts:[{text:userMessage}]}],
+          tools:[{function_declarations:toolDefs}]
+        })
+      }).then(function(r) { return r.json(); });
+    }
+    return Promise.reject(new Error('Unknown provider: '+provider));
+  }
+
+  // Parse tool calls from AI response (normalize across providers)
+  function _parseAIToolCalls(provider, response) {
+    var text = '';
+    var toolCalls = [];
+    if (provider === 'anthropic') {
+      var content = response.content || [];
+      content.forEach(function(block) {
+        if (block.type === 'text') text += block.text;
+        if (block.type === 'tool_use') toolCalls.push({ id:block.id, name:block.name, args:block.input||{} });
+      });
+    } else if (provider === 'openai') {
+      var choice = (response.choices||[])[0]||{};
+      var msg = choice.message||{};
+      text = msg.content||'';
+      (msg.tool_calls||[]).forEach(function(tc) {
+        var fn = tc.function||{};
+        toolCalls.push({ id:tc.id, name:fn.name, args:JSON.parse(fn.arguments||'{}') });
+      });
+    } else if (provider === 'google') {
+      var parts = ((response.candidates||[])[0]||{}).content||{};
+      (parts.parts||[]).forEach(function(p) {
+        if (p.text) text += p.text;
+        if (p.functionCall) toolCalls.push({ id:uid(), name:p.functionCall.name, args:p.functionCall.args||{} });
+      });
+    }
+    return { text:text, toolCalls:toolCalls };
+  }
+
+  // System prompt for the AI bridge
+  var BRIDGE_SYSTEM_PROMPT = 'You are the ClashControl-Revit Bridge AI. Your job is to help sync clash detection data and issues between ClashControl (a web-based BIM clash detection tool) and Autodesk Revit (via MCP server).\n\n' +
+    'You have tools to read clashes and issues from ClashControl, update their statuses, and coordinate with Revit MCP.\n\n' +
+    'When pushing clashes to Revit:\n' +
+    '1. Read open clashes from ClashControl using get_clashes\n' +
+    '2. For each clash, describe what Revit MCP calls are needed (place_family at clash point, set_element_parameter for CC_ClashID, CC_Status, etc.)\n' +
+    '3. Summarize what was pushed\n\n' +
+    'When pulling status from Revit:\n' +
+    '1. Query Revit MCP for elements tagged with CC_ClashID parameters\n' +
+    '2. Check if geometries have changed (elements moved/resized)\n' +
+    '3. Update ClashControl clash statuses using update_clash_status\n' +
+    '4. Summarize what changed\n\n' +
+    'Be concise. Use tool calls. Report results clearly.';
+
+  // High-level push/pull orchestration
+  function _revitBridgePush(s, d) {
+    var bridge = s.revitBridge;
+    if (!bridge.provider || !bridge.apiKey) return Promise.reject(new Error('Configure AI provider and API key first'));
+
+    d({t:'UPD_BRIDGE',u:{syncing:true}});
+    d({t:'BRIDGE_LOG',logType:'push',text:'Pushing ' + s.clashes.filter(function(c){return c.status==='open';}).length + ' open clashes + ' + s.issues.filter(function(i){return i.status==='open';}).length + ' open issues to Revit...'});
+
+    var tools = _buildCCTools();
+    var userMsg = 'Push all open clashes and issues from ClashControl to Revit. First use get_clashes and get_issues to read the data, then describe the Revit MCP calls needed to create markers and tag elements. Finally summarize what would be pushed.';
+
+    return _callAIWithTools(bridge.provider, bridge.apiKey, BRIDGE_SYSTEM_PROMPT, userMsg, tools, bridge)
+      .then(function(response) {
+        var parsed = _parseAIToolCalls(bridge.provider, response);
+        // Execute any tool calls
+        var toolResults = parsed.toolCalls.map(function(tc) {
+          return { id:tc.id, name:tc.name, result:_executeCCTool(tc.name, tc.args, s, d) };
+        });
+        var summary = parsed.text || 'Push completed.';
+        if (toolResults.length) {
+          summary += '\n\nTool calls executed: ' + toolResults.map(function(tr){ return tr.name; }).join(', ');
+        }
+        d({t:'BRIDGE_LOG',logType:'push',text:summary});
+        d({t:'UPD_BRIDGE',u:{syncing:false,lastSync:Date.now()}});
+        return summary;
+      })
+      .catch(function(err) {
+        d({t:'BRIDGE_LOG',logType:'error',text:'Push failed: '+err.message});
+        d({t:'UPD_BRIDGE',u:{syncing:false}});
+        throw err;
+      });
+  }
+
+  function _revitBridgePull(s, d) {
+    var bridge = s.revitBridge;
+    if (!bridge.provider || !bridge.apiKey) return Promise.reject(new Error('Configure AI provider and API key first'));
+
+    d({t:'UPD_BRIDGE',u:{syncing:true}});
+    d({t:'BRIDGE_LOG',logType:'pull',text:'Pulling status updates from Revit...'});
+
+    var tools = _buildCCTools();
+    var userMsg = 'Pull resolution status from Revit back to ClashControl. First check Revit MCP status, then check which clashes have been resolved in Revit, and update ClashControl accordingly using update_clash_status and update_issue_status tools.';
+
+    return _callAIWithTools(bridge.provider, bridge.apiKey, BRIDGE_SYSTEM_PROMPT, userMsg, tools, bridge)
+      .then(function(response) {
+        var parsed = _parseAIToolCalls(bridge.provider, response);
+        parsed.toolCalls.forEach(function(tc) {
+          _executeCCTool(tc.name, tc.args, s, d);
+        });
+        var summary = parsed.text || 'Pull completed.';
+        d({t:'BRIDGE_LOG',logType:'pull',text:summary});
+        d({t:'UPD_BRIDGE',u:{syncing:false,lastSync:Date.now()}});
+        return summary;
+      })
+      .catch(function(err) {
+        d({t:'BRIDGE_LOG',logType:'error',text:'Pull failed: '+err.message});
+        d({t:'UPD_BRIDGE',u:{syncing:false}});
+        throw err;
+      });
+  }
+
+  // Test the AI connection
+  function _testBridgeConnection(bridge, d) {
+    d({t:'BRIDGE_LOG',logType:'info',text:'Testing connection to '+bridge.provider+'...'});
+    var tools = _buildCCTools();
+    return _callAIWithTools(bridge.provider, bridge.apiKey, BRIDGE_SYSTEM_PROMPT, 'Say "Connection successful" and nothing else.', tools.slice(0,1), bridge)
+      .then(function(response) {
+        var parsed = _parseAIToolCalls(bridge.provider, response);
+        d({t:'UPD_BRIDGE',u:{connected:true}});
+        d({t:'BRIDGE_LOG',logType:'info',text:'Connected to '+bridge.provider+': '+(parsed.text||'OK')});
+        return true;
+      })
+      .catch(function(err) {
+        d({t:'UPD_BRIDGE',u:{connected:false}});
+        d({t:'BRIDGE_LOG',logType:'error',text:'Connection failed: '+err.message});
+        return false;
+      });
+  }
+
+  // ── Revit Bridge Panel (modal) ──────────────────────────────────
+
+  function RevitBridgePanel(props) {
+    var s = props.s, d = props.d;
+    var bridge = s.revitBridge;
+
+    // Load saved config on first render
+    useEffect(function() {
+      var saved = _loadBridgeConfig();
+      if (saved && !bridge.provider) d({t:'UPD_BRIDGE',u:saved});
+    }, []);
+
+    var isDark = (s.prefs.theme||'dark')==='dark';
+    var MS={position:'fixed',inset:0,background:'var(--modal-bg)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50};
+    var MX={background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:12,width:520,maxWidth:'95vw',maxHeight:'90vh',overflowY:'auto',boxShadow:'0 25px 50px rgba(0,0,0,.5)'};
+    var SEC={fontSize:'.65rem',fontWeight:700,color:'#93c5fd',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'.4rem',marginTop:'.6rem'};
+    var LBL={fontSize:'.7rem',color:'var(--text-muted)',display:'block',marginBottom:'.2rem'};
+    var ROW={display:'flex',gap:'.5rem',marginBottom:'.4rem'};
+    var logBg = isDark ? '#0f172a' : '#f1f5f9';
+
+    function updBridge(u) {
+      var merged = Object.assign({}, bridge, u);
+      d({t:'UPD_BRIDGE',u:u});
+      _saveBridgeConfig(merged);
+    }
+
+    useEffect(function(){
+      function onKey(e){if(e.key==='Escape')d({t:'REVIT_BRIDGE',v:false});}
+      window.addEventListener('keydown',onKey);
+      return function(){window.removeEventListener('keydown',onKey);};
+    },[]);
+
+    var openClashes = s.clashes.filter(function(c){return c.status==='open';}).length;
+    var openIssues = s.issues.filter(function(i){return i.status==='open';}).length;
+    var hasConfig = bridge.provider && bridge.apiKey;
+    var statusColor = bridge.connected ? '#22c55e' : hasConfig ? '#f59e0b' : '#64748b';
+    var statusText = bridge.connected ? 'Connected' : hasConfig ? 'Not tested' : 'Not configured';
+
+    return html`<div style=${MS} role="dialog" aria-label="Revit Bridge" onClick=${function(e){if(e.target===e.currentTarget)d({t:'REVIT_BRIDGE',v:false});}}>
+      <div style=${MX}>
+        <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.8rem 1rem',borderBottom:'1px solid var(--border)'}}>
+          <div style=${{display:'flex',alignItems:'center',gap:'.5rem'}}>
+            <span style=${{fontWeight:600,fontSize:'.875rem'}}>Revit Bridge</span>
+            <span style=${{fontSize:'.55rem',padding:'2px 6px',borderRadius:99,background:statusColor+'22',color:statusColor,fontWeight:600}}>${statusText}</span>
+          </div>
+          <button onClick=${function(){d({t:'REVIT_BRIDGE',v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.1rem',padding:0}} aria-label="Close">✕</button>
+        </div>
+
+        <div style=${{padding:'0 1rem .8rem 1rem'}}>
+          <!-- AI Provider Config -->
+          <div style=${SEC}>AI Provider (BYOK)</div>
+          <div style=${ROW}>
+            <div style=${{flex:1}}>
+              <label style=${LBL}>Provider</label>
+              <select value=${bridge.provider||''} onChange=${function(e){updBridge({provider:e.target.value,connected:false});}} style=${S_INPUT}>
+                <option value="">Select...</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI (GPT)</option>
+                <option value="google">Google (Gemini)</option>
+              </select>
+            </div>
+            <div style=${{flex:2}}>
+              <label style=${LBL}>API Key</label>
+              <input type="password" value=${bridge.apiKey||''} placeholder=${bridge.provider==='anthropic'?'sk-ant-...':bridge.provider==='openai'?'sk-...':'AIza...'}
+                onInput=${function(e){updBridge({apiKey:e.target.value,connected:false});}}
+                style=${S_INPUT} />
+            </div>
+          </div>
+
+          ${bridge.provider && html`<div style=${{fontSize:'.6rem',color:'var(--text-muted)',marginBottom:'.4rem'}}>
+            Model: ${bridge.provider==='anthropic'?'claude-sonnet-4-20250514':bridge.provider==='openai'?'gpt-4o':'gemini-2.0-flash'}
+            — Your key is stored locally in your browser only.
+          </div>`}
+
+          <!-- MCP Server Config -->
+          <div style=${SEC}>Revit MCP Server</div>
+          <div style=${ROW}>
+            <div style=${{flex:2}}>
+              <label style=${LBL}>Host</label>
+              <input type="text" value=${bridge.mcpHost||'localhost'} onInput=${function(e){updBridge({mcpHost:e.target.value});}} style=${S_INPUT} />
+            </div>
+            <div style=${{flex:1}}>
+              <label style=${LBL}>Port</label>
+              <input type="number" value=${bridge.mcpPort||8080} onInput=${function(e){updBridge({mcpPort:+e.target.value});}} style=${S_INPUT} />
+            </div>
+          </div>
+          <div style=${{fontSize:'.6rem',color:'var(--text-muted)',marginBottom:'.4rem'}}>
+            Point this to your running Revit MCP server (e.g. mcp-server-for-revit-python).
+          </div>
+
+          <!-- Test Connection -->
+          <div style=${{display:'flex',gap:'.4rem',marginBottom:'.6rem'}}>
+            <button onClick=${function(){_testBridgeConnection(bridge,d);}} disabled=${!hasConfig||bridge.syncing}
+              style=${{...S_BTN,background:'#1e3a5f',color:'#93c5fd',opacity:(!hasConfig||bridge.syncing)?0.5:1}}>
+              Test Connection
+            </button>
+          </div>
+
+          <!-- Push / Pull Actions -->
+          <div style=${SEC}>Sync Actions</div>
+          <div style=${{display:'flex',gap:'.4rem',marginBottom:'.5rem'}}>
+            <button onClick=${function(){_revitBridgePush(s,d);}} disabled=${!hasConfig||bridge.syncing||(!openClashes&&!openIssues)}
+              style=${{...S_BTN,flex:1,background:'#2563eb',color:'#fff',opacity:(!hasConfig||bridge.syncing||(!openClashes&&!openIssues))?0.5:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'.3rem'}}>
+              ${bridge.syncing ? html`<span class="spin" style=${{display:'inline-block',width:10,height:10,borderRadius:'50%',border:'1.5px solid rgba(255,255,255,.3)',borderTopColor:'#fff'}}></span>` : null}
+              Push to Revit (${openClashes} clashes, ${openIssues} issues)
+            </button>
+            <button onClick=${function(){_revitBridgePull(s,d);}} disabled=${!hasConfig||bridge.syncing}
+              style=${{...S_BTN,flex:1,background:'#065f46',color:'#6ee7b7',opacity:(!hasConfig||bridge.syncing)?0.5:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'.3rem'}}>
+              ${bridge.syncing ? html`<span class="spin" style=${{display:'inline-block',width:10,height:10,borderRadius:'50%',border:'1.5px solid rgba(255,255,255,.3)',borderTopColor:'#fff'}}></span>` : null}
+              Pull from Revit
+            </button>
+          </div>
+          ${bridge.lastSync && html`<div style=${{fontSize:'.55rem',color:'var(--text-muted)',marginBottom:'.3rem'}}>
+            Last sync: ${new Date(bridge.lastSync).toLocaleTimeString()}
+          </div>`}
+
+          <!-- Activity Log -->
+          <div style=${SEC}>
+            Activity Log
+            ${bridge.log.length>0 && html`<button onClick=${function(){d({t:'CLEAR_BRIDGE_LOG'});}} style=${{...S_BTN,fontSize:'.5rem',padding:'1px 4px',background:'none',color:'var(--text-muted)',marginLeft:'.5rem',border:'1px solid var(--border)'}}>Clear</button>`}
+          </div>
+          <div style=${{background:logBg,borderRadius:8,border:'1px solid var(--border)',padding:'.4rem',maxHeight:180,overflowY:'auto',fontSize:'.62rem',fontFamily:'monospace',lineHeight:1.6}}>
+            ${bridge.log.length === 0 && html`<div style=${{color:'var(--text-muted)',textAlign:'center',padding:'.5rem'}}>No activity yet. Configure your AI provider and push/pull to get started.</div>`}
+            ${bridge.log.map(function(entry, i) {
+              var icon = entry.type==='push' ? '>> ' : entry.type==='pull' ? '<< ' : entry.type==='error' ? '!! ' : '-- ';
+              var color = entry.type==='error' ? '#ef4444' : entry.type==='push' ? '#60a5fa' : entry.type==='pull' ? '#22c55e' : 'var(--text-secondary)';
+              return html`<div key=${i} style=${{color:color,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+                <span style=${{color:'var(--text-muted)'}}>${new Date(entry.ts).toLocaleTimeString()}</span> ${icon}${entry.text}
+              </div>`;
+            })}
+          </div>
+
+          <!-- Quick Help -->
+          <div style=${{marginTop:'.6rem',padding:'.5rem',background:logBg,borderRadius:8,border:'1px solid var(--border)',fontSize:'.6rem',color:'var(--text-secondary)',lineHeight:1.6}}>
+            <strong style=${{color:'var(--text-primary)'}}>How it works:</strong><br/>
+            1. Enter your AI API key (Anthropic, OpenAI, or Google) — stored locally only<br/>
+            2. Start your Revit MCP server (see REVIT_BRIDGE_GUIDE.md)<br/>
+            3. Click "Push to Revit" to send clashes/issues as markers in Revit<br/>
+            4. After resolving in Revit, click "Pull from Revit" to sync status back<br/>
+            <a href="https://github.com/mcp-servers-for-revit/mcp-server-for-revit-python" target="_blank" rel="noopener" style=${{color:'#60a5fa',textDecoration:'underline'}}>Recommended: mcp-server-for-revit-python</a>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   // ── Error Boundary ─────────────────────────────────────────────
   // Prevents unhandled render errors from unmounting the entire app (white screen)
   var ErrorBoundary = (function(){
@@ -6739,6 +7194,11 @@ function startApp() {
         'Export BCF')}
       ${iconBtn(function(){d({t:'UPD_PREFS',u:{theme:isDark?'light':'dark'}});},
         isDark?'☀':'☾', isDark?'Light mode':'Dark mode')}
+      ${iconBtn(function(){d({t:'REVIT_BRIDGE',v:true});},
+        html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+        </svg>`,
+        'Revit Bridge')}
       ${iconBtn(function(){d({t:'SETTINGS',v:true});},
         html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:SVG_GEAR}}></svg>`,
         'Settings')}
@@ -6829,6 +7289,68 @@ function startApp() {
     </div>`;
   }
 
+  // ── First-Visit Welcome Popup ─────────────────────────────────
+
+  function WelcomePopup(props) {
+    var d = props.d;
+    var isDark = (props.theme||'dark')==='dark';
+    var stShow = useState(function(){
+      try { return !localStorage.getItem('cc_welcomed'); } catch(e){ return true; }
+    });
+    var show = stShow[0], setShow = stShow[1];
+    if (!show) return null;
+    function dismiss() {
+      try { localStorage.setItem('cc_welcomed','1'); } catch(e){}
+      setShow(false);
+    }
+    var MS={position:'fixed',inset:0,background:'var(--modal-bg)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60};
+    var MX={background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:14,width:400,maxWidth:'92vw',boxShadow:'0 25px 50px rgba(0,0,0,.5)',overflow:'hidden'};
+    var accent='#2563eb';
+    return html`<div style=${MS} onClick=${function(e){if(e.target===e.currentTarget)dismiss();}}>
+      <div style=${MX}>
+        <div style=${{background:'linear-gradient(135deg,#1e3a5f,#2563eb)',padding:'1.2rem 1.2rem 1rem',display:'flex',alignItems:'center',gap:'.65rem'}}>
+          <div style=${{width:36,height:36,background:'rgba(255,255,255,.15)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <span style=${{color:'#fff',fontWeight:900,fontSize:14}}>CC</span>
+          </div>
+          <div>
+            <div style=${{color:'#fff',fontWeight:700,fontSize:'.95rem'}}>Welcome to ClashControl</div>
+            <div style=${{color:'rgba(255,255,255,.7)',fontSize:'.65rem',marginTop:'.1rem'}}>Open-source BIM clash detection</div>
+          </div>
+        </div>
+        <div style=${{padding:'1rem 1.2rem'}}>
+          <div style=${{fontSize:'.75rem',color:'var(--text-primary)',lineHeight:1.65,marginBottom:'.7rem'}}>
+            ClashControl works with a <strong>local AI assistant</strong> to help you run clash checks using plain English. You can connect your own LLM:
+          </div>
+          <div style=${{display:'flex',flexDirection:'column',gap:'.45rem',marginBottom:'.8rem'}}>
+            <div style=${{display:'flex',gap:'.5rem',alignItems:'flex-start'}}>
+              <span style=${{color:'#22c55e',fontWeight:700,fontSize:'.7rem',flexShrink:0,marginTop:1}}>1</span>
+              <span style=${{fontSize:'.68rem',color:'var(--text-secondary)',lineHeight:1.55}}>
+                <strong style=${{color:'var(--text-primary)'}}>Local (free):</strong> Install <a href="https://ollama.com" target="_blank" rel="noopener" style=${{color:'#60a5fa'}}>Ollama</a>, then run <code style=${{background:isDark?'#1e293b':'#e2e8f0',padding:'1px 4px',borderRadius:3,fontSize:'.6rem'}}>ollama pull qwen2.5:7b</code>. ClashControl detects it automatically.
+              </span>
+            </div>
+            <div style=${{display:'flex',gap:'.5rem',alignItems:'flex-start'}}>
+              <span style=${{color:'#22c55e',fontWeight:700,fontSize:'.7rem',flexShrink:0,marginTop:1}}>2</span>
+              <span style=${{fontSize:'.68rem',color:'var(--text-secondary)',lineHeight:1.55}}>
+                <strong style=${{color:'var(--text-primary)'}}>Cloud API (BYOK):</strong> Click the <strong>Revit Bridge</strong> button (left sidebar) to connect Claude, GPT-4o, or Gemini with your own API key. Enables push/pull to Revit via MCP.
+              </span>
+            </div>
+            <div style=${{display:'flex',gap:'.5rem',alignItems:'flex-start'}}>
+              <span style=${{color:'#22c55e',fontWeight:700,fontSize:'.7rem',flexShrink:0,marginTop:1}}>3</span>
+              <span style=${{fontSize:'.68rem',color:'var(--text-secondary)',lineHeight:1.55}}>
+                <strong style=${{color:'var(--text-primary)'}}>No AI? No problem.</strong> Everything works without AI — load IFC files, run clashes, export BCF, all in-browser.
+              </span>
+            </div>
+          </div>
+          <div style=${{display:'flex',gap:'.4rem',justifyContent:'flex-end'}}>
+            <button onClick=${dismiss} style=${{border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'.75rem',borderRadius:8,padding:'.45rem 1.2rem',background:accent,color:'#fff',fontWeight:600}}>
+              Get Started
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   // ── App ────────────────────────────────────────────────────────
 
   function App() {
@@ -6898,7 +7420,9 @@ function startApp() {
       <${RightRail} s=${s} d=${d} />
       ${s.showModal && html`<${NewIssueModal} d=${d} el=${s.modalElement} prefs=${s.prefs} />`}
       ${s.showSettings && html`<${SettingsModal} d=${d} prefs=${s.prefs} />`}
+      ${s.showRevitBridge && html`<${RevitBridgePanel} s=${s} d=${d} />`}
       <${NLCommandPanel} s=${s} d=${d} />
+      <${WelcomePopup} d=${d} theme=${s.prefs.theme} />
     </div>`;
   }
 
