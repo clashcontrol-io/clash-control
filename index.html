@@ -178,7 +178,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.34',hash:'9b7ee5a',date:'2026-03-23T13:46:39Z'};
+  var CC_VERSION = {v:'1.2.36',hash:'2658e5c',date:'2026-03-23T14:12:04Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -926,6 +926,109 @@ function startApp() {
             b.max.x.toFixed(3), b.max.y.toFixed(3), b.max.z.toFixed(3)].join('|');
   }
 
+  // ── Geometry-accurate narrow-phase clash detection ──────────────
+  // After AABB broad-phase identifies candidates, this verifies using
+  // actual mesh vertices with a spatial hash grid for O(n+m) speed.
+
+  // Extract world-space vertex positions from an element (cached as Float32Array)
+  function _getWorldVerts(el) {
+    if (el._wvCache) return el._wvCache;
+    var all = [];
+    (el.meshes || []).forEach(function(mesh) {
+      var pos = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
+      if (!pos) return;
+      // Ensure matrixWorld is current (may not have rendered yet)
+      mesh.updateMatrixWorld(true);
+      var mat = mesh.matrixWorld;
+      var v = new THREE.Vector3();
+      for (var i = 0; i < pos.count; i++) {
+        v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+        v.applyMatrix4(mat);
+        all.push(v.x, v.y, v.z);
+      }
+    });
+    el._wvCache = new Float32Array(all);
+    return el._wvCache;
+  }
+
+  // Spatial hash grid: bucket vertices into cells for O(1) proximity lookup
+  function _SpatialHash(cellSize) {
+    this.cs = cellSize;
+    this.inv = 1 / cellSize;
+    this.map = {};
+  }
+  _SpatialHash.prototype.key = function(x, y, z) {
+    return Math.floor(x * this.inv) + ',' + Math.floor(y * this.inv) + ',' + Math.floor(z * this.inv);
+  };
+  _SpatialHash.prototype.insert = function(verts) {
+    for (var i = 0; i < verts.length; i += 3) {
+      var k = this.key(verts[i], verts[i + 1], verts[i + 2]);
+      if (!this.map[k]) this.map[k] = [];
+      this.map[k].push(i);
+    }
+  };
+  // Query: find minimum squared distance from point to any vertex in the grid
+  // Searches the cell containing the point + all 26 neighbours
+  _SpatialHash.prototype.minDistSq = function(px, py, pz, verts) {
+    var best = Infinity;
+    var cx = Math.floor(px * this.inv), cy = Math.floor(py * this.inv), cz = Math.floor(pz * this.inv);
+    for (var dx = -1; dx <= 1; dx++) {
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dz = -1; dz <= 1; dz++) {
+          var bucket = this.map[(cx + dx) + ',' + (cy + dy) + ',' + (cz + dz)];
+          if (!bucket) continue;
+          for (var b = 0; b < bucket.length; b++) {
+            var idx = bucket[b];
+            var ex = px - verts[idx], ey = py - verts[idx + 1], ez = pz - verts[idx + 2];
+            var d2 = ex * ex + ey * ey + ez * ez;
+            if (d2 < best) best = d2;
+          }
+        }
+      }
+    }
+    return best;
+  };
+
+  // Narrow-phase: compute actual minimum distance between two elements' geometry
+  // Returns distance in metres. Uses spatial hash for speed.
+  // thresholdM: early-exit if we find a distance below this (metres)
+  function _meshMinDist(elA, elB, thresholdM) {
+    var vA = _getWorldVerts(elA), vB = _getWorldVerts(elB);
+    if (!vA.length || !vB.length) return Infinity;
+
+    // Cell size = threshold (clamped to reasonable range)
+    var cs = Math.max(thresholdM || 0.05, 0.02);
+    // Build grid from the smaller set
+    var grid, queryVerts, gridVerts;
+    if (vA.length <= vB.length) {
+      gridVerts = vA; queryVerts = vB;
+    } else {
+      gridVerts = vB; queryVerts = vA;
+    }
+    grid = new _SpatialHash(cs);
+    grid.insert(gridVerts);
+
+    var tSq = thresholdM * thresholdM;
+    var minSq = Infinity;
+    // Query every vertex of the other element (sample if very large)
+    var step = queryVerts.length > 30000 ? 3 * Math.ceil(queryVerts.length / 30000) : 3;
+    for (var i = 0; i < queryVerts.length; i += step) {
+      var d2 = grid.minDistSq(queryVerts[i], queryVerts[i + 1], queryVerts[i + 2], gridVerts);
+      if (d2 < minSq) {
+        minSq = d2;
+        if (minSq <= tSq) return Math.sqrt(minSq); // early exit
+      }
+    }
+    return Math.sqrt(minSq);
+  }
+
+  // Flush vertex caches (called on project switch / model unload)
+  function _flushVertCache(models) {
+    (models || []).forEach(function(m) {
+      (m.elements || []).forEach(function(el) { delete el._wvCache; });
+    });
+  }
+
   function detectClashes(models, rules) {
     var pick = function(id) { return id === 'all' ? models : models.filter(function(m){return m.id===id}); };
     var grpA = pick(rules.modelA), grpB = pick(rules.modelB);
@@ -990,28 +1093,29 @@ function startApp() {
           }
         }
 
-        // Hard clash with tolerance (use temp boxes to avoid cloning)
-        var isHard;
-        if (hardTol > 0) {
-          _tmpBoxA.copy(bA).expandByScalar(-hardTol);
-          _tmpBoxB.copy(bB).expandByScalar(-hardTol);
-          isHard = _tmpBoxA.intersectsBox(_tmpBoxB);
-          if (!isHard) isHard = bA.intersectsBox(bB); // still intersecting without shrink = hard
+        // ── Broad phase: AABB overlap check (fast reject) ──────────
+        var clearanceM = (rules.clearance || 0) / 1000;
+        var broadMargin = Math.max(hardTol, rules.soft ? clearanceM : 0);
+        if (broadMargin > 0) {
+          _tmpBoxA.copy(bA).expandByScalar(broadMargin);
+          if (!_tmpBoxA.intersectsBox(bB)) return; // AABBs don't overlap even with margin
         } else {
-          isHard = bA.intersectsBox(bB);
+          if (!bA.intersectsBox(bB)) return; // AABBs don't overlap at all
         }
-        // Soft/clearance clash
-        var isSoft = false;
-        if (!isHard && rules.soft) {
-          _tmpBoxA.copy(bA).expandByScalar(rules.clearance/1000);
-          isSoft = _tmpBoxA.intersectsBox(bB);
-        }
-        if ((isHard && rules.hard) || isSoft) {
+
+        // ── Narrow phase: actual mesh geometry distance ───────────
+        // Compute real minimum distance between mesh vertices
+        var hardThreshM = Math.max(hardTol, 0.001); // 1mm minimum for "touching"
+        var softThreshM = rules.soft ? clearanceM : 0;
+        var checkThreshM = Math.max(hardThreshM, softThreshM);
+        var geoDist = _meshMinDist(eA, eB, checkThreshM);
+
+        var isHard = rules.hard && (geoDist <= hardThreshM);
+        var isSoft = !isHard && rules.soft && (geoDist <= softThreshM);
+
+        if (isHard || isSoft) {
           var ctr = bA.getCenter(_tmpCtrA);
-          var gx=Math.max(0,bB.min.x-bA.max.x,bA.min.x-bB.max.x);
-          var gy=Math.max(0,bB.min.y-bA.max.y,bA.min.y-bB.max.y);
-          var gz=Math.max(0,bB.min.z-bA.max.z,bA.min.z-bB.max.z);
-          var dist=Math.round(Math.sqrt(gx*gx+gy*gy+gz*gz)*1000);
+          var dist = Math.round(geoDist * 1000); // metres → mm
           var pA = eA.props||{}, pB = eB.props||{};
           var tA = pA.ifcType||'Element', tB = pB.ifcType||'Element';
           var nA = pA.name||('#'+eA.expressId), nB = pB.name||('#'+eB.expressId);
@@ -3505,6 +3609,44 @@ function startApp() {
     return idbSaveProjectData(pid, data);
   }
 
+  // ── Project file restoration (standalone, usable from App) ─────
+  function _restoreProjectFilesGlobal(projectId, d) {
+    var pid = projectId || 'default';
+    function _setGlobalLoading(v) {
+      window._ccModelLoading = !!v;
+      window.dispatchEvent(new CustomEvent('cc-model-loading', {detail:{loading:!!v}}));
+    }
+    idbGetProjectFiles(pid).then(function(stored){
+      if(!stored.length) { d({t:'SWITCHING_PROJECT', v:false}); return; }
+      var chain = Promise.resolve();
+      stored.forEach(function(entry){
+        chain = chain.then(function(){
+          _setGlobalLoading(true);
+          return idbGetGeoCache(entry.id).then(function(cached) {
+            if(cached && cached.v === 1) return _geoDeserialize(cached);
+            return loadIFC(entry.buffer, DISC[0].c, function(){})
+              .then(function(result) {
+                idbSaveGeoCache(entry.id, _geoSerialize(result));
+                return result;
+              });
+          }).then(function(result){
+            var disc = detectDiscipline(result.elements);
+            var dObj = DISC.find(function(x){return x.id===disc;});
+            var col = dObj ? dObj.c : DISC[0].c;
+            var fSize = result.stats ? result.stats.fileSize : entry.buffer.byteLength;
+            d({t:'ADD_MODEL', v:{id:entry.id, name:entry.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
+          }).catch(function(e){ console.warn('Failed to restore '+entry.name+':', e); })
+            .then(function(){ _setGlobalLoading(false); });
+        });
+      });
+      chain.then(function(){ d({t:'SWITCHING_PROJECT', v:false}); });
+    });
+    // Also restore saved session data
+    idbGetProjectData(pid).then(function(data){
+      if(data) d({t:'LOAD_PROJECT_STATE', data:data});
+    });
+  }
+
   function _switchProject(newProjId, s, d) {
     d({t:'SWITCHING_PROJECT', v:true});
     // Save current project in background — don't block the switch on it
@@ -3668,68 +3810,8 @@ function startApp() {
     var dg = useState(false), dragging=dg[0], setDragging=dg[1];
     var dragCounter = useRef(0);
 
-    // Auto-load stored IFC files from IndexedDB for the active project
-    function _restoreProjectFiles(projectId) {
-      idbGetProjectFiles(projectId||'default').then(function(stored){
-        if(!stored.length) { d({t:'SWITCHING_PROJECT', v:false}); return; }
-        var chain = Promise.resolve();
-        stored.forEach(function(entry){
-          chain = chain.then(function(){
-            setLoading(true);
-            setLoadMsg('Restoring ' + entry.name + '…');
-            var disc='structural', col=DISC[0].c;
-            // Check geometry cache first — avoids re-running web-ifc WASM parser
-            return idbGetGeoCache(entry.id).then(function(cached) {
-              if(cached && cached.v === 1) return _geoDeserialize(cached);
-              // Cache miss: parse raw IFC, then save result for next time
-              return loadIFC(entry.buffer, col, function(msg){ setLoadMsg(entry.name + ': ' + msg); })
-                .then(function(result) {
-                  idbSaveGeoCache(entry.id, _geoSerialize(result)); // fire-and-forget
-                  return result;
-                });
-            }).then(function(result){
-              disc = detectDiscipline(result.elements);
-              var dObj = DISC.find(function(x){return x.id===disc;});
-              col = dObj ? dObj.c : col;
-              var fSize = result.stats ? result.stats.fileSize : entry.buffer.byteLength;
-              d({t:'ADD_MODEL', v:{id:entry.id, name:entry.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], stats:result.stats||{fileSize:fSize}}});
-            }).catch(function(e){ console.warn('Failed to restore '+entry.name+':', e); })
-              .then(function(){ setLoading(false); setLoadMsg(''); });
-          });
-        });
-        chain.then(function(){ d({t:'SWITCHING_PROJECT', v:false}); });
-      });
-    }
-
-    useEffect(function(){
-      // Use a window-level flag so restoration doesn't re-run when the tab unmounts/remounts
-      var key = '_ccRestored_' + (s.activeProject || 'default');
-      if(window[key]) return;
-      window[key] = true;
-      _restoreProjectFiles(s.activeProject);
-      // Also restore saved project session data (clashes, issues, etc.)
-      idbGetProjectData(s.activeProject).then(function(data){
-        if(data) d({t:'LOAD_PROJECT_STATE', data:Object.assign({}, data, {models:s.models})});
-      });
-    },[]);
-
-    // Listen for project switch events
-    useEffect(function(){
-      function onSwitch() {
-        var newProjId = window._ccProjectSwitch||'default';
-        // Clear stale caches from previous project
-        _prevElementHashes = {};
-        _underlayImgCache = {};
-        _underlayImgDataCache = {};
-        _restoreProjectFiles(newProjId);
-        // Also load saved project session data (clashes, issues, etc.)
-        idbGetProjectData(newProjId).then(function(data){
-          if(data) d({t:'LOAD_PROJECT_STATE', data:Object.assign({}, data, {models:s.models})});
-        });
-      }
-      window.addEventListener('cc-project-switch', onSwitch);
-      return function(){ window.removeEventListener('cc-project-switch', onSwitch); };
-    },[]);
+    // Project file restoration now handled at App level (runs immediately on load,
+    // no need to open the models tab first). See _restoreProjectFilesGlobal().
 
     function processFiles(files) {
       setErr('');
@@ -6268,6 +6350,25 @@ function startApp() {
       document.documentElement.setAttribute('data-theme', t);
       try { localStorage.setItem('cc_theme', t); } catch(e) {}
     }, [s.prefs.theme]);
+    // ── Restore project files on initial load (runs once, before any tab is opened) ──
+    useEffect(function(){
+      var key = '_ccRestored_' + (s.activeProject || 'default');
+      if(window[key]) return;
+      window[key] = true;
+      _restoreProjectFilesGlobal(s.activeProject, d);
+    },[]);
+    // ── Listen for project-switch events (from project selector) ──
+    useEffect(function(){
+      function onSwitch() {
+        var newProjId = window._ccProjectSwitch||'default';
+        _prevElementHashes = {};
+        _underlayImgCache = {};
+        _underlayImgDataCache = {};
+        _restoreProjectFilesGlobal(newProjId, d);
+      }
+      window.addEventListener('cc-project-switch', onSwitch);
+      return function(){ window.removeEventListener('cc-project-switch', onSwitch); };
+    },[]);
     // Auto-save project data (debounced) when clashes/issues/viewpoints change
     var _latestSRef = useRef(s);
     _latestSRef.current = s;
