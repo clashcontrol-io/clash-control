@@ -178,7 +178,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.30',hash:'393ef99',date:'2026-03-23T13:22:34Z'};
+  var CC_VERSION = {v:'1.2.31',hash:'108944e',date:'2026-03-23T13:23:01Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -4244,9 +4244,21 @@ function startApp() {
     if(f.issueElementType!=='all') activeCount++;
     if(f.issueStorey!=='all') activeCount++;
 
+    // Build set of visible model IDs for filtering
+    var visibleModelIds = useMemo(function(){
+      var ids = {};
+      s.models.forEach(function(m){ if(m.visible !== false) ids[m.id] = true; });
+      return ids;
+    }, [s.models]);
+
     // Apply all filters
     var items = useMemo(function(){
       return rawItems.filter(function(it){
+        // Hide clashes from unchecked models
+        if(isClashTab && (it.modelAId || it.modelBId)) {
+          if(it.modelAId && !visibleModelIds[it.modelAId]) return false;
+          if(it.modelBId && !visibleModelIds[it.modelBId]) return false;
+        }
         if(f.status!=='all' && it.status!==f.status) return false;
         if(f.search){var q=f.search.toLowerCase();var hay=isClashTab?[it.title,it.description,it.type,it.elemAStorey,it.elemBStorey,it.elemAType,it.elemBType,it.elemAMaterial,it.elemBMaterial,it.status].filter(Boolean).join(' ').toLowerCase():(it.title||'').toLowerCase()+' '+(it.description||'').toLowerCase();if(hay.indexOf(q)===-1)return false;}
         if(isClashTab) {
@@ -4277,7 +4289,7 @@ function startApp() {
         }
         return true;
       });
-    }, [rawItems, f, isClashTab, s.floors]);
+    }, [rawItems, f, isClashTab, s.floors, visibleModelIds]);
 
     var counts = useMemo(function(){
       return {

@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.31 (2026-03-23)
+- Install pre-commit hook for auto version bumping
+
 ## v1.2.30 (2026-03-23)
 - Fix model visibility, add cross-model clash detection, virtualize large lists
 
