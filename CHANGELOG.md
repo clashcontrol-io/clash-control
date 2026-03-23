@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.29 (2026-03-23)
+- Add in-browser LLM to NL command panel (Qwen2.5-0.5B via Transformers.js)
+
 ## v1.2.27 (2026-03-22)
 - Restore element ghost effect on viewer click
 

@@ -175,7 +175,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.28',hash:'7b83f43',date:'2026-03-23T07:10:02Z'};
+  var CC_VERSION = {v:'1.2.29',hash:'7aa6859',date:'2026-03-23T07:50:31Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -1312,6 +1312,7 @@ function startApp() {
   var _nlPipeline = null;
   var _nlModelStatus = 'idle'; // 'idle'|'loading'|'ready'|'error'
   var _nlModelProgress = 0;
+  var _nlModelError = '';
   var _nlModelListeners = [];
   var _unghostAll = null;
   var _sboxAroundElements = null;
@@ -5339,9 +5340,9 @@ function startApp() {
     _nlModelStatus = 'loading';
     return import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js')
       .then(function(mod) {
-        mod.env.useBrowserCache = true;
+        try { if (mod.env) mod.env.useBrowserCache = true; } catch(e) {}
         return mod.pipeline('text-generation', 'onnx-community/Qwen2.5-0.5B-Instruct', {
-          dtype: 'q4f16',
+          dtype: 'q4',
           progress_callback: function(p) {
             if (typeof p.progress === 'number') {
               _nlModelProgress = Math.round(p.progress);
@@ -5359,6 +5360,8 @@ function startApp() {
       })
       .catch(function(err) {
         _nlModelStatus = 'error';
+        _nlModelError = (err && (err.message || String(err))) || 'Unknown error';
+        console.error('[NL-LLM] load failed:', err);
         _nlModelListeners.forEach(function(cb) { cb('error', 0); });
         _nlModelListeners = [];
         throw err;
@@ -5645,6 +5648,7 @@ function startApp() {
     var stLoading = useState(false), loading = stLoading[0], setLoading = stLoading[1];
     var stLLMStatus = useState(_nlModelStatus), llmStatus = stLLMStatus[0], setLLMStatus = stLLMStatus[1];
     var stLLMProgress = useState(0), llmProgress = stLLMProgress[0], setLLMProgress = stLLMProgress[1];
+    var stLLMError = useState(''), llmError = stLLMError[0], setLLMError = stLLMError[1];
     var inputRef = useRef(null);
     var bottomRef = useRef(null);
 
@@ -5672,6 +5676,7 @@ function startApp() {
       var listener = function(st, pct) {
         setLLMStatus(st);
         if (typeof pct === 'number') setLLMProgress(pct);
+        if (st === 'error') setLLMError(_nlModelError);
       };
       _nlModelListeners.push(listener);
       if (_nlModelStatus === 'idle') getNLPipeline().catch(function(){});
@@ -5761,8 +5766,19 @@ function startApp() {
       </div>`}
       ${llmStatus === 'error' && html`<div style=${{
         padding:'.3rem .8rem', borderBottom:'1px solid '+borderCol,
-        fontSize:'.65rem', color:'#f97316'
-      }}>AI model failed to load — using keyword matching mode.</div>`}
+        fontSize:'.65rem', color:'#f97316', display:'flex', alignItems:'center', gap:'.5rem'
+      }}>
+        <span style=${{flex:1}}>AI model failed${llmError ? ': ' + llmError : ''} — keyword mode active.</span>
+        <button onClick=${function(){
+          _nlModelStatus='idle'; _nlModelError=''; _nlModelListeners=[];
+          setLLMStatus('idle'); setLLMProgress(0); setLLMError('');
+          _nlModelListeners.push(function(st,pct){setLLMStatus(st);if(typeof pct==='number')setLLMProgress(pct);if(st==='error')setLLMError(_nlModelError);});
+          getNLPipeline().catch(function(){});
+        }} style=${{
+          background:'none', border:'1px solid #f97316', borderRadius:4, color:'#f97316',
+          fontSize:'.6rem', padding:'.1rem .35rem', cursor:'pointer', whiteSpace:'nowrap'
+        }}>Retry</button>
+      </div>`}
 
       <div style=${{
         overflowY:'auto', padding:'.7rem .8rem',
