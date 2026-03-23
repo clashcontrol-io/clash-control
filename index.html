@@ -178,7 +178,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.42',hash:'c8876f5',date:'2026-03-23T14:50:47Z'};
+  var CC_VERSION = {v:'1.2.43',hash:'25325db',date:'2026-03-23T14:55:17Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -222,7 +222,7 @@ function startApp() {
   var INIT_FILTERS = {
     search:'', status:'all', type:'all', discipline:'all',
     floor:'all', distMin:0, distMax:9999, elementId:'', selfClash:'all',
-    ifcType:'all', storey:'all', material:'all',
+    ifcType:'all', storey:'all', material:'all', excludedTypes:[],
     // Issue-specific filters
     priority:'all', category:'all', assignee:'all', issueElementType:'all', issueStorey:'all'
   };
@@ -4522,6 +4522,7 @@ function startApp() {
     if(f.elementId) activeCount++;
     if(f.distMin>0||f.distMax<9999) activeCount++;
     if(f.ifcType!=='all') activeCount++;
+    if(f.excludedTypes&&f.excludedTypes.length) activeCount++;
     if(f.storey!=='all') activeCount++;
     if(f.material!=='all') activeCount++;
     if(f.priority!=='all') activeCount++;
@@ -4563,6 +4564,7 @@ function startApp() {
           if(f.selfClash==='self' && !it.selfClash) return false;
           if(f.selfClash==='cross' && it.selfClash) return false;
           if(f.ifcType!=='all' && it.elemAType!==f.ifcType && it.elemBType!==f.ifcType) return false;
+          if(f.excludedTypes&&f.excludedTypes.length){var ex=f.excludedTypes;if(ex.indexOf(it.elemAType)!==-1||ex.indexOf(it.elemBType)!==-1) return false;}
           if(f.storey!=='all' && it.elemAStorey!==f.storey && it.elemBStorey!==f.storey) return false;
           if(f.material!=='all' && it.elemAMaterial!==f.material && it.elemBMaterial!==f.material) return false;
         } else {
@@ -4671,13 +4673,35 @@ function startApp() {
           </div>
         </div>`}
 
-        ${isClashTab && typeList.length>0 && html`<div>
-          <span style=${FL}>Element Type</span>
-          <select value=${f.ifcType} onChange=${function(e){d({t:'UPD_FILTERS',u:{ifcType:e.target.value}})}} style=${SELSTYLE}>
-            <option value="all">All types</option>
-            ${typeList.map(function(t){return html`<option key=${t} value=${t}>${t}</option>`})}
-          </select>
-        </div>`}
+        ${isClashTab && typeList.length>0 && function(){
+          var excl = f.excludedTypes||[];
+          var allVisible = excl.length===0;
+          function toggleType(t){
+            var next = excl.indexOf(t)===-1 ? excl.concat(t) : excl.filter(function(x){return x!==t;});
+            d({t:'UPD_FILTERS',u:{excludedTypes:next}});
+          }
+          function toggleAll(){
+            d({t:'UPD_FILTERS',u:{excludedTypes:allVisible?typeList.slice():[]}});
+          }
+          return html`<div>
+            <div style=${{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.2rem'}}>
+              <span style=${FL}>Element Type</span>
+              <button onClick=${toggleAll} style=${{...S_BTN,padding:'1px 5px',fontSize:'.55rem',background:'none',color:allVisible?'var(--text-faint)':'var(--accent)',border:'1px solid var(--border)',borderRadius:3}}>
+                ${allVisible?'Exclude all':'Show all'}
+              </button>
+            </div>
+            <div style=${{display:'flex',flexDirection:'column',gap:'1px',maxHeight:'9rem',overflowY:'auto',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:4,padding:'.15rem'}}>
+              ${typeList.map(function(t){
+                var excluded = excl.indexOf(t)!==-1;
+                return html`<label key=${t} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.18rem .3rem',borderRadius:3,cursor:'pointer',background:excluded?'rgba(239,68,68,.06)':'transparent',opacity:excluded?.55:1}}>
+                  <input type="checkbox" checked=${!excluded} onChange=${function(){toggleType(t)}}
+                    style=${{accentColor:'var(--accent)',cursor:'pointer',flexShrink:0}} />
+                  <span style=${{fontSize:'.62rem',color:excluded?'var(--text-faint)':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${t}</span>
+                </label>`;
+              })}
+            </div>
+          </div>`;
+        }()}
 
         ${isClashTab && storeyList.length>0 && html`<div>
           <span style=${FL}>Storey</span>
@@ -6134,6 +6158,8 @@ function startApp() {
     var stShowOllamaTip = useState(false), showOllamaTip = stShowOllamaTip[0], setShowOllamaTip = stShowOllamaTip[1];
     var inputRef = useRef(null);
     var bottomRef = useRef(null);
+    var detectMsgIdx = useRef(-1);
+    var prevDetecting = useRef(s.detecting);
 
     // Track model loading state for glow effect
     useEffect(function() {
@@ -6141,6 +6167,31 @@ function startApp() {
       window.addEventListener('cc-model-loading', onModelLoad);
       return function() { window.removeEventListener('cc-model-loading', onModelLoad); };
     }, []);
+
+    // Show a chat bubble while detection runs, replace with result when done
+    useEffect(function() {
+      var was = prevDetecting.current;
+      prevDetecting.current = s.detecting;
+      if (s.detecting && !was) {
+        setOpen(true);
+        setMsgs(function(prev) {
+          detectMsgIdx.current = prev.length;
+          return prev.concat([{role:'assistant', detecting:true}]);
+        });
+      } else if (!s.detecting && was) {
+        var n = s.clashes.length;
+        var op = s.clashes.filter(function(c){return c.status==='open';}).length;
+        var txt = n===0 ? 'No clashes detected.' : 'Found '+n+' clash'+(n!==1?'es':'')+' ('+op+' open).';
+        setMsgs(function(prev) {
+          var idx = detectMsgIdx.current;
+          var next = prev.slice();
+          if (idx>=0 && idx<next.length) next[idx]={role:'assistant',text:txt};
+          else next = next.concat([{role:'assistant',text:txt}]);
+          return next;
+        });
+        detectMsgIdx.current = -1;
+      }
+    }, [s.detecting]);
 
     useEffect(function() {
       function onKey(e) {
@@ -6307,7 +6358,12 @@ function startApp() {
               background: isUser ? '#2563eb' : aiBubbleBg,
               color: isUser ? '#fff' : textCol,
               fontSize:'.73rem', lineHeight:1.55, wordBreak:'break-word'
-            }}>${m.text}</div>
+            }}>
+              ${m.detecting ? html`<span style=${{display:'flex',alignItems:'center',gap:'.4rem',color:'#60a5fa'}}>
+                <span class="spin" style=${{display:'inline-block',width:'.6rem',height:'.6rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
+                Detecting clashes…
+              </span>` : m.text}
+            </div>
           </div>`;
         })}
         ${loading && html`<div style=${{display:'flex'}}>

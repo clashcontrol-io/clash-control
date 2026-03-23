@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.43 (2026-03-23)
+- Match clash detection indicator style to model loading
+
 ## v1.2.42 (2026-03-23)
 - Improve project deletion UX
 
