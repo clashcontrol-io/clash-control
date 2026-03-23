@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.40 (2026-03-23)
+- Replace vertex-distance hard clash with triangle-triangle intersection
+
+## v1.2.39 (2026-03-23)
+- Default clash markers to off to reduce visual clutter
+
+## v1.2.38 (2026-03-23)
+- Fix: 'run clash...' commands now run detection instead of just setting rules
+
 ## v1.2.37 (2026-03-23)
 - Replace AABB-only clash detection with geometry-accurate narrow phase
 
