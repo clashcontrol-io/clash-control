@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.45 (2026-03-23)
+- Add Sweep and Prune as L0 element broad phase
+
 ## v1.2.44 (2026-03-23)
 - Add element type exclusion checkboxes + detecting chat bubble
 
