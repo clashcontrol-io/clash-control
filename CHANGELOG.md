@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.44 (2026-03-23)
+- Fix duplicate models on tab switch; improve clash panel UX
+
 ## v1.2.43 (2026-03-23)
 - Fix hooks-after-return in SidePanel causing blackout on tab open
 
