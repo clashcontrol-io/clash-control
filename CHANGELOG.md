@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.30 (2026-03-23)
+- Fix model visibility, add cross-model clash detection, virtualize large lists
+
 ## v1.2.29 (2026-03-23)
 - Speed up project switch by not blocking on IDB save
 
