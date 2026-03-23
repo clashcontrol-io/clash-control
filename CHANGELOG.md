@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.36 (2026-03-23)
+- Replace text labels with animated hover tooltips on sidebar icons
+
+## v1.2.35 (2026-03-23)
+- Add folder-with-plus SVG icon to file upload button and empty state
+
+## v1.2.34 (2026-03-23)
+- Redesign UI: vertical icon sidebar + slide-out panel, maximized viewer
+
 ## v1.2.33 (2026-03-23)
 - Tone down LLM error banner; improve welcome message
 
