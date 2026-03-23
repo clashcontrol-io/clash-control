@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.56',hash:'83dfb80',date:'2026-03-23T20:20:16Z'};
+  var CC_VERSION = {v:'1.2.57',hash:'ef7cf73',date:'2026-03-23T20:48:08Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -279,6 +279,9 @@ function startApp() {
     underlayMode:null, // null, 'view2d', 'compare'
     markups:[], // [{id, type:'line'|'rect'|'text'|'arrow', points, color, text}]
     markupTool:null, // null, 'line', 'rect', 'text', 'arrow', 'erase'
+    // Bulk selection
+    selected:{}, // {id:true} — selected clash/issue IDs
+    selectMode:false,
     // Revit Bridge (AI-powered)
     revitBridge:{
       provider:'',       // 'anthropic','openai','google'
@@ -345,6 +348,13 @@ function startApp() {
       case 'DEL_MARKUP':      return Object.assign({},s,{markups:s.markups.filter(function(m){return m.id!==a.id})});
       case 'CLEAR_MARKUPS':   return Object.assign({},s,{markups:[]});
       case 'MARKUP_TOOL':     return Object.assign({},s,{markupTool:a.v});
+      // Bulk selection
+      case 'SELECT_TOGGLE':  var sel2=Object.assign({},s.selected); if(sel2[a.id])delete sel2[a.id];else sel2[a.id]=true; return Object.assign({},s,{selected:sel2});
+      case 'SELECT_ALL':     var sa={}; (a.ids||[]).forEach(function(id){sa[id]=true;}); return Object.assign({},s,{selected:sa});
+      case 'SELECT_NONE':    return Object.assign({},s,{selected:{}});
+      case 'SELECT_MODE':    return Object.assign({},s,{selectMode:a.v,selected:a.v?s.selected:{}});
+      case 'BATCH_UPD_CLASH':  return Object.assign({},s,{clashes:s.clashes.map(function(c){return s.selected[c.id]?Object.assign({},c,a.u):c;}),selected:{}});
+      case 'BATCH_UPD_ISSUE':  return Object.assign({},s,{issues:s.issues.map(function(i){return s.selected[i.id]?Object.assign({},i,a.u):i;}),selected:{}});
       // Revit Bridge
       case 'UPD_BRIDGE':      return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,a.u)});
       case 'BRIDGE_LOG':      return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,{log:s.revitBridge.log.concat([{ts:Date.now(),type:a.logType||'info',text:a.text}])})});
@@ -4638,6 +4648,207 @@ function startApp() {
     </div>`;
   }
 
+  // ── Clash Stats Bar ──────────────────────────────────────────
+  function ClashStatsBar(props) {
+    var items = props.items, isClash = props.isClash;
+    if (!items.length) return null;
+    var total = items.length;
+    var open = items.filter(function(c){return c.status==='open';}).length;
+    var inProg = items.filter(function(c){return c.status==='in_progress';}).length;
+    var resolved = items.filter(function(c){return c.status==='resolved'||c.status==='closed';}).length;
+    // For clashes: type breakdown
+    var hard = isClash ? items.filter(function(c){return c.type==='hard';}).length : 0;
+    var soft = isClash ? items.filter(function(c){return c.type==='soft';}).length : 0;
+    var dup = isClash ? items.filter(function(c){return c.type==='duplicate';}).length : 0;
+    // Resolution progress
+    var pct = total > 0 ? Math.round(resolved / total * 100) : 0;
+    var barCol = pct >= 80 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444';
+
+    var CHIP = function(label, n, bg, fg) {
+      return html`<span style=${{fontSize:'.58rem',padding:'1px 5px',borderRadius:99,background:bg,color:fg,fontWeight:600,whiteSpace:'nowrap'}}>${label} ${n}</span>`;
+    };
+    return html`<div style=${{padding:'.35rem .5rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,background:'var(--bg-tertiary)'}}>
+      <!-- Progress bar -->
+      <div style=${{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}}>
+        <div style=${{flex:1,height:4,borderRadius:2,background:'var(--border)',overflow:'hidden'}}>
+          <div style=${{width:pct+'%',height:'100%',borderRadius:2,background:barCol,transition:'width .4s ease'}}></div>
+        </div>
+        <span style=${{fontSize:'.6rem',fontWeight:600,color:barCol,minWidth:28,textAlign:'right'}}>${pct}%</span>
+      </div>
+      <!-- Chips row -->
+      <div style=${{display:'flex',gap:'.25rem',flexWrap:'wrap',alignItems:'center'}}>
+        ${CHIP('Total', total, 'var(--tag-bg)', 'var(--text-secondary)')}
+        ${CHIP('Open', open, '#7f1d1d', '#fca5a5')}
+        ${inProg > 0 && CHIP('In Prog', inProg, '#78350f', '#fcd34d')}
+        ${CHIP('Resolved', resolved, '#052e16', '#4ade80')}
+        ${isClash && hard > 0 && html`<span style=${{width:1,height:12,background:'var(--border)',margin:'0 .1rem'}}></span>`}
+        ${isClash && hard > 0 && CHIP('Hard', hard, '#7f1d1d', '#fca5a5')}
+        ${isClash && soft > 0 && CHIP('Soft', soft, '#78350f', '#fcd34d')}
+        ${isClash && dup > 0 && CHIP('Dup', dup, '#4c1d95', '#c4b5fd')}
+      </div>
+    </div>`;
+  }
+
+  // ── Bulk Action Bar ──────────────────────────────────────────
+  function BulkActionBar(props) {
+    var s = props.s, d = props.d, items = props.items, isClash = props.isClash;
+    var sel = s.selected;
+    var count = Object.keys(sel).length;
+    if (!s.selectMode) {
+      return html`<div style=${{padding:'.25rem .5rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <button onClick=${function(){d({t:'SELECT_MODE',v:true})}}
+          style=${{...S_BTN,fontSize:'.58rem',padding:'.15rem .4rem',background:'none',color:'var(--text-faint)',border:'1px solid var(--border)'}}>
+          Select Multiple
+        </button>
+      </div>`;
+    }
+    return html`<div style=${{padding:'.35rem .5rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,background:'var(--accent-bg)'}}>
+      <div style=${{display:'flex',alignItems:'center',gap:'.3rem',marginBottom:count>0?'.3rem':0}}>
+        <button onClick=${function(){var ids=items.map(function(i){return i.id;}); d({t:'SELECT_ALL',ids:ids})}}
+          style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .3rem',background:'var(--accent)',color:'#fff'}}>All</button>
+        <button onClick=${function(){d({t:'SELECT_NONE'})}}
+          style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .3rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>None</button>
+        <span style=${{flex:1,fontSize:'.62rem',color:'var(--accent-subtle)',fontWeight:600}}>${count} selected</span>
+        <button onClick=${function(){d({t:'SELECT_MODE',v:false})}}
+          style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .3rem',background:'none',color:'var(--text-muted)'}}>Cancel</button>
+      </div>
+      ${count > 0 && html`<div style=${{display:'flex',gap:'.25rem',flexWrap:'wrap'}}>
+        <select onChange=${function(e){if(!e.target.value)return;d({t:isClash?'BATCH_UPD_CLASH':'BATCH_UPD_ISSUE',u:{status:e.target.value}});e.target.value='';}}
+          style=${{...S_INPUT,fontSize:'.6rem',padding:'.15rem .25rem',width:'auto',flex:1}}>
+          <option value="">Set status...</option>
+          ${Object.keys(STAT).map(function(k){return html`<option key=${k} value=${k}>${STAT[k].label}</option>`})}
+        </select>
+        ${!isClash && html`<input type="text" placeholder="Assign to..." onKeyDown=${function(e){
+            if(e.key==='Enter'&&e.target.value.trim()){d({t:'BATCH_UPD_ISSUE',u:{assignee:e.target.value.trim()}});e.target.value='';}
+          }} style=${{...S_INPUT,fontSize:'.6rem',padding:'.15rem .25rem',width:'auto',flex:1}} />`}
+      </div>`}
+    </div>`;
+  }
+
+  // ── Clash Rules Panel (Classical UI) ────────────────────────────
+  function ClashRulesPanel(props) {
+    var s = props.s, d = props.d;
+    var rules = s.rules;
+    var stExpanded = useState(false), expanded = stExpanded[0], setExpanded = stExpanded[1];
+    var models = s.models;
+    var canRun = models.length > 0 && !s.detecting;
+
+    // Presets
+    var PRESETS = [
+      {label:'All vs All',      desc:'Every model against every other',                     r:{modelA:'all',modelB:'all',hard:true,soft:false,clearance:50,duplicates:false,excludeSelf:false}},
+      {label:'Struct vs MEP',   desc:'Structural against MEP disciplines',                  r:{modelA:'disc:structural',modelB:'disc:mep',hard:true,soft:true,clearance:50,duplicates:false,excludeSelf:false}},
+      {label:'Arch vs MEP',     desc:'Architectural against MEP',                           r:{modelA:'disc:architectural',modelB:'disc:mep',hard:true,soft:true,clearance:50,duplicates:false,excludeSelf:false}},
+      {label:'Cross-discipline',desc:'All models, exclude self-clashes',                    r:{modelA:'all',modelB:'all',hard:true,soft:false,clearance:50,duplicates:false,excludeSelf:true}},
+      {label:'Near misses',     desc:'Soft clashes within clearance zone',                  r:{modelA:'all',modelB:'all',hard:false,soft:true,clearance:100,duplicates:false,excludeSelf:true}},
+      {label:'Duplicates',      desc:'Find duplicate elements at same location',            r:{modelA:'all',modelB:'all',hard:false,soft:false,clearance:0,duplicates:true,excludeSelf:false}}
+    ];
+
+    function applyPreset(preset) {
+      d({t:'UPD_RULES', u:preset.r});
+    }
+    function runDetection() {
+      if (!canRun) return;
+      d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
+      setTimeout(function(){ d({t:'SET_CLASHES', v:detectClashes(s.models, s.rules)}); }, 20);
+    }
+    function applyAndRun(preset) {
+      if (!canRun) return;
+      var merged = Object.assign({}, s.rules, preset.r);
+      d({t:'UPD_RULES', u:preset.r});
+      d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
+      setTimeout(function(){ d({t:'SET_CLASHES', v:detectClashes(s.models, merged)}); }, 20);
+    }
+
+    var FL={fontSize:'.62rem',fontWeight:600,color:'var(--text-muted)',marginBottom:'.15rem',display:'block'};
+    var TOGROW={display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.3rem 0'};
+    function MiniToggle(tp) {
+      var on=tp.on;
+      return html`<div onClick=${tp.onToggle} role="switch" aria-checked=${on} style=${{width:30,height:16,borderRadius:8,background:on?'var(--accent)':'var(--text-faint)',cursor:'pointer',position:'relative',transition:'background .2s',flexShrink:0}}>
+        <div style=${{width:12,height:12,borderRadius:6,background:'#fff',position:'absolute',top:2,left:on?16:2,transition:'left .2s',boxShadow:'0 1px 2px rgba(0,0,0,.2)'}}></div>
+      </div>`;
+    }
+
+    return html`<div style=${{borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
+      <!-- Quick Presets -->
+      <div style=${{padding:'.4rem .5rem .35rem'}}>
+        <div style=${{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.3rem'}}>
+          <span style=${{fontSize:'.68rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Quick Run</span>
+          <button onClick=${function(){setExpanded(!expanded)}} style=${{...S_BTN,fontSize:'.55rem',padding:'1px 5px',background:'none',color:'var(--text-faint)'}}>
+            ${expanded ? 'Simple' : 'Advanced'}
+          </button>
+        </div>
+        <div style=${{display:'flex',gap:'.25rem',flexWrap:'wrap'}}>
+          ${PRESETS.map(function(p) {
+            return html`<button key=${p.label} onClick=${function(){applyAndRun(p)}} disabled=${!canRun} title=${p.desc}
+              style=${{...S_BTN,fontSize:'.58rem',padding:'.2rem .4rem',background:'var(--accent-bg)',color:'var(--accent-subtle)',
+                opacity:canRun?1:.5,transition:'background .15s'}}>
+              ${p.label}
+            </button>`;
+          })}
+        </div>
+      </div>
+
+      <!-- Advanced Rules (expandable) -->
+      ${expanded && html`<div style=${{padding:'0 .5rem .4rem',borderTop:'1px solid var(--border-subtle)'}}>
+        <div style=${{marginTop:'.3rem'}}>
+          <span style=${FL}>Model A</span>
+          <select value=${rules.modelA} onChange=${function(e){d({t:'UPD_RULES',u:{modelA:e.target.value}})}}
+            style=${{...S_INPUT,fontSize:'.65rem',padding:'.2rem .3rem',marginBottom:'.25rem'}}>
+            <option value="all">All models</option>
+            ${DISC.map(function(p){return html`<option key=${p.id} value=${'disc:'+p.id}>${p.label} models</option>`})}
+            ${models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+          </select>
+          <span style=${FL}>Model B</span>
+          <select value=${rules.modelB} onChange=${function(e){d({t:'UPD_RULES',u:{modelB:e.target.value}})}}
+            style=${{...S_INPUT,fontSize:'.65rem',padding:'.2rem .3rem',marginBottom:'.25rem'}}>
+            <option value="all">All models</option>
+            ${DISC.map(function(p){return html`<option key=${p.id} value=${'disc:'+p.id}>${p.label} models</option>`})}
+            ${models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+          </select>
+        </div>
+        <div style=${TOGROW}>
+          <span style=${{fontSize:'.68rem',color:'var(--text-primary)'}}>Hard clashes</span>
+          <${MiniToggle} on=${rules.hard} onToggle=${function(){d({t:'UPD_RULES',u:{hard:!rules.hard}})}} />
+        </div>
+        <div style=${TOGROW}>
+          <span style=${{fontSize:'.68rem',color:'var(--text-primary)'}}>Soft clashes (proximity)</span>
+          <${MiniToggle} on=${rules.soft} onToggle=${function(){d({t:'UPD_RULES',u:{soft:!rules.soft}})}} />
+        </div>
+        ${rules.soft && html`<div style=${{marginBottom:'.25rem'}}>
+          <span style=${FL}>Clearance (mm)</span>
+          <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
+            <input type="range" min="10" max="500" step="5" value=${rules.clearance||50}
+              onInput=${function(e){d({t:'UPD_RULES',u:{clearance:+e.target.value}})}}
+              style=${{flex:1,height:4}} />
+            <span style=${{fontSize:'.65rem',color:'var(--accent-subtle)',fontWeight:600,minWidth:30,textAlign:'right'}}>${rules.clearance||50}</span>
+          </div>
+        </div>`}
+        <div style=${TOGROW}>
+          <span style=${{fontSize:'.68rem',color:'var(--text-primary)'}}>Hard tolerance (mm)</span>
+          <input type="number" min="0" max="100" step="1" value=${rules.hardTolerance||0}
+            onChange=${function(e){d({t:'UPD_RULES',u:{hardTolerance:+e.target.value}})}}
+            style=${{...S_INPUT,width:50,fontSize:'.65rem',padding:'.15rem .3rem',textAlign:'center'}} />
+        </div>
+        <div style=${TOGROW}>
+          <span style=${{fontSize:'.68rem',color:'var(--text-primary)'}}>Duplicates</span>
+          <${MiniToggle} on=${rules.duplicates} onToggle=${function(){d({t:'UPD_RULES',u:{duplicates:!rules.duplicates}})}} />
+        </div>
+        <div style=${TOGROW}>
+          <span style=${{fontSize:'.68rem',color:'var(--text-primary)'}}>Exclude self-clashes</span>
+          <${MiniToggle} on=${rules.excludeSelf} onToggle=${function(){d({t:'UPD_RULES',u:{excludeSelf:!rules.excludeSelf}})}} />
+        </div>
+        <div style=${TOGROW}>
+          <span style=${{fontSize:'.68rem',color:'var(--text-primary)'}}>Change-aware</span>
+          <${MiniToggle} on=${rules.changeAware} onToggle=${function(){d({t:'UPD_RULES',u:{changeAware:!rules.changeAware}})}} />
+        </div>
+        <button onClick=${runDetection} disabled=${!canRun}
+          style=${{...S_BTN,width:'100%',background:canRun?'var(--accent)':'var(--bg-secondary)',color:canRun?'#fff':'var(--text-faint)',marginTop:'.3rem',fontWeight:600}}>
+          ${s.detecting ? 'Detecting...' : 'Run Detection'}
+        </button>
+      </div>`}
+    </div>`;
+  }
+
   function IssuePanel(props) {
     var s=props.s, d=props.d, f=s.filters, hideTabBar=props.hideTabBar;
     var fo=useState(false), filtersOpen=fo[0], setFiltersOpen=fo[1];
@@ -4768,6 +4979,10 @@ function startApp() {
             ${t.label}${t.n>0?html`<span style=${{marginLeft:'.3rem',background:t.bg,color:'#fff',fontSize:'.6rem',padding:'.05rem .35rem',borderRadius:99}}>${t.n}</span>`:''}
           </button>`})}
       </div>`}
+
+      ${!isExplorerTab && rawItems.length > 0 && html`<${ClashStatsBar} items=${rawItems} isClash=${isClashTab} />`}
+      ${isClashTab && html`<${ClashRulesPanel} s=${s} d=${d} />`}
+
       ${s.tab==='explorer' && html`<${ExplorerPanel} s=${s} d=${d} />`}
       ${s.tab!=='explorer' && html`<div style=${{padding:'.4rem .4rem .35rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
         <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
@@ -4939,9 +5154,10 @@ function startApp() {
       ${!isExplorerTab && isClashTab && items.length>0 && html`<div style=${{padding:'.25rem .5rem',borderBottom:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:'.3rem',flexShrink:0}}>
         <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Group:</span>
         ${['none','storey','discipline','status','type'].map(function(g){return html`<button key=${g} onClick=${function(){d({t:'CLASH_GROUP_BY',v:g})}}
-          style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:s.clashGroupBy===g?'#2563eb':'var(--bg-secondary)',color:s.clashGroupBy===g?'#fff':'var(--text-faint)'}}>${g==='none'?'None':g.charAt(0).toUpperCase()+g.slice(1)}</button>`})}
+          style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:s.clashGroupBy===g?'var(--accent)':'var(--bg-secondary)',color:s.clashGroupBy===g?'#fff':'var(--text-faint)'}}>${g==='none'?'None':g.charAt(0).toUpperCase()+g.slice(1)}</button>`})}
       </div>`}
-      ${!isExplorerTab && html`<${VirtualList} items=${items} activeId=${s.activeId} d=${d} isClash=${isClashTab} prefs=${s.prefs} models=${s.models} groupBy=${isClashTab?s.clashGroupBy:'none'} />`}
+      ${!isExplorerTab && items.length>0 && html`<${BulkActionBar} s=${s} d=${d} items=${items} isClash=${isClashTab} />`}
+      ${!isExplorerTab && html`<${VirtualList} items=${items} activeId=${s.activeId} d=${d} isClash=${isClashTab} prefs=${s.prefs} models=${s.models} groupBy=${isClashTab?s.clashGroupBy:'none'} selectMode=${s.selectMode} selected=${s.selected} />`}
     </div>`;
   }
 
@@ -5036,6 +5252,7 @@ function startApp() {
   function VirtualList(props) {
     var items=props.items, activeId=props.activeId, d=props.d, isClash=props.isClash, prefs=props.prefs, models=props.models||[];
     var groupBy = props.groupBy || 'none';
+    var selectMode=props.selectMode, selected=props.selected||{};
     var scrollRef = useRef(null);
     var _st = useState(0), scrollTop=_st[0], setScrollTop=_st[1];
     var coll = useState({}), collapsed=coll[0], setCollapsed=coll[1];
@@ -5079,7 +5296,7 @@ function startApp() {
               <span style=${{fontSize:'.65rem',fontWeight:600,color:'var(--text-primary)',flex:1}}>${g.label}</span>
               <span style=${{fontSize:'.6rem',color:'var(--text-faint)',background:'var(--bg-secondary)',padding:'.1rem .35rem',borderRadius:10}}>${g.items.length}</span>
             </div>
-            ${isOpen && visibleItems.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} models=${models} />`})}
+            ${isOpen && visibleItems.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} models=${models} selectMode=${selectMode} isSelected=${!!selected[it.id]} />`})}
             ${isOpen && hasMore && html`<button onClick=${function(e){e.stopPropagation();showMore(g.label);}}
               style=${{...S_BTN,width:'100%',padding:'.4rem',background:'var(--bg-tertiary)',color:'var(--accent)',fontSize:'.65rem',borderTop:'1px solid var(--border-subtle)',borderRadius:0}}>
               Show more (${limit} of ${g.items.length})…
@@ -5090,7 +5307,7 @@ function startApp() {
     }
     // For small lists, render all (no virtualization overhead)
     if(items.length <= 50) return html`<div style=${{flex:1,overflowY:'auto'}}>
-      ${items.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} models=${models} />`})}
+      ${items.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} models=${models} selectMode=${selectMode} isSelected=${!!selected[it.id]} />`})}
     </div>`;
     // Virtualized rendering for large lists
     var totalHeight = items.length * ROW_HEIGHT;
@@ -5102,7 +5319,7 @@ function startApp() {
     return html`<div ref=${scrollRef} onScroll=${function(e){setScrollTop(e.target.scrollTop);}} style=${{flex:1,overflowY:'auto'}}>
       <div style=${{height:totalHeight,position:'relative'}}>
         <div style=${{position:'absolute',top:startIdx*ROW_HEIGHT,left:0,right:0}}>
-          ${visible.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} models=${models} />`})}
+          ${visible.map(function(it){return html`<${IssueRow} key=${it.id} item=${it} active=${activeId===it.id} d=${d} isClash=${isClash} prefs=${prefs} models=${models} selectMode=${selectMode} isSelected=${!!selected[it.id]} />`})}
         </div>
       </div>
     </div>`;
@@ -5110,6 +5327,7 @@ function startApp() {
 
   function IssueRow(props) {
     var it=props.item, active=props.active, d=props.d, isClash=props.isClash, pr=props.prefs||{}; pr._models=props.models||[];
+    var selectMode=props.selectMode, isSelected=props.isSelected;
     var icon = it.type==='hard'?'🔴':it.type==='soft'?'🟡':it.source==='element'?'🏗':'📌';
     var stBg = (STAT[it.status]||STAT.open).bg;
     // Clash type colours
@@ -5158,6 +5376,8 @@ function startApp() {
       }}
       style=${{padding:'.6rem .7rem',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer',background:active?'var(--bg-secondary)':'transparent',borderLeft:active?'2px solid #3b82f6':'2px solid transparent'}}>
       <div style=${{display:'flex',gap:'.35rem',alignItems:'flex-start'}}>
+        ${selectMode && html`<input type="checkbox" checked=${isSelected} onClick=${function(e){e.stopPropagation();d({t:'SELECT_TOGGLE',id:it.id});}}
+          style=${{marginTop:3,flexShrink:0,accentColor:'var(--accent)',cursor:'pointer'}} />`}
         ${!isClash && html`<span style=${{fontSize:'.85rem',flexShrink:0}}>${icon}</span>`}
         <div style=${{flex:1,minWidth:0}}>
           <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
@@ -5435,6 +5655,31 @@ function startApp() {
         name: 'get_revit_status',
         description: 'Check if Revit MCP server is running and responsive.',
         parameters: { type: 'object', properties: {} }
+      },
+      {
+        name: 'analyze_clashes',
+        description: 'Analyze clash detection results. Returns statistics, patterns, hotspots, and priority recommendations. Use this to understand the overall clash situation.',
+        parameters: { type: 'object', properties: {} }
+      },
+      {
+        name: 'suggest_resolution',
+        description: 'Get AI-powered resolution suggestions for a specific clash or set of clashes. Returns recommended actions based on element types, disciplines, and spatial context.',
+        parameters: { type: 'object', properties: { clash_id: { type: 'string', description: 'Specific clash ID to analyze, or omit for top-priority clashes' } } }
+      },
+      {
+        name: 'generate_report',
+        description: 'Generate a coordination report summarizing clashes by discipline, storey, priority, and status. Suitable for sharing with project teams.',
+        parameters: { type: 'object', properties: { format: { type: 'string', enum: ['summary','detailed','discipline'], description: 'Report format' } } }
+      },
+      {
+        name: 'batch_update_status',
+        description: 'Batch update status of multiple clashes or issues at once. Use for bulk operations like marking all resolved, closing old clashes, etc.',
+        parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' }, description: 'Array of clash/issue IDs to update' }, status: { type: 'string', enum: ['open','in_progress','resolved','closed'] }, item_type: { type: 'string', enum: ['clash','issue'], description: 'Whether these are clash IDs or issue IDs' } }, required: ['ids','status','item_type'] }
+      },
+      {
+        name: 'batch_assign',
+        description: 'Batch assign multiple issues to a person.',
+        parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' }, description: 'Array of issue IDs' }, assignee: { type: 'string', description: 'Name of the person to assign to' } }, required: ['ids','assignee'] }
       }
     ];
   }
@@ -5486,6 +5731,68 @@ function startApp() {
       }
       case 'get_revit_status': {
         return JSON.stringify({ action:'forward_to_revit_mcp', tool:'get_revit_status', note:'AI should call Revit MCP get_revit_status' });
+      }
+      case 'analyze_clashes': {
+        var clashes = s.clashes;
+        var total = clashes.length;
+        var byStatus = {}; clashes.forEach(function(c){ byStatus[c.status] = (byStatus[c.status]||0)+1; });
+        var byType = {}; clashes.forEach(function(c){ byType[c.type] = (byType[c.type]||0)+1; });
+        var byStorey = {}; clashes.forEach(function(c){
+          var st = c.elemAStorey || c.elemBStorey || 'Unknown';
+          byStorey[st] = (byStorey[st]||0)+1;
+        });
+        var byDisc = {}; clashes.forEach(function(c){
+          if(c.disciplines) c.disciplines.forEach(function(dd){ byDisc[dd]=(byDisc[dd]||0)+1; });
+        });
+        // Find hotspot storey
+        var hotStorey = Object.keys(byStorey).sort(function(a,b){return byStorey[b]-byStorey[a];})[0]||'N/A';
+        // Element type pairs
+        var typePairs = {}; clashes.forEach(function(c){
+          var pair = [c.elemAType||'?',c.elemBType||'?'].sort().join(' vs ');
+          typePairs[pair] = (typePairs[pair]||0)+1;
+        });
+        var topPairs = Object.keys(typePairs).sort(function(a,b){return typePairs[b]-typePairs[a];}).slice(0,5);
+        return JSON.stringify({ total:total, byStatus:byStatus, byType:byType, byStorey:byStorey, byDiscipline:byDisc,
+          hotspotStorey:hotStorey, hotspotCount:byStorey[hotStorey]||0,
+          topElementTypePairs:topPairs.map(function(p){return {pair:p,count:typePairs[p]};})
+        });
+      }
+      case 'suggest_resolution': {
+        var target = args.clash_id ? s.clashes.filter(function(c){return c.id===args.clash_id;}) : s.clashes.filter(function(c){return c.status==='open';}).slice(0,5);
+        return JSON.stringify(target.map(function(c){
+          return { id:c.id, type:c.type, elemAType:c.elemAType, elemBType:c.elemBType, elemAName:c.elemAName, elemBName:c.elemBName,
+            elemAStorey:c.elemAStorey, distance:c.distance, disciplines:c.disciplines,
+            context:'Provide resolution suggestions based on these element types, disciplines, and spatial relationship.' };
+        }));
+      }
+      case 'generate_report': {
+        var fmt = args.format || 'summary';
+        var cl = s.clashes, is = s.issues;
+        var data = { format:fmt, totalClashes:cl.length, totalIssues:is.length,
+          clashBreakdown:{ open:cl.filter(function(c){return c.status==='open';}).length, resolved:cl.filter(function(c){return c.status==='resolved'||c.status==='closed';}).length, hard:cl.filter(function(c){return c.type==='hard';}).length, soft:cl.filter(function(c){return c.type==='soft';}).length },
+          issueBreakdown:{ open:is.filter(function(i){return i.status==='open';}).length, inProgress:is.filter(function(i){return i.status==='in_progress';}).length, resolved:is.filter(function(i){return i.status==='resolved'||i.status==='closed';}).length }
+        };
+        if (fmt === 'detailed' || fmt === 'discipline') {
+          var discData = {};
+          cl.forEach(function(c){ (c.disciplines||[]).forEach(function(dd){ if(!discData[dd])discData[dd]={total:0,open:0,hard:0}; discData[dd].total++; if(c.status==='open')discData[dd].open++; if(c.type==='hard')discData[dd].hard++; }); });
+          data.byDiscipline = discData;
+        }
+        return JSON.stringify(data);
+      }
+      case 'batch_update_status': {
+        if (args.ids && args.status && args.item_type) {
+          var actionType = args.item_type === 'clash' ? 'UPD_CLASH' : 'UPD_ISSUE';
+          args.ids.forEach(function(id) { d({ t:actionType, id:id, u:{status:args.status} }); });
+          return JSON.stringify({ success:true, updated:args.ids.length, newStatus:args.status });
+        }
+        return JSON.stringify({ success:false, error:'Missing ids, status, or item_type' });
+      }
+      case 'batch_assign': {
+        if (args.ids && args.assignee) {
+          args.ids.forEach(function(id) { d({ t:'UPD_ISSUE', id:id, u:{assignee:args.assignee} }); });
+          return JSON.stringify({ success:true, assigned:args.ids.length, assignee:args.assignee });
+        }
+        return JSON.stringify({ success:false, error:'Missing ids or assignee' });
       }
       default:
         return JSON.stringify({ error:'Unknown tool: ' + name });
@@ -6801,6 +7108,47 @@ function startApp() {
       var gv = {storey:'storey',floor:'storey',level:'storey',discipline:'discipline',status:'status',type:'type',none:'none'}[groupMatch[1]];
       d({t:'CLASH_GROUP_BY',v:gv}); d({t:'TAB',v:'clashes'});
       return 'Grouped by ' + groupMatch[1] + '.';
+    }
+
+    // ── Batch Operations ───────────────────────────────────────────
+    var batchStatusMatch = text.match(/(?:mark|set|change|update)\s+all\s+(?:(open|resolved|hard|soft)\s+)?(?:clashes?|issues?)\s+(?:as\s+|to\s+)(open|in.?progress|resolved|closed)/);
+    if (batchStatusMatch) {
+      var filterKey = batchStatusMatch[1];
+      var newStatus = batchStatusMatch[2].replace(/\s+/g,'_');
+      var isIssue = /issues?/.test(text);
+      var pool = isIssue ? s.issues : s.clashes;
+      var targets = pool;
+      if (filterKey === 'open') targets = pool.filter(function(x){return x.status==='open';});
+      else if (filterKey === 'resolved') targets = pool.filter(function(x){return x.status==='resolved';});
+      else if (filterKey === 'hard') targets = pool.filter(function(x){return x.type==='hard';});
+      else if (filterKey === 'soft') targets = pool.filter(function(x){return x.type==='soft';});
+      var actionT = isIssue ? 'UPD_ISSUE' : 'UPD_CLASH';
+      targets.forEach(function(x){ d({t:actionT, id:x.id, u:{status:newStatus}}); });
+      return 'Updated ' + targets.length + (isIssue?' issues':' clashes') + ' to ' + newStatus + '.';
+    }
+
+    var batchAssignMatch = text.match(/(?:assign|give|set)\s+all\s+(?:(open|unassigned)\s+)?issues?\s+to\s+(.+)/i);
+    if (batchAssignMatch) {
+      var assignFilter = batchAssignMatch[1];
+      var assignee = batchAssignMatch[2].trim();
+      var issueTargets = s.issues;
+      if (assignFilter === 'open') issueTargets = issueTargets.filter(function(i){return i.status==='open';});
+      else if (assignFilter === 'unassigned') issueTargets = issueTargets.filter(function(i){return !i.assignee;});
+      issueTargets.forEach(function(i){ d({t:'UPD_ISSUE', id:i.id, u:{assignee:assignee}}); });
+      return 'Assigned ' + issueTargets.length + ' issues to ' + assignee + '.';
+    }
+
+    // Analyze / report commands → open Revit Bridge if configured, else give summary
+    if (/(?:analyze|analyse|analysis|summarize|summarise|summary|report|insights?|overview)\s*(?:clashes?|results?|detection)?/.test(text)) {
+      var cl=s.clashes, op=cl.filter(function(c){return c.status==='open';}), hd=cl.filter(function(c){return c.type==='hard';}), sf=cl.filter(function(c){return c.type==='soft';});
+      var storeys = {}; cl.forEach(function(c){ var st=c.elemAStorey||c.elemBStorey||'Unknown'; storeys[st]=(storeys[st]||0)+1; });
+      var hotStorey = Object.keys(storeys).sort(function(a,b){return storeys[b]-storeys[a];})[0];
+      var pct = cl.length>0 ? Math.round((cl.length - op.length) / cl.length * 100) : 0;
+      var lines = [cl.length + ' total clashes: ' + hd.length + ' hard, ' + sf.length + ' soft, ' + op.length + ' open.'];
+      lines.push('Resolution progress: ' + pct + '%.');
+      if (hotStorey) lines.push('Hotspot: ' + hotStorey + ' (' + storeys[hotStorey] + ' clashes).');
+      if (s.revitBridge.provider && s.revitBridge.apiKey) lines.push('Tip: Use Revit Bridge for deeper AI-powered analysis.');
+      return lines.join('\n');
     }
 
     // ── Export ─────────────────────────────────────────────────────

@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.57 (2026-03-23)
+- Polish light mode: CSS variables for theme coherence across all components
+
 ## v1.2.56 (2026-03-23)
 - Improve UI readability, spacing, and visual polish across the app
 
