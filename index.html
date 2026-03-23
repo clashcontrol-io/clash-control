@@ -182,7 +182,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.52',hash:'c2e4f24',date:'2026-03-23T19:21:01Z'};
+  var CC_VERSION = {v:'1.2.53',hash:'e506bea',date:'2026-03-23T19:37:14Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -7289,6 +7289,68 @@ function startApp() {
     </div>`;
   }
 
+  // ── First-Visit Welcome Popup ─────────────────────────────────
+
+  function WelcomePopup(props) {
+    var d = props.d;
+    var isDark = (props.theme||'dark')==='dark';
+    var stShow = useState(function(){
+      try { return !localStorage.getItem('cc_welcomed'); } catch(e){ return true; }
+    });
+    var show = stShow[0], setShow = stShow[1];
+    if (!show) return null;
+    function dismiss() {
+      try { localStorage.setItem('cc_welcomed','1'); } catch(e){}
+      setShow(false);
+    }
+    var MS={position:'fixed',inset:0,background:'var(--modal-bg)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60};
+    var MX={background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:14,width:400,maxWidth:'92vw',boxShadow:'0 25px 50px rgba(0,0,0,.5)',overflow:'hidden'};
+    var accent='#2563eb';
+    return html`<div style=${MS} onClick=${function(e){if(e.target===e.currentTarget)dismiss();}}>
+      <div style=${MX}>
+        <div style=${{background:'linear-gradient(135deg,#1e3a5f,#2563eb)',padding:'1.2rem 1.2rem 1rem',display:'flex',alignItems:'center',gap:'.65rem'}}>
+          <div style=${{width:36,height:36,background:'rgba(255,255,255,.15)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <span style=${{color:'#fff',fontWeight:900,fontSize:14}}>CC</span>
+          </div>
+          <div>
+            <div style=${{color:'#fff',fontWeight:700,fontSize:'.95rem'}}>Welcome to ClashControl</div>
+            <div style=${{color:'rgba(255,255,255,.7)',fontSize:'.65rem',marginTop:'.1rem'}}>Open-source BIM clash detection</div>
+          </div>
+        </div>
+        <div style=${{padding:'1rem 1.2rem'}}>
+          <div style=${{fontSize:'.75rem',color:'var(--text-primary)',lineHeight:1.65,marginBottom:'.7rem'}}>
+            ClashControl works with a <strong>local AI assistant</strong> to help you run clash checks using plain English. You can connect your own LLM:
+          </div>
+          <div style=${{display:'flex',flexDirection:'column',gap:'.45rem',marginBottom:'.8rem'}}>
+            <div style=${{display:'flex',gap:'.5rem',alignItems:'flex-start'}}>
+              <span style=${{color:'#22c55e',fontWeight:700,fontSize:'.7rem',flexShrink:0,marginTop:1}}>1</span>
+              <span style=${{fontSize:'.68rem',color:'var(--text-secondary)',lineHeight:1.55}}>
+                <strong style=${{color:'var(--text-primary)'}}>Local (free):</strong> Install <a href="https://ollama.com" target="_blank" rel="noopener" style=${{color:'#60a5fa'}}>Ollama</a>, then run <code style=${{background:isDark?'#1e293b':'#e2e8f0',padding:'1px 4px',borderRadius:3,fontSize:'.6rem'}}>ollama pull qwen2.5:7b</code>. ClashControl detects it automatically.
+              </span>
+            </div>
+            <div style=${{display:'flex',gap:'.5rem',alignItems:'flex-start'}}>
+              <span style=${{color:'#22c55e',fontWeight:700,fontSize:'.7rem',flexShrink:0,marginTop:1}}>2</span>
+              <span style=${{fontSize:'.68rem',color:'var(--text-secondary)',lineHeight:1.55}}>
+                <strong style=${{color:'var(--text-primary)'}}>Cloud API (BYOK):</strong> Click the <strong>Revit Bridge</strong> button (left sidebar) to connect Claude, GPT-4o, or Gemini with your own API key. Enables push/pull to Revit via MCP.
+              </span>
+            </div>
+            <div style=${{display:'flex',gap:'.5rem',alignItems:'flex-start'}}>
+              <span style=${{color:'#22c55e',fontWeight:700,fontSize:'.7rem',flexShrink:0,marginTop:1}}>3</span>
+              <span style=${{fontSize:'.68rem',color:'var(--text-secondary)',lineHeight:1.55}}>
+                <strong style=${{color:'var(--text-primary)'}}>No AI? No problem.</strong> Everything works without AI — load IFC files, run clashes, export BCF, all in-browser.
+              </span>
+            </div>
+          </div>
+          <div style=${{display:'flex',gap:'.4rem',justifyContent:'flex-end'}}>
+            <button onClick=${dismiss} style=${{border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'.75rem',borderRadius:8,padding:'.45rem 1.2rem',background:accent,color:'#fff',fontWeight:600}}>
+              Get Started
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   // ── App ────────────────────────────────────────────────────────
 
   function App() {
@@ -7360,6 +7422,7 @@ function startApp() {
       ${s.showSettings && html`<${SettingsModal} d=${d} prefs=${s.prefs} />`}
       ${s.showRevitBridge && html`<${RevitBridgePanel} s=${s} d=${d} />`}
       <${NLCommandPanel} s=${s} d=${d} />
+      <${WelcomePopup} d=${d} theme=${s.prefs.theme} />
     </div>`;
   }
 

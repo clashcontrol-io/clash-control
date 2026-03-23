@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.53 (2026-03-23)
+- Add Revit Bridge: AI-powered bidirectional sync between ClashControl and Revit
+
 ## v1.2.52 (2026-03-23)
 - Add soft clash / proximity detection via chatbox distance input
 
