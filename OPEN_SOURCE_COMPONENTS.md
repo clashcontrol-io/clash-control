@@ -23,12 +23,6 @@ ClashControl uses the following open source libraries and components:
 |-----------|--------|---------|---------|
 | htm | [developit/htm](https://github.com/developit/htm) | Apache-2.0 | Tagged template to React.createElement (custom minimal implementation) |
 
-## Development Tools
-
-| Tool | Purpose |
-|------|---------|
-| Git pre-commit hooks | Auto version bumping on commit |
-
 ## License compatibility
 
 - **ClashControl** is released under the **MIT** license.
