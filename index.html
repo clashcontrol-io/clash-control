@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.57',hash:'ef7cf73',date:'2026-03-23T20:48:08Z'};
+  var CC_VERSION = {v:'1.2.58',hash:'8b0ef8f',date:'2026-03-23T20:55:14Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -6885,7 +6885,17 @@ function startApp() {
 
     // ── Help ───────────────────────────────────────────────────────
     if (/^help$|what can you do|how (?:do i|to) use|what.*commands?/.test(text)) {
-      return 'Describe a clash check in plain English:\n• Hard clashes: "check structural vs MEP"\n• Near misses: "check clashes within 100mm" or "find near misses"\n• Both: "structural vs MEP with 50mm clearance"\n• Set distance: "clearance 75mm"\nAlso: "how many clashes?", "group by storey", "show resolved", "export BCF".';
+      return 'I can control ClashControl with plain English:\n\n' +
+        '**Clash detection:** "check structural vs MEP", "find near misses", "clearance 75mm"\n' +
+        '**Filters:** "show open", "group by storey", "reset filters"\n' +
+        '**Batch:** "mark all open clashes as resolved", "assign all issues to John"\n' +
+        '**Analysis:** "how many clashes?", "analyze clashes", "summary"\n' +
+        '**Theme:** "switch to light", "dark mode"\n' +
+        '**Files:** "load ifc", "load 2d", "import bcf", "export bcf"\n' +
+        '**Navigation:** "show clashes tab", "open settings", "open bridge"\n' +
+        '**Viewer:** "section x", "wireframe mode", "show markers", "hide grid"\n' +
+        '**Tools:** "measure length", "save viewpoint", "save project"\n' +
+        '**Display:** "color by discipline", "show model tree", "reset view"';
     }
 
     // ── Q&A ────────────────────────────────────────────────────────
@@ -7159,6 +7169,102 @@ function startApp() {
       return 'Exported ' + items.length + ' item' + (items.length===1?'':'s') + ' as BCF 2.1.';
     }
 
+    // ── Theme ──────────────────────────────────────────────────────
+    if (/(?:switch|change|toggle|set|go)\s+(?:to\s+)?(?:light|dark)\s*(?:mode|theme)?/.test(text) || /(?:light|dark)\s+(?:mode|theme)/.test(text)) {
+      var wantLight = /light/.test(text);
+      d({t:'UPD_PREFS',u:{theme:wantLight?'light':'dark'}});
+      return 'Switched to ' + (wantLight?'light':'dark') + ' mode.';
+    }
+
+    // ── File Loading ─────────────────────────────────────────────
+    if (/(?:load|open|import|add)\s+(?:an?\s+)?ifc|ifc\s+(?:file|model)/.test(text)) {
+      if(window._ccOpenIFC) window._ccOpenIFC();
+      else { window._ccPendingOpen='ifc'; d({t:'TAB',v:'models'}); }
+      return 'Opening IFC file picker...';
+    }
+    if (/(?:load|open|import|add)\s+(?:an?\s+)?(?:2d|dxf|pdf|dwg|underlay|drawing)/.test(text)) {
+      if(window._ccOpen2D) window._ccOpen2D();
+      else { window._ccPendingOpen='2d'; d({t:'TAB',v:'models'}); }
+      return 'Opening 2D file picker...';
+    }
+    if (/(?:import|load|open)\s+(?:a\s+)?bcf/.test(text)) {
+      importBCF(d);
+      return 'Opening BCF file picker...';
+    }
+
+    // ── Tab Navigation ───────────────────────────────────────────
+    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?models?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:'TAB',v:'models'}); return 'Opened Models tab.'; }
+    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?clashes?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:'TAB',v:'clashes'}); return 'Opened Clashes tab.'; }
+    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?issues?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:'TAB',v:'issues'}); return 'Opened Issues tab.'; }
+    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?explorer?\s*(?:tab|panel)?/.test(text)) { d({t:'TAB',v:'explorer'}); return 'Opened Explorer tab.'; }
+
+    // ── Settings & Modals ────────────────────────────────────────
+    if (/(?:open|show)\s+(?:the\s+)?settings?/.test(text)) { d({t:'SETTINGS',v:true}); return 'Opened settings.'; }
+    if (/(?:open|show)\s+(?:the\s+)?(?:revit\s+)?bridge/.test(text)) { d({t:'REVIT_BRIDGE',v:true}); return 'Opened Revit Bridge.'; }
+    if (/(?:new|create|add)\s+(?:an?\s+)?issue/.test(text)) { d({t:'MODAL',v:true}); return 'Opened new issue form.'; }
+
+    // ── Viewer Controls ──────────────────────────────────────────
+    if (/(?:reset|home|default)\s+(?:the\s+)?(?:view|camera)|(?:fit|zoom)\s+(?:to\s+)?all/.test(text)) {
+      if(_resetView) _resetView();
+      return 'View reset to default.';
+    }
+
+    // Section planes
+    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?x|x\s+(?:section|cut)/.test(text)) { d({t:'SECTION',axis:'x'}); return 'Section plane set on X axis.'; }
+    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?y|y\s+(?:section|cut)/.test(text)) { d({t:'SECTION',axis:'y'}); return 'Section plane set on Y axis.'; }
+    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?z|z\s+(?:section|cut)/.test(text)) { d({t:'SECTION',axis:'z'}); return 'Section plane set on Z axis.'; }
+    if (/(?:remove|clear|off|disable|hide)\s+(?:the\s+)?(?:section|cut|slice|clipping)/.test(text)) { d({t:'SECTION',axis:null}); d({t:'SECTION_BOX',v:null}); return 'Section planes cleared.'; }
+
+    // Render style
+    var renderMatch = text.match(/(?:switch|change|set)\s+(?:to\s+)?(?:render\s+)?(?:style\s+)?(?:to\s+)?(standard|shaded|rendered|wireframe)/);
+    if (!renderMatch) renderMatch = text.match(/(standard|shaded|rendered|wireframe)\s+(?:mode|style|view|render)/);
+    if (renderMatch) { d({t:'UPD_PREFS',u:{renderStyle:renderMatch[1]}}); return 'Render style set to ' + renderMatch[1] + '.'; }
+
+    // Clash markers
+    if (/(?:show|enable|turn\s+on|display)\s+(?:clash\s+)?markers?/.test(text)) { d({t:'UPD_PREFS',u:{showClashMarkers:true}}); return 'Clash markers enabled.'; }
+    if (/(?:hide|disable|turn\s+off|remove)\s+(?:clash\s+)?markers?/.test(text)) { d({t:'UPD_PREFS',u:{showClashMarkers:false}}); return 'Clash markers disabled.'; }
+
+    // Grid & axes
+    if (/(?:show|enable|turn\s+on)\s+(?:the\s+)?grid/.test(text)) { d({t:'UPD_PREFS',u:{showGrid:true}}); return 'Grid enabled.'; }
+    if (/(?:hide|disable|turn\s+off|remove)\s+(?:the\s+)?grid/.test(text)) { d({t:'UPD_PREFS',u:{showGrid:false}}); return 'Grid hidden.'; }
+    if (/(?:show|enable|turn\s+on)\s+(?:the\s+)?axes?/.test(text)) { d({t:'UPD_PREFS',u:{showAxes:true}}); return 'Axes enabled.'; }
+    if (/(?:hide|disable|turn\s+off|remove)\s+(?:the\s+)?axes?/.test(text)) { d({t:'UPD_PREFS',u:{showAxes:false}}); return 'Axes hidden.'; }
+
+    // Ghost / unghost
+    if (/(?:unghost|unghostall|clear\s+ghost|show\s+all\s+elements?|restore\s+all)/.test(text)) { if(_unghostAll)_unghostAll(); return 'All elements restored.'; }
+
+    // Measurements
+    if (/(?:measure|measurement)\s+(?:length|distance)/.test(text)) { d({t:'MEASURE_MODE',v:'length'}); return 'Length measurement mode activated. Click two points.'; }
+    if (/(?:measure|measurement)\s+angle/.test(text)) { d({t:'MEASURE_MODE',v:'angle'}); return 'Angle measurement mode activated.'; }
+    if (/(?:measure|measurement)\s+area/.test(text)) { d({t:'MEASURE_MODE',v:'area'}); return 'Area measurement mode activated.'; }
+    if (/(?:stop|exit|cancel|end)\s+measur/.test(text)) { d({t:'MEASURE_MODE',v:null}); return 'Measurement mode deactivated.'; }
+    if (/(?:clear|delete|remove)\s+(?:all\s+)?measurements?/.test(text)) { d({t:'CLEAR_MEASUREMENTS'}); return 'All measurements cleared.'; }
+
+    // Save viewpoint
+    if (/(?:save|capture|store)\s+(?:this\s+)?(?:view|viewpoint|camera)/.test(text)) {
+      if(_captureViewpoint) { _captureViewpoint('Viewpoint ' + (s.viewpoints.length+1)); return 'Viewpoint saved.'; }
+      return 'No 3D view to capture.';
+    }
+
+    // Save project
+    if (/(?:save|store)\s+(?:the\s+)?project/.test(text)) { if(typeof saveProject==='function') saveProject(s); return 'Project saved.'; }
+
+    // Floor plan
+    if (/(?:exit|close|leave|cancel)\s+(?:the\s+)?(?:floor\s*plan|plan\s+view|2d\s+view)/.test(text)) { d({t:'FLOOR_PLAN',v:null}); return 'Exited floor plan view.'; }
+
+    // Classifications / color by
+    if (/color\s+by\s+(type|storey|discipline|material)/.test(text)) {
+      var cbMatch = text.match(/color\s+by\s+(type|storey|discipline|material)/);
+      var cbView = 'by'+cbMatch[1].charAt(0).toUpperCase()+cbMatch[1].slice(1);
+      d({t:'COLOR_BY_CLASS',v:cbView});
+      return 'Coloring by ' + cbMatch[1] + '.';
+    }
+    if (/(?:remove|clear|reset)\s+color/.test(text)) { d({t:'COLOR_BY_CLASS',v:null}); return 'Color-by-class cleared.'; }
+
+    // Model tree
+    if (/(?:show|open)\s+(?:the\s+)?(?:model\s+)?tree/.test(text)) { d({t:'TREE',v:true}); return 'Model tree opened.'; }
+    if (/(?:hide|close)\s+(?:the\s+)?(?:model\s+)?tree/.test(text)) { d({t:'TREE',v:false}); return 'Model tree closed.'; }
+
     return null;
   }
 
@@ -7168,7 +7274,7 @@ function startApp() {
     var s = props.s, d = props.d;
     var stOpen = useState(false), open = stOpen[0], setOpen = stOpen[1];
     window._ccNLOpen = function(){ setOpen(true); };
-    var stMsgs = useState([{role:'assistant', text:'Describe a clash check — e.g. "structural vs MEP", "check clashes within 100mm", "find near misses". Set a distance to include elements that are close but not touching. Ask "help" for all commands.'}]);
+    var stMsgs = useState([{role:'assistant', text:'Control ClashControl with plain English — try "load ifc", "structural vs MEP", "switch to light", "analyze clashes", or "help" for all commands.'}]);
     var msgs = stMsgs[0], setMsgs = stMsgs[1];
     var stInput = useState(''), input = stInput[0], setInput = stInput[1];
     var stLoading = useState(false), loading = stLoading[0], setLoading = stLoading[1];

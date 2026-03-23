@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.58 (2026-03-23)
+- Add classical UI controls, bulk actions, and deeper AI integration
+
 ## v1.2.57 (2026-03-23)
 - Polish light mode: CSS variables for theme coherence across all components
 
