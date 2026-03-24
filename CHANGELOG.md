@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.18 (2026-03-24)
+- Fix model visibility not persisting across page refresh
+
+## v2.0.17 (2026-03-24)
+- Fix clash list scroll-to-active when clicking 3D markers
+
 ## v2.0.16 (2026-03-24)
 - Split markers button into separate clash/issue toggles, remove from issues tab
 
