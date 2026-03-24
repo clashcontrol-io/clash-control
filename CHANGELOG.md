@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.59 (2026-03-24)
+- Add comprehensive NL commands for full app control via chat
+
 ## v1.2.58 (2026-03-23)
 - Add classical UI controls, bulk actions, and deeper AI integration
 
