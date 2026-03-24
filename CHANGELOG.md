@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.0.25 (2026-03-24)
+- Add tooltips to remaining filter labels and confirm before re-running detection
+
 ## v2.0.24 (2026-03-24)
 - Fix React hooks violation in ClashRulesPanel Advanced toggle
 
