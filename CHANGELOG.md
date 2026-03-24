@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.0.4 (2026-03-24)
+- Add HH (temp hide), HI (isolate), HR (reset) chord shortcuts
+
 ## v2.0.3 (2026-03-24)
 - Add Revit-style two-key chord shortcuts (BX, SC, ZF, DL, etc.)
 

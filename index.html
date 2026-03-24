@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.0.3',hash:'b31792c',date:'2026-03-24T10:30:19Z'};
+  var CC_VERSION = {v:'2.0.4',hash:'64b1733',date:'2026-03-24T10:36:04Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -8862,7 +8862,6 @@ function startApp() {
             // Chord timed out — execute single-key fallback
             var sk=ch.key; ch.key=null; ch.timer=null;
             if(sk==='v'){ if(_captureViewpoint){var vp2=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:'ADD_VIEWPOINT',v:vp2});} }
-            if(sk==='h'){ if(_resetView)_resetView(); if(window._ccDispatch&&s.floorPlan)window._ccDispatch({t:'FLOOR_PLAN',v:null}); }
           }, 500);
           return;
         }
@@ -8874,7 +8873,6 @@ function startApp() {
           if(e.key==='3'){ d({t:'TAB',v:'explorer'}); return; }
         }
 
-        // H is now a chord starter (HH=hide, HI=isolate, HR=reset); single H falls back to Home via timeout
         // M — Toggle measure mode
         if(e.key==='m'&&!ctrl){ d({t:'MEASURE_MODE',v:s.measureMode?null:'length'}); return; }
         // L/A/R — Measure length/angle/area (only when measure mode is active)
