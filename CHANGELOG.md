@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.25 (2026-03-24)
+- Add tooltips to remaining filter labels and confirm before re-running detection
+
+## v2.0.24 (2026-03-24)
+- Fix React hooks violation in ClashRulesPanel Advanced toggle
+
 ## v2.0.23 (2026-03-24)
 - Add semantic clash filter and extend IFC type coverage
 
