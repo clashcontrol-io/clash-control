@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.0.19',hash:'dc06594',date:'2026-03-24T12:31:53Z'};
+  var CC_VERSION = {v:'2.0.20',hash:'54b7275',date:'2026-03-24T12:38:12Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -1711,6 +1711,9 @@ function startApp() {
       }
     });
 
+    // Free clash geometry caches — they're large Float32Arrays only needed during detection
+    _flushGeoCache(models);
+
     return merged;
   }
 
@@ -2156,6 +2159,7 @@ function startApp() {
       renderer.localClippingEnabled = true;
       el.appendChild(renderer.domElement);
       S.renderer = renderer;
+      window._ccState3d = S;
 
       S.orbit = makeOrbit(camera, renderer.domElement);
       S.orbit.apply(); // ensure camera looks at orbit target on init
@@ -9051,6 +9055,25 @@ function startApp() {
       }
       window.addEventListener('beforeunload', onUnload);
       return function(){ window.removeEventListener('beforeunload', onUnload); };
+    }, []);
+    // ── Periodic memory cleanup (runs every 2 minutes) ──
+    useEffect(function(){
+      var timer = setInterval(function(){
+        var S = window._ccState3d;
+        // 1. Flush clash geo caches if not currently detecting
+        if(!_latestSRef.current.detecting) _flushGeoCache(_latestSRef.current.models);
+        // 2. Clean Three.js internal render list cache (accumulates per-camera entries)
+        if(S && S.renderer && S.renderer.renderLists) {
+          try { S.renderer.renderLists.dispose(); } catch(e){}
+        }
+        // 3. Purge stale elMap/hsCache entries for models that no longer exist
+        if(S && S._elMapCache) {
+          var modelIds = {};
+          _latestSRef.current.models.forEach(function(m){ modelIds[m.id]=true; });
+          Object.keys(S._elMapCache).forEach(function(k){ if(!modelIds[k]){ delete S._elMapCache[k]; delete S._hsCache[k]; } });
+        }
+      }, 120000);
+      return function(){ clearInterval(timer); };
     }, []);
     // Generate 2D outlines for compare mode
     useEffect(function() {
