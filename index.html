@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.0.5',hash:'c03b2b8',date:'2026-03-24T10:58:30Z'};
+  var CC_VERSION = {v:'2.0.6',hash:'b58bb1d',date:'2026-03-24T11:09:44Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -499,6 +499,36 @@ function startApp() {
         tx.onerror = function(e) { reject(e.target.error); };
       });
     }).catch(function(e) { console.warn('Failed to delete geo cache:', e); });
+  }
+
+  // Background cleanup: delete geo cache entries that don't belong to any project file
+  function _idbCleanOrphanedGeoCache() {
+    _openIDB().then(function(db) {
+      // Get all file IDs across all projects
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction(IDB_STORE, 'readonly');
+        var req = tx.objectStore(IDB_STORE).getAll();
+        req.onsuccess = function() { resolve((req.result||[]).map(function(f){ return f.id; })); };
+        req.onerror = function() { resolve([]); };
+      }).then(function(validIds) {
+        var validSet = {};
+        validIds.forEach(function(id){ validSet[id] = true; });
+        // Get all geo cache keys
+        return new Promise(function(resolve, reject) {
+          var tx2 = db.transaction(IDB_GEOCACHE, 'readonly');
+          var req2 = tx2.objectStore(IDB_GEOCACHE).getAllKeys();
+          req2.onsuccess = function() { resolve(req2.result||[]); };
+          req2.onerror = function() { resolve([]); };
+        }).then(function(cacheKeys) {
+          var orphans = cacheKeys.filter(function(k){ return !validSet[k]; });
+          if (!orphans.length) return;
+          var tx3 = db.transaction(IDB_GEOCACHE, 'readwrite');
+          var store = tx3.objectStore(IDB_GEOCACHE);
+          orphans.forEach(function(k){ store.delete(k); });
+          console.log('Cleaned ' + orphans.length + ' orphaned geo cache entries');
+        });
+      });
+    }).catch(function(e) { /* silent — cleanup is best-effort */ });
   }
 
   // Serialise a loadIFC result to plain objects/ArrayBuffers for IDB storage.
@@ -830,11 +860,13 @@ function startApp() {
   }
 
   // Pre-build property/quantity map: expressID -> {quantities, psets} (scans relations once)
-  function buildPropertyMap(api, modelID) {
+  function buildPropertyMap(api, modelID, onProgress) {
     var propMap = {}; // expressID -> {quantities:{}, psets:{}}
     try {
       var relIds = api.GetLineIDsWithType(modelID, IFC.IFCRELDEFINESBYPROPERTIES);
-      for (var i = 0; i < relIds.size(); i++) {
+      var total = relIds.size();
+      for (var i = 0; i < total; i++) {
+        if (onProgress && i % 500 === 0) onProgress('Reading properties (' + i + ' / ' + total + ')…');
         try {
           var rel = api.GetLine(modelID, relIds.get(i));
           var defId = rel.RelatingPropertyDefinition ? (rel.RelatingPropertyDefinition.value||rel.RelatingPropertyDefinition) : null;
@@ -910,7 +942,7 @@ function startApp() {
       var storeyMap = storeyResult.map;
       var storeyData = storeyResult.data;
       var matMap = buildMaterialMap(api, modelID);
-      var propMap = buildPropertyMap(api, modelID);
+      var propMap = buildPropertyMap(api, modelID, onProgress);
       var allStoreys = {};
       Object.keys(storeyMap).forEach(function(k){ allStoreys[storeyMap[k]] = true; });
 
@@ -919,13 +951,15 @@ function startApp() {
       // Collect raw mesh data first (StreamAllMeshes is synchronous, can't chunk it)
       var rawElements = [];
       var meshes = [];
+      var matCache = {}; // material dedup: "r,g,b,a" → MeshPhongMaterial
       api.StreamAllMeshes(modelID, function(ifcMesh) {
         var expressID = ifcMesh.expressID;
         var elMeshes = [], elBox = new THREE.Box3();
         for (var i = 0; i < ifcMesh.geometries.size(); i++) {
           var placed = ifcMesh.geometries.get(i);
+          var gd = null;
           try {
-            var gd = api.GetGeometry(modelID, placed.geometryExpressID);
+            gd = api.GetGeometry(modelID, placed.geometryExpressID);
             var verts = api.GetVertexArray(gd.GetVertexData(), gd.GetVertexDataSize());
             var indices = api.GetIndexArray(gd.GetIndexData(), gd.GetIndexDataSize());
             var pos = new Float32Array(verts.length/2), nrm = new Float32Array(verts.length/2);
@@ -940,24 +974,35 @@ function startApp() {
             geo.setIndex(new THREE.BufferAttribute(indices, 1));
             var c = placed.color;
             var col = c ? new THREE.Color(c.x, c.y, c.z) : new THREE.Color(fallbackColor);
-            var mat = new THREE.MeshPhongMaterial({ color:col, opacity:c?c.w:1, transparent:c?c.w<0.99:false, side:THREE.DoubleSide });
+            var matKey = (col.r).toFixed(3)+','+(col.g).toFixed(3)+','+(col.b).toFixed(3)+','+(c?c.w:1).toFixed(3);
+            var mat = matCache[matKey];
+            if (!mat) { mat = new THREE.MeshPhongMaterial({ color:col, opacity:c?c.w:1, transparent:c?c.w<0.99:false, side:THREE.DoubleSide }); matCache[matKey] = mat; }
             var mesh = new THREE.Mesh(geo, mat);
             mesh.applyMatrix4(new THREE.Matrix4().fromArray(placed.flatTransformation));
             mesh.userData.expressID = expressID;
             elBox.expandByObject(mesh);
             elMeshes.push(mesh); meshes.push(mesh);
-            gd.delete();
           } catch(e) { console.warn('Skipped element geometry #'+expressID+': '+(e.message||e)); }
+          finally { if (gd) try { gd.delete(); } catch(e2) {} }
         }
         if (elMeshes.length > 0) {
-          rawElements.push({expressId:expressID, meshes:elMeshes, box:elBox.clone()});
+          // Pre-extract properties while model is still open (avoids keeping WASM model alive during chunked processing)
+          var elProps = extractProperties(api, modelID, expressID);
+          elProps.storey = storeyMap[expressID] || '';
+          elProps.material = matMap[expressID] || '';
+          if (elProps.typeId && IFC_TYPE_NAMES[elProps.typeId]) elProps.ifcType = IFC_TYPE_NAMES[elProps.typeId];
+          var pm = propMap[expressID];
+          if (pm) { elProps.quantities = pm.quantities; elProps.psets = pm.psets; }
+          rawElements.push({expressId:expressID, meshes:elMeshes, box:elBox.clone(), props:elProps});
         }
       });
 
-      // Now enrich with properties using pre-built maps (fast lookups, no re-scanning)
-      if(onProgress) onProgress('Enriching ' + rawElements.length + ' elements…');
+      // Close WASM model immediately — all data is now in JavaScript memory
+      api.CloseModel(modelID);
 
-      // Process properties in chunks to keep the UI responsive
+      if(onProgress) onProgress('Processing ' + rawElements.length + ' elements…');
+
+      // Build final elements array in chunks to keep the UI responsive
       var elements = [];
       var CHUNK = 200;
       return new Promise(function(resolve) {
@@ -965,23 +1010,12 @@ function startApp() {
           var end = Math.min(startIdx + CHUNK, rawElements.length);
           for (var idx = startIdx; idx < end; idx++) {
             var raw = rawElements[idx];
-            var props = extractProperties(api, modelID, raw.expressId);
-            props.storey = storeyMap[raw.expressId] || '';
-            props.material = matMap[raw.expressId] || '';
-            if (props.typeId && IFC_TYPE_NAMES[props.typeId]) props.ifcType = IFC_TYPE_NAMES[props.typeId];
-            // Use pre-built property map instead of scanning all relations
-            var pm = propMap[raw.expressId];
-            if (pm) {
-              props.quantities = pm.quantities;
-              props.psets = pm.psets;
-            }
-            elements.push({expressId:raw.expressId, meshes:raw.meshes, box:raw.box, props:props});
+            elements.push({expressId:raw.expressId, meshes:raw.meshes, box:raw.box, props:raw.props});
           }
           if (end < rawElements.length) {
             if(onProgress) onProgress('Processing elements ' + end + '/' + rawElements.length + '…');
             setTimeout(function(){ processChunk(end); }, 0);
           } else {
-            api.CloseModel(modelID);
             var loadTime = Math.round(performance.now() - loadStart);
             resolve({ meshes:meshes, elements:elements, storeys:Object.keys(allStoreys).sort(), storeyData:storeyData, stats:{loadTime:loadTime, fileSize:buffer.byteLength, elementCount:elements.length, meshCount:meshes.length} });
           }
@@ -4636,6 +4670,14 @@ function startApp() {
           return;
         }
         if (ext !== 'ifc') return;
+        // File size warning: >200 MB IFC files can exhaust browser memory
+        if (f.size > 200 * 1024 * 1024) {
+          var sizeMB = Math.round(f.size / (1024 * 1024));
+          if (!confirm(f.name + ' is ' + sizeMB + ' MB. Large IFC files may freeze or crash the tab. Continue?')) {
+            errors.push(f.name + ': Skipped (file too large)');
+            return;
+          }
+        }
         chain = chain.then(function() {
           setLoading(true);
           setLoadMsg(totalIfc > 1 ? f.name + ' (' + (doneIfc + 1) + '/' + totalIfc + ')…' : 'Loading ' + f.name + '…');
@@ -8878,6 +8920,7 @@ function startApp() {
       if(window[key]) return;
       window[key] = true;
       _restoreProjectFilesGlobal(s.activeProject, d);
+      _idbCleanOrphanedGeoCache(); // background cleanup of orphaned cache entries
     },[]);
     // ── Listen for project-switch events (from project selector) ──
     useEffect(function(){

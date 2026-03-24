@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.0.6 (2026-03-24)
+- Add clash detection improvements: overlap volume gate, accurate depth, type-pair tolerances, saved presets
+
 ## v2.0.5 (2026-03-24)
 - Remove redundant single-H (Home) shortcut — use ZF/ZA instead
 
