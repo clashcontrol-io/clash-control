@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.76 (2026-03-24)
+- Optimize soft clash marker: use AABB diagonal for weighting, zero-alloc scratch
+
 ## v1.2.75 (2026-03-24)
 - Color element outlines by model discipline (structural=blue, MEP=red, etc.)
 

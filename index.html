@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.75',hash:'09c13a2',date:'2026-03-24T08:59:33Z'};
+  var CC_VERSION = {v:'1.2.76',hash:'04a76d0',date:'2026-03-24T09:01:59Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -1231,7 +1231,6 @@ function startApp() {
 
   // Minimum vertex-to-vertex distance (for soft/clearance clashes)
   // If outPair provided, fills [qx,qy,qz, gx,gy,gz] with the closest vertex pair
-  var _distPairTmp = [0,0,0,0,0,0]; // reusable scratch — zero alloc per call
   function _meshMinDist(elA, elB, thresholdM, outPair) {
     var vA = _getWorldVerts(elA), vB = _getWorldVerts(elB);
     if (!vA.length || !vB.length) return Infinity;
@@ -1243,11 +1242,19 @@ function startApp() {
     grid.insert(gridVerts);
     var tSq = thresholdM * thresholdM, minSq = Infinity;
     var step = queryVerts.length > 30000 ? 3 * Math.ceil(queryVerts.length / 30000) : 3;
-    var tmp = outPair ? _distPairTmp : null;
+    // Track best pair inline — minDistSq writes candidate to outPair,
+    // we snapshot only when it beats the global best (avoids intermediate array)
+    var bq0=0,bq1=0,bq2=0,bg0=0,bg1=0,bg2=0; // best pair as scalars (zero alloc)
     for (var i = 0; i < queryVerts.length; i += step) {
-      var d2 = grid.minDistSq(queryVerts[i], queryVerts[i + 1], queryVerts[i + 2], gridVerts, tmp);
-      if (d2 < minSq) { minSq = d2; if (tmp) { outPair[0]=tmp[0]; outPair[1]=tmp[1]; outPair[2]=tmp[2]; outPair[3]=tmp[3]; outPair[4]=tmp[4]; outPair[5]=tmp[5]; } if (minSq <= tSq && !outPair) return Math.sqrt(minSq); }
+      var d2 = grid.minDistSq(queryVerts[i], queryVerts[i + 1], queryVerts[i + 2], gridVerts, outPair);
+      if (d2 < minSq) {
+        minSq = d2;
+        if (outPair) { bq0=outPair[0]; bq1=outPair[1]; bq2=outPair[2]; bg0=outPair[3]; bg1=outPair[4]; bg2=outPair[5]; }
+        if (minSq <= tSq && !outPair) return Math.sqrt(minSq);
+      }
     }
+    // Write final best pair back (minDistSq may have overwritten outPair with a worse later candidate)
+    if (outPair) { outPair[0]=bq0; outPair[1]=bq1; outPair[2]=bq2; outPair[3]=bg0; outPair[4]=bg1; outPair[5]=bg2; }
     return Math.sqrt(minSq);
   }
 
@@ -1364,6 +1371,7 @@ function startApp() {
     var clashes = [];
     var _tmpSizeA = new THREE.Vector3(), _tmpSizeB = new THREE.Vector3();
     var _tmpCtrA  = new THREE.Vector3(), _tmpCtrB  = new THREE.Vector3();
+    var _softPairBuf = [0,0,0,0,0,0]; // reusable buffer for soft clash closest-pair output
 
     // Change-aware: track which elements changed since last run
     var newHashes = {}, changedElements = {};
@@ -1421,25 +1429,26 @@ function startApp() {
       // (SAP already guarantees AABB overlap — no redundant box check needed)
       var hardPt=false, isSoft=false, geoDist=Infinity;
       if (rules.hard) hardPt = _meshesIntersect(eA, eB);
-      var softPair = null;
       if (!hardPt && rules.soft && clearanceM>0) {
-        softPair = [0,0,0,0,0,0];
-        geoDist = _meshMinDist(eA, eB, clearanceM, softPair);
+        geoDist = _meshMinDist(eA, eB, clearanceM, _softPairBuf);
         isSoft = geoDist<=clearanceM;
       }
 
       if (hardPt || isSoft) {
         var cpx, cpy, cpz;
         if (hardPt) {
-          // Use actual triangle intersection point from BVH traversal
           cpx=hardPt[0]; cpy=hardPt[1]; cpz=hardPt[2];
         } else {
-          // Soft clash — place marker at closest vertex pair, biased toward smaller element
-          // Use AABB diagonal² as size proxy (avoids getSize allocation, single scalar per element)
-          var dA = bA.min.distanceToSquared(bA.max), dB = bB.min.distanceToSquared(bB.max);
-          // wB→1 when A is big → marker sits near B (the small one)
-          var wB = dA / (dA + dB + 1e-10);
-          cpx=softPair[0]*(1-wB)+softPair[3]*wB; cpy=softPair[1]*(1-wB)+softPair[4]*wB; cpz=softPair[2]*(1-wB)+softPair[5]*wB;
+          // Soft clash — closest vertex pair, biased toward smaller element
+          // Inline AABB diagonal² (dx²+dy²+dz²) as size proxy — no method call overhead
+          var ax=bA.max.x-bA.min.x, ay=bA.max.y-bA.min.y, az=bA.max.z-bA.min.z;
+          var bx=bB.max.x-bB.min.x, by=bB.max.y-bB.min.y, bz=bB.max.z-bB.min.z;
+          var dA=ax*ax+ay*ay+az*az, dB=bx*bx+by*by+bz*bz;
+          var wB=dA/(dA+dB+1e-10); // wB→1 when A is big → marker near B
+          var wA=1-wB;
+          cpx=_softPairBuf[0]*wA+_softPairBuf[3]*wB;
+          cpy=_softPairBuf[1]*wA+_softPairBuf[4]*wB;
+          cpz=_softPairBuf[2]*wA+_softPairBuf[5]*wB;
         }
         // Penetration depth for hard clashes: min overlap of the two AABBs (stored as negative mm)
         var dist;
