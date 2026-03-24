@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.0.12 (2026-03-24)
+- Auto-scroll clash list to active item when selected via 3D marker
+
 ## v2.0.11 (2026-03-24)
 - Add collapse button to clash/issue detail panel
 

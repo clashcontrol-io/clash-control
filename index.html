@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.0.11',hash:'4cf80aa',date:'2026-03-24T11:25:40Z'};
+  var CC_VERSION = {v:'2.0.12',hash:'1dd0143',date:'2026-03-24T11:56:56Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -2915,7 +2915,8 @@ function startApp() {
           for(var mhi=0;mhi<markerHits.length;mhi++){
             var mh = markerHits[mhi].object;
             if(mh.userData.clashId){
-              // Select this clash — dispatch ACTIVE and let IssueRow handle highlight/fly
+              // Select this clash and switch to clashes tab
+              d({t:'TAB',v:'clashes'});
               d({t:'ACTIVE',id:mh.userData.clashId});
               // Find the clash and do highlight/fly
               var allClashes = clashesRef.current||[];
@@ -2941,6 +2942,7 @@ function startApp() {
           for(var imhi=0;imhi<iMarkerHits.length;imhi++){
             var imh = iMarkerHits[imhi].object;
             if(imh.userData.issueId){
+              d({t:'TAB',v:'issues'});
               d({t:'ACTIVE',id:imh.userData.issueId});
               var allIssues = issuesRef.current||[];
               var hitIssue = null;
