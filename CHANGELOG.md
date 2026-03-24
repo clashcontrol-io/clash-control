@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.63 (2026-03-24)
+- Keep project panel open on delete/cancel, reset view on project switch
+
 ## v1.2.62 (2026-03-24)
 - Add green 3D markers for issues in the viewer
 

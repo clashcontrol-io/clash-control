@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.62',hash:'bd95383',date:'2026-03-24T07:36:23Z'};
+  var CC_VERSION = {v:'1.2.63',hash:'2d55e62',date:'2026-03-24T07:37:02Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -1964,7 +1964,7 @@ function startApp() {
         }
         var box=new THREE.Box3().setFromObject(S.mg);
         var sz=box.getSize(new THREE.Vector3()), ctr=box.getCenter(new THREE.Vector3());
-        var d=Math.max(sz.x,sz.y,sz.z)*1.5;
+        var d=Math.max(sz.x,sz.y,sz.z)*1.0;
         var endTarget = ctr;
         var endPos = new THREE.Vector3(ctr.x+d, ctr.y+d*0.6, ctr.z+d);
         _animateFly(endTarget, endPos);
