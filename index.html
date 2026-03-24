@@ -144,7 +144,7 @@
     @keyframes nlBorderReady{0%{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 4px rgba(34,197,94,.5),0 0 20px rgba(34,197,94,.4)}100%{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 0 rgba(34,197,94,0),0 0 0 rgba(34,197,94,0)}}
     .lc2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
     button{font-family:inherit}
-    .cc-tip{position:relative}.cc-tip::after{content:attr(data-tip);position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%) translateX(-4px);background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:.3rem .6rem;font-size:.7rem;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s,transform .15s;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)}.cc-tip:hover::after{opacity:1;transform:translateY(-50%) translateX(0)}.cc-tip-up::after{left:50%;top:auto;bottom:calc(100% + 7px);transform:translateX(-50%) translateY(4px)}.cc-tip-up:hover::after{transform:translateX(-50%) translateY(0)}.cc-tip-left::after{left:auto;right:calc(100% + 8px);transform:translateY(-50%) translateX(4px)}.cc-tip-left:hover::after{transform:translateY(-50%) translateX(0)}
+    .cc-tip{position:relative}.cc-tip::after{content:attr(data-tip);position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%) translateX(-4px);background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:.3rem .6rem;font-size:.7rem;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s,transform .15s;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)}.cc-tip:hover::after{opacity:1;transform:translateY(-50%) translateX(0)}.cc-tip-delay::after{transition-delay:0s}.cc-tip-delay:hover::after{transition-delay:1s}.cc-tip-up::after{left:50%;top:auto;bottom:calc(100% + 7px);transform:translateX(-50%) translateY(4px)}.cc-tip-up:hover::after{transform:translateX(-50%) translateY(0)}.cc-tip-left::after{left:auto;right:calc(100% + 8px);transform:translateY(-50%) translateX(4px)}.cc-tip-left:hover::after{transform:translateY(-50%) translateX(0)}
     button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
     [role=switch]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:10px}
@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.70',hash:'35341e3',date:'2026-03-24T08:16:24Z'};
+  var CC_VERSION = {v:'1.2.76',hash:'04a76d0',date:'2026-03-24T09:01:59Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -1213,7 +1213,7 @@ function startApp() {
       this.map[k].push(i);
     }
   };
-  _SpatialHash.prototype.minDistSq = function(px, py, pz, verts) {
+  _SpatialHash.prototype.minDistSq = function(px, py, pz, verts, out) {
     var best = Infinity;
     var cx = Math.floor(px * this.inv), cy = Math.floor(py * this.inv), cz = Math.floor(pz * this.inv);
     for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++) {
@@ -1223,14 +1223,15 @@ function startApp() {
         var idx = bucket[b];
         var ex = px - verts[idx], ey = py - verts[idx + 1], ez = pz - verts[idx + 2];
         var d2 = ex * ex + ey * ey + ez * ez;
-        if (d2 < best) best = d2;
+        if (d2 < best) { best = d2; if (out) { out[0]=px; out[1]=py; out[2]=pz; out[3]=verts[idx]; out[4]=verts[idx+1]; out[5]=verts[idx+2]; } }
       }
     }
     return best;
   };
 
   // Minimum vertex-to-vertex distance (for soft/clearance clashes)
-  function _meshMinDist(elA, elB, thresholdM) {
+  // If outPair provided, fills [qx,qy,qz, gx,gy,gz] with the closest vertex pair
+  function _meshMinDist(elA, elB, thresholdM, outPair) {
     var vA = _getWorldVerts(elA), vB = _getWorldVerts(elB);
     if (!vA.length || !vB.length) return Infinity;
     var cs = Math.max(thresholdM || 0.05, 0.02);
@@ -1241,10 +1242,19 @@ function startApp() {
     grid.insert(gridVerts);
     var tSq = thresholdM * thresholdM, minSq = Infinity;
     var step = queryVerts.length > 30000 ? 3 * Math.ceil(queryVerts.length / 30000) : 3;
+    // Track best pair inline — minDistSq writes candidate to outPair,
+    // we snapshot only when it beats the global best (avoids intermediate array)
+    var bq0=0,bq1=0,bq2=0,bg0=0,bg1=0,bg2=0; // best pair as scalars (zero alloc)
     for (var i = 0; i < queryVerts.length; i += step) {
-      var d2 = grid.minDistSq(queryVerts[i], queryVerts[i + 1], queryVerts[i + 2], gridVerts);
-      if (d2 < minSq) { minSq = d2; if (minSq <= tSq) return Math.sqrt(minSq); }
+      var d2 = grid.minDistSq(queryVerts[i], queryVerts[i + 1], queryVerts[i + 2], gridVerts, outPair);
+      if (d2 < minSq) {
+        minSq = d2;
+        if (outPair) { bq0=outPair[0]; bq1=outPair[1]; bq2=outPair[2]; bg0=outPair[3]; bg1=outPair[4]; bg2=outPair[5]; }
+        if (minSq <= tSq && !outPair) return Math.sqrt(minSq);
+      }
     }
+    // Write final best pair back (minDistSq may have overwritten outPair with a worse later candidate)
+    if (outPair) { outPair[0]=bq0; outPair[1]=bq1; outPair[2]=bq2; outPair[3]=bg0; outPair[4]=bg1; outPair[5]=bg2; }
     return Math.sqrt(minSq);
   }
 
@@ -1361,6 +1371,7 @@ function startApp() {
     var clashes = [];
     var _tmpSizeA = new THREE.Vector3(), _tmpSizeB = new THREE.Vector3();
     var _tmpCtrA  = new THREE.Vector3(), _tmpCtrB  = new THREE.Vector3();
+    var _softPairBuf = [0,0,0,0,0,0]; // reusable buffer for soft clash closest-pair output
 
     // Change-aware: track which elements changed since last run
     var newHashes = {}, changedElements = {};
@@ -1419,19 +1430,25 @@ function startApp() {
       var hardPt=false, isSoft=false, geoDist=Infinity;
       if (rules.hard) hardPt = _meshesIntersect(eA, eB);
       if (!hardPt && rules.soft && clearanceM>0) {
-        geoDist = _meshMinDist(eA, eB, clearanceM);
+        geoDist = _meshMinDist(eA, eB, clearanceM, _softPairBuf);
         isSoft = geoDist<=clearanceM;
       }
 
       if (hardPt || isSoft) {
         var cpx, cpy, cpz;
         if (hardPt) {
-          // Use actual triangle intersection point from BVH traversal
           cpx=hardPt[0]; cpy=hardPt[1]; cpz=hardPt[2];
         } else {
-          // Soft clash — midpoint between the two elements' bbox centers
-          var cA = bA.getCenter(_tmpCtrA), cB = bB.getCenter(_tmpCtrB);
-          cpx=(cA.x+cB.x)/2; cpy=(cA.y+cB.y)/2; cpz=(cA.z+cB.z)/2;
+          // Soft clash — closest vertex pair, biased toward smaller element
+          // Inline AABB diagonal² (dx²+dy²+dz²) as size proxy — no method call overhead
+          var ax=bA.max.x-bA.min.x, ay=bA.max.y-bA.min.y, az=bA.max.z-bA.min.z;
+          var bx=bB.max.x-bB.min.x, by=bB.max.y-bB.min.y, bz=bB.max.z-bB.min.z;
+          var dA=ax*ax+ay*ay+az*az, dB=bx*bx+by*by+bz*bz;
+          var wB=dA/(dA+dB+1e-10); // wB→1 when A is big → marker near B
+          var wA=1-wB;
+          cpx=_softPairBuf[0]*wA+_softPairBuf[3]*wB;
+          cpy=_softPairBuf[1]*wA+_softPairBuf[4]*wB;
+          cpz=_softPairBuf[2]*wA+_softPairBuf[5]*wB;
         }
         // Penetration depth for hard clashes: min overlap of the two AABBs (stored as negative mm)
         var dist;
@@ -2064,6 +2081,20 @@ function startApp() {
           if(obj.isMesh && obj.userData.expressID===expressId && !found) found=obj;
         });
         if(found){
+          // Look up discipline color from model
+          var discColor = 0x60a5fa;
+          var curModels = modelsRef.current;
+          for(var mi=0;mi<curModels.length;mi++){
+            var els=curModels[mi].elements||[];
+            for(var ei=0;ei<els.length;ei++){
+              if(els[ei].expressId===expressId){
+                var dObj=DISC.find(function(x){return x.id===curModels[mi].discipline;});
+                if(dObj) discColor=new THREE.Color(dObj.c).getHex();
+                mi=curModels.length; break;
+              }
+            }
+          }
+
           // Ensure visible for outline computation (may be frustum-culled)
           var wasHidden = !found.visible;
           if(wasHidden) found.visible = true;
@@ -2075,7 +2106,7 @@ function startApp() {
             var faceCount = found.geometry.index ? found.geometry.index.count/3 : (found.geometry.attributes.position?found.geometry.attributes.position.count/3:0);
             if(faceCount < 50000) {
               var edgeGeo = new THREE.EdgesGeometry(found.geometry, 50);
-              var edgeMat = new THREE.LineBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.4, depthTest:false});
+              var edgeMat = new THREE.LineBasicMaterial({color:discColor, transparent:true, opacity:0.4, depthTest:false});
               var edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
               edgeLines.applyMatrix4(found.matrixWorld);
               edgeLines.renderOrder = 999;
@@ -2622,17 +2653,22 @@ function startApp() {
                 if(els[ei].expressId===eid){ found={el:els[ei],model:curModels[mi]}; break; }
               }
             }
-            // Highlight with silhouette outline (same as _highlightById)
+            // Highlight with silhouette outline in discipline color
             if(hlRef.current){
               if(hlRef.current.isGroup) hlRef.current.traverse(function(c){if(c.isMesh||c.isLine||c.isLineSegments){if(c.geometry)c.geometry.dispose();if(c.material)c.material.dispose();}});
               scene.remove(hlRef.current);hlRef.current=null;
+            }
+            var clickDiscColor = 0x60a5fa;
+            if(found && found.model) {
+              var dObj2 = DISC.find(function(x){return x.id===found.model.discipline;});
+              if(dObj2) clickDiscColor = new THREE.Color(dObj2.c).getHex();
             }
             var hlGrp = new THREE.Group();
             try {
               var fc2 = hit.geometry.index ? hit.geometry.index.count/3 : (hit.geometry.attributes.position?hit.geometry.attributes.position.count/3:0);
               if(fc2 < 50000) {
                 var edgeGeo2 = new THREE.EdgesGeometry(hit.geometry, 50);
-                var edgeMat2 = new THREE.LineBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.4, depthTest:false});
+                var edgeMat2 = new THREE.LineBasicMaterial({color:clickDiscColor, transparent:true, opacity:0.4, depthTest:false});
                 var edgeLines2 = new THREE.LineSegments(edgeGeo2, edgeMat2);
                 edgeLines2.applyMatrix4(hit.matrixWorld);
                 edgeLines2.renderOrder = 999;
@@ -4957,7 +4993,7 @@ function startApp() {
           <${MiniToggle} on=${rules.soft} onToggle=${function(){d({t:'UPD_RULES',u:{soft:!rules.soft}})}} />
         </div>
         ${rules.soft && html`<div style=${{marginBottom:'.25rem'}}>
-          <span style=${FL}>Clearance (mm)</span>
+          <span class="cc-tip cc-tip-delay" data-tip="Max gap between elements to flag as a soft/proximity clash" style=${{...FL,cursor:'help'}}>Clearance (mm)</span>
           <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
             <input type="range" min="10" max="500" step="5" value=${rules.clearance||50}
               onInput=${function(e){d({t:'UPD_RULES',u:{clearance:+e.target.value}})}}
@@ -4966,7 +5002,7 @@ function startApp() {
           </div>
         </div>`}
         <div style=${TOGROW}>
-          <span style=${{fontSize:'.68rem',color:'var(--text-primary)'}}>Hard tolerance (mm)</span>
+          <span class="cc-tip cc-tip-delay" data-tip="Ignore minor intersections smaller than this value (filters modelling noise)" style=${{fontSize:'.68rem',color:'var(--text-primary)',cursor:'help'}}>Hard tolerance (mm)</span>
           <input type="number" min="0" max="100" step="1" value=${rules.hardTolerance||0}
             onChange=${function(e){d({t:'UPD_RULES',u:{hardTolerance:+e.target.value}})}}
             style=${{...S_INPUT,width:50,fontSize:'.65rem',padding:'.15rem .3rem',textAlign:'center'}} />
@@ -5520,8 +5556,8 @@ function startApp() {
           </div>
           <p style=${{color:'var(--text-faint)',fontSize:'.65rem',marginTop:'.1rem'}} class="lc2">${it.description}</p>
           ${isClash && html`<div style=${{display:'flex',gap:'.3rem',marginTop:'.2rem',flexWrap:'wrap',alignItems:'center'}}>
-            ${it.distance!=null && html`<span style=${{fontSize:'.6rem',color:it.distance<0?'#fca5a5':'var(--text-muted)',background:'var(--bg-secondary)',padding:'.05rem .3rem',borderRadius:3,fontWeight:500}}>
-              ${it.distance<0?'⬤ '+Math.abs(it.distance)+'mm penetration':it.distance===0?'⬤ touching':it.distance+'mm gap'}
+            ${it.distance!=null && it.distance>=0 && html`<span style=${{fontSize:'.6rem',color:'var(--text-muted)',background:'var(--bg-secondary)',padding:'.05rem .3rem',borderRadius:3,fontWeight:500}}>
+              ${it.distance===0?'⬤ touching':'⬤ '+it.distance+'mm gap'}
             </span>`}
             ${storeyLabel && html`<span style=${{fontSize:'.6rem',color:'var(--text-secondary)',background:'var(--bg-secondary)',padding:'.05rem .3rem',borderRadius:3}}>🏢 ${storeyLabel}</span>`}
             ${it.selfClash && html`<span style=${{fontSize:'.55rem',color:'#a78bfa',background:'#2e1065',padding:'.05rem .25rem',borderRadius:3}}>self</span>`}
@@ -7464,7 +7500,8 @@ function startApp() {
       </div>
 
       ${rules.soft && html`<div style=${{display:'flex',alignItems:'center',gap:'.4rem',marginTop:'.4rem'}}>
-        <span style=${{fontSize:'.65rem',color:'var(--text-muted)'}}>Clearance</span>
+        <span class="cc-tip cc-tip-up cc-tip-delay" data-tip="Max gap between elements to flag as a soft/proximity clash"
+          style=${{fontSize:'.65rem',color:'var(--text-muted)',cursor:'help'}}>Clearance</span>
         <input type="number" min="1" max="9999" value=${rules.clearance}
           onChange=${function(e){upd('clearance',Math.max(1,parseInt(e.target.value)||50))}}
           style=${numSt} />
@@ -7472,7 +7509,8 @@ function startApp() {
       </div>`}
 
       ${rules.hard && html`<div style=${{display:'flex',alignItems:'center',gap:'.4rem',marginTop:'.3rem'}}>
-        <span style=${{fontSize:'.65rem',color:'var(--text-muted)'}}>Tolerance</span>
+        <span class="cc-tip cc-tip-up cc-tip-delay" data-tip="Ignore minor intersections smaller than this value (filters modelling noise)"
+          style=${{fontSize:'.65rem',color:'var(--text-muted)',cursor:'help'}}>Tolerance</span>
         <input type="number" min="0" max="999" value=${rules.hardTolerance}
           onChange=${function(e){upd('hardTolerance',Math.max(0,parseInt(e.target.value)||0))}}
           style=${numSt} />
@@ -7781,7 +7819,20 @@ function startApp() {
         <div ref=${bottomRef}></div>
       </div>
 
-      <div style=${{
+      ${isDetecting ? html`<div style=${{
+        padding:'.55rem .7rem', borderTop:'1px solid '+borderCol,
+        display:'flex', alignItems:'center', gap:'.45rem'
+      }}>
+        <div style=${{
+          flex:1, display:'flex', alignItems:'center', gap:'.45rem',
+          background:inputBg, border:'1px solid rgba(96,165,250,.35)',
+          borderRadius:8, padding:'.5rem .65rem',
+          animation:'nlBorderPulse 2s ease-in-out infinite'
+        }}>
+          <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
+          <span style=${{fontSize:'.74rem',color:'#60a5fa',fontWeight:500}}>Running clash detection…</span>
+        </div>
+      </div>` : html`<div style=${{
         padding:'.55rem .7rem', borderTop:'1px solid '+borderCol,
         display:'flex', gap:'.45rem', alignItems:'flex-end'
       }}>
@@ -7805,7 +7856,7 @@ function startApp() {
           opacity:(!input.trim()||loading)?0.45:1, alignSelf:'flex-end',
           transition:'opacity .15s'
         }}>Send</button>
-      </div>
+      </div>`}
     </div>`;
   }
 

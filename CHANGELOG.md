@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.2.76 (2026-03-24)
+- Optimize soft clash marker: use AABB diagonal for weighting, zero-alloc scratch
+
+## v1.2.75 (2026-03-24)
+- Color element outlines by model discipline (structural=blue, MEP=red, etc.)
+
+## v1.2.74 (2026-03-24)
+- Fix soft clash marker position and remove penetration depth display
+
+## v1.2.73 (2026-03-24)
+- Show detection status in chat input area with glowing animation
+
+## v1.2.72 (2026-03-24)
+- Add delayed hover tooltips explaining Clearance vs Tolerance
+
+## v1.2.71 (2026-03-24)
+- Extract IFC GlobalId from loaded elements
+
 ## v1.2.70 (2026-03-24)
 - Fix clash marker placement using exact intersection line midpoints
 
