@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.77 (2026-03-24)
+- Add What's New section to README
+
 ## v1.2.76 (2026-03-24)
 - Optimize soft clash marker: use AABB diagonal for weighting, zero-alloc scratch
 
