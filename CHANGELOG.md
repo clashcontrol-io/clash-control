@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.20 (2026-03-24)
+- Fix model visibility not persisting on refresh; default issue markers off
+
+## v2.0.19 (2026-03-24)
+- Fix duplicate element properties display on issues tab
+
 ## v2.0.18 (2026-03-24)
 - Fix model visibility not persisting across page refresh
 
