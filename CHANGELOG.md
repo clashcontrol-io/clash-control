@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.72 (2026-03-24)
+- Add delayed hover tooltips explaining Clearance vs Tolerance
+
 ## v1.2.71 (2026-03-24)
 - Extract IFC GlobalId from loaded elements
 

@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.71',hash:'bef2859',date:'2026-03-24T08:22:19Z'};
+  var CC_VERSION = {v:'1.2.72',hash:'90a6bf3',date:'2026-03-24T08:50:16Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -7783,7 +7783,20 @@ function startApp() {
         <div ref=${bottomRef}></div>
       </div>
 
-      <div style=${{
+      ${isDetecting ? html`<div style=${{
+        padding:'.55rem .7rem', borderTop:'1px solid '+borderCol,
+        display:'flex', alignItems:'center', gap:'.45rem'
+      }}>
+        <div style=${{
+          flex:1, display:'flex', alignItems:'center', gap:'.45rem',
+          background:inputBg, border:'1px solid rgba(96,165,250,.35)',
+          borderRadius:8, padding:'.5rem .65rem',
+          animation:'nlBorderPulse 2s ease-in-out infinite'
+        }}>
+          <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
+          <span style=${{fontSize:'.74rem',color:'#60a5fa',fontWeight:500}}>Running clash detection…</span>
+        </div>
+      </div>` : html`<div style=${{
         padding:'.55rem .7rem', borderTop:'1px solid '+borderCol,
         display:'flex', gap:'.45rem', alignItems:'flex-end'
       }}>
@@ -7807,7 +7820,7 @@ function startApp() {
           opacity:(!input.trim()||loading)?0.45:1, alignSelf:'flex-end',
           transition:'opacity .15s'
         }}>Send</button>
-      </div>
+      </div>`}
     </div>`;
   }
 
