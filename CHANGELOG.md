@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.65 (2026-03-24)
+- Add IFC type exclusion to clash detection setup card
+
 ## v1.2.64 (2026-03-24)
 - Bring camera closer to model on initial load and reset view
 

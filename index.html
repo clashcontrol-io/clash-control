@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.64',hash:'f40f23b',date:'2026-03-24T07:40:08Z'};
+  var CC_VERSION = {v:'1.2.65',hash:'b38e1d6',date:'2026-03-24T07:42:41Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -1145,30 +1145,38 @@ function startApp() {
     // L2: AABB overlap check — prune entire subtree if boxes miss
     if (nA.mnx>nB.mxx||nA.mxx<nB.mnx||
         nA.mny>nB.mxy||nA.mxy<nB.mny||
-        nA.mnz>nB.mxz||nA.mxz<nB.mnz) return false;
+        nA.mnz>nB.mxz||nA.mxz<nB.mnz) return null;
     var aLeaf = nA.lo !== undefined;
     var bLeaf = nB.lo !== undefined;
     if (aLeaf && bLeaf) {
       // L3: Möller tri-tri on every pair in these two leaves
       for (var i=nA.lo; i<nA.hi; i++)
         for (var j=nB.lo; j<nB.hi; j++)
-          if (_triTriTest(trisA, nA.idx[i]*9, trisB, nB.idx[j]*9)) return true;
-      return false;
+          if (_triTriTest(trisA, nA.idx[i]*9, trisB, nB.idx[j]*9)) {
+            // Return midpoint of the two intersecting triangles' centroids
+            var oi=nA.idx[i]*9, oj=nB.idx[j]*9;
+            return [(trisA[oi]+trisA[oi+3]+trisA[oi+6]+trisB[oj]+trisB[oj+3]+trisB[oj+6])/6,
+                    (trisA[oi+1]+trisA[oi+4]+trisA[oi+7]+trisB[oj+1]+trisB[oj+4]+trisB[oj+7])/6,
+                    (trisA[oi+2]+trisA[oi+5]+trisA[oi+8]+trisB[oj+2]+trisB[oj+5]+trisB[oj+8])/6];
+          }
+      return null;
     }
     // Descend into the node with more triangles (maximises early rejection)
+    var r;
     if (bLeaf || (!aLeaf && (nA.cnt||1) >= (nB.cnt||1))) {
-      return _bvhTraverse(nA.left, trisA, nB, trisB) ||
-             _bvhTraverse(nA.right, trisA, nB, trisB);
+      r = _bvhTraverse(nA.left, trisA, nB, trisB);
+      return r || _bvhTraverse(nA.right, trisA, nB, trisB);
     }
-    return _bvhTraverse(nA, trisA, nB.left, trisB) ||
-           _bvhTraverse(nA, trisA, nB.right, trisB);
+    r = _bvhTraverse(nA, trisA, nB.left, trisB);
+    return r || _bvhTraverse(nA, trisA, nB.right, trisB);
   }
 
   // Check if two elements' triangles physically intersect (hard clash)
+  // Returns [x,y,z] contact point or false
   function _meshesIntersect(elA, elB) {
     var bA = _getBVH(elA), bB = _getBVH(elB);
     if (!bA || !bB) return false;
-    return _bvhTraverse(bA.root, bA.tris, bB.root, bB.tris);
+    return _bvhTraverse(bA.root, bA.tris, bB.root, bB.tris) || false;
   }
 
   // ── Spatial hash for vertex distance (used for soft/clearance clashes) ──
@@ -1387,33 +1395,29 @@ function startApp() {
 
       // ── L1+L2: BVH dual-tree + Möller tri-tri ──────────────────
       // (SAP already guarantees AABB overlap — no redundant box check needed)
-      var isHard=false, isSoft=false, geoDist=Infinity;
-      if (rules.hard) isHard = _meshesIntersect(eA, eB);
-      if (!isHard && rules.soft && clearanceM>0) {
+      var hardPt=false, isSoft=false, geoDist=Infinity;
+      if (rules.hard) hardPt = _meshesIntersect(eA, eB);
+      if (!hardPt && rules.soft && clearanceM>0) {
         geoDist = _meshMinDist(eA, eB, clearanceM);
         isSoft = geoDist<=clearanceM;
       }
 
-      if (isHard || isSoft) {
-        // Clash point = center of AABB intersection region (where elements meet)
-        var ix0 = Math.max(bA.min.x,bB.min.x), iy0 = Math.max(bA.min.y,bB.min.y), iz0 = Math.max(bA.min.z,bB.min.z);
-        var ix1 = Math.min(bA.max.x,bB.max.x), iy1 = Math.min(bA.max.y,bB.max.y), iz1 = Math.min(bA.max.z,bB.max.z);
-        var hasOverlap = ix0<=ix1 && iy0<=iy1 && iz0<=iz1;
+      if (hardPt || isSoft) {
         var cpx, cpy, cpz;
-        if (hasOverlap) {
-          // Center of the overlap region — this is where the clash actually occurs
-          cpx=(ix0+ix1)/2; cpy=(iy0+iy1)/2; cpz=(iz0+iz1)/2;
+        if (hardPt) {
+          // Use actual triangle intersection point from BVH traversal
+          cpx=hardPt[0]; cpy=hardPt[1]; cpz=hardPt[2];
         } else {
-          // Soft clash with gap — midpoint between the two closest faces
+          // Soft clash — midpoint between the two elements' bbox centers
           var cA = bA.getCenter(_tmpCtrA), cB = bB.getCenter(_tmpCtrB);
           cpx=(cA.x+cB.x)/2; cpy=(cA.y+cB.y)/2; cpz=(cA.z+cB.z)/2;
         }
-        var dist = isHard ? 0 : Math.round(geoDist*1000);
+        var dist = hardPt ? 0 : Math.round(geoDist*1000);
         var pA=eA.props||{}, pB=eB.props||{};
         var tA=pA.ifcType||'Element', tB=pB.ifcType||'Element';
         var nA=pA.name||('#'+eA.expressId), nB=pB.name||('#'+eB.expressId);
         clashes.push({
-          id:uid(), source:'auto', type:isHard?'hard':'soft', status:'open',
+          id:uid(), source:'auto', type:hardPt?'hard':'soft', status:'open',
           title:sameModel?mA.name+' (self)':mA.discipline.toUpperCase()+' \u2194 '+mB.discipline.toUpperCase(),
           description:tA+': '+nA+' ('+mA.name+') vs '+tB+': '+nB+' ('+mB.name+')',
           modelAId:mA.id, modelBId:mB.id, elemA:eA.expressId, elemB:eB.expressId,
