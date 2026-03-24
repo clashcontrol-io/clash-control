@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.80',hash:'20a3826',date:'2026-03-24T09:18:20Z'};
+  var CC_VERSION = {v:'1.2.81',hash:'a19647b',date:'2026-03-24T09:28:20Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -624,6 +624,33 @@ function startApp() {
     return String(v);
   }
 
+  // Extract element axis direction from IFC placement (for clash detection optimization)
+  // Returns [dx,dy,dz] normalized direction or null if not available
+  function _extractAxis(api, modelID, line) {
+    try {
+      var op = line.ObjectPlacement;
+      if (!op || !op.value) return null;
+      var placement = api.GetLine(modelID, op.value);
+      if (!placement || !placement.RelativePlacement) return null;
+      var rp = api.GetLine(modelID, placement.RelativePlacement.value);
+      if (!rp) return null;
+      // IfcAxis2Placement3D has Axis (Z-direction of local frame)
+      // For beams/pipes this is typically the element's long axis
+      if (rp.Axis && rp.Axis.value) {
+        var axDir = api.GetLine(modelID, rp.Axis.value);
+        if (axDir && axDir.DirectionRatios) {
+          var dr = axDir.DirectionRatios;
+          var dx = dr[0] && dr[0].value != null ? dr[0].value : dr[0];
+          var dy = dr[1] && dr[1].value != null ? dr[1].value : dr[1];
+          var dz = dr[2] && dr[2].value != null ? dr[2].value : dr[2];
+          var len = Math.sqrt(dx*dx+dy*dy+dz*dz);
+          if (len > 1e-10) return [dx/len, dy/len, dz/len];
+        }
+      }
+    } catch(e) {}
+    return null;
+  }
+
   function extractProperties(api, modelID, expressID) {
     var props = {expressId:expressID, globalId:'', ifcType:'', name:'', description:'', objectType:'', storey:'', storeyId:null, material:'', quantities:{}, psets:{}};
     try {
@@ -638,6 +665,14 @@ function startApp() {
         props.objectType = safeStr(line.ObjectType);
         // Store the raw type ID for lookups
         if (line.type != null) props.typeId = line.type;
+        // Extract axis direction for linear elements (beams, columns, pipes, ducts)
+        // Only for types where axis data is useful for clash optimization
+        var tid = line.type;
+        if (tid === IFC.IFCBEAM || tid === IFC.IFCCOLUMN || tid === IFC.IFCMEMBER ||
+            tid === IFC.IFCPIPESEGMENT || tid === IFC.IFCDUCTSEGMENT ||
+            tid === IFC.IFCFLOWSEGMENT || tid === IFC.IFCPILE) {
+          props.axis = _extractAxis(api, modelID, line);
+        }
       }
     } catch(e) {}
     return props;
@@ -1443,6 +1478,44 @@ function startApp() {
             elemAMaterial:pA.material||'', elemBMaterial:pB.material||''
           });
           return;
+        }
+      }
+
+      // ── Parallel axis rejection (IFC-based, zero false negatives) ──
+      // Only applies when BOTH elements have real IFC axis data AND are
+      // linear (beams, pipes, ducts). If axes are nearly parallel,
+      // check if the center-to-center vector is also parallel — if so,
+      // the elements run alongside each other and can't intersect.
+      var pA = eA.props, pB = eB.props;
+      var axisA = pA && pA.axis, axisB = pB && pB.axis;
+      if (axisA && axisB) {
+        // dot product: |dot|→1 means parallel
+        var dot = axisA[0]*axisB[0] + axisA[1]*axisB[1] + axisA[2]*axisB[2];
+        if (Math.abs(dot) > 0.95) {
+          // Axes are nearly parallel — check if center-to-center is also along the axis
+          var cA = bA.getCenter(_tmpCtrA), cB = bB.getCenter(_tmpCtrB);
+          var ccx=cB.x-cA.x, ccy=cB.y-cA.y, ccz=cB.z-cA.z;
+          var ccLen = Math.sqrt(ccx*ccx+ccy*ccy+ccz*ccz);
+          if (ccLen > 1e-6) {
+            ccx/=ccLen; ccy/=ccLen; ccz/=ccLen;
+            var ccDot = Math.abs(ccx*axisA[0]+ccy*axisA[1]+ccz*axisA[2]);
+            // If center-to-center is also along the axis (>0.85), they're side by side
+            // AND the perpendicular distance between centers exceeds both cross-sections
+            if (ccDot > 0.85) {
+              // Perpendicular distance: sqrt(ccLen² - (ccLen*ccDot)²) = ccLen * sqrt(1 - ccDot²)
+              var perpDist = ccLen * Math.sqrt(1 - ccDot*ccDot);
+              // Estimate cross-section radii from the two shortest AABB dimensions
+              var szA = bA.getSize(_tmpSizeA), szB = bB.getSize(_tmpSizeB);
+              var dimsA = [szA.x,szA.y,szA.z].sort(function(a,b){return a-b;});
+              var dimsB = [szB.x,szB.y,szB.z].sort(function(a,b){return a-b;});
+              var radA = (dimsA[0]+dimsA[1])/4; // avg of two shortest / 2
+              var radB = (dimsB[0]+dimsB[1])/4;
+              if (perpDist > radA + radB) {
+                // Elements are parallel and separated — skip expensive BVH
+                return; // continue to next candidate
+              }
+            }
+          }
         }
       }
 

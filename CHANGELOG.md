@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.81 (2026-03-24)
+- Remove parallel element heuristic to prevent false negatives
+
 ## v1.2.80 (2026-03-24)
 - Add parallel linear element rejection to reduce false hard clashes
 
