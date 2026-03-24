@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.0.30 (2026-03-24)
+- Add Phase 0 AI training data collection (export + share)
+
 ## v2.0.29 (2026-03-24)
 - Fix navigation cube camera alignment and add HTML compass overlay
 
