@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.0.38 (2026-03-24)
+- Always show training mode toggle on all screens and before clashes
+
 ## v2.0.37 (2026-03-24)
 - Always show training toggle in chatbox header, not just when clashes exist
 
