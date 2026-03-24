@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.62 (2026-03-24)
+- Add green 3D markers for issues in the viewer
+
 ## v1.2.61 (2026-03-24)
 - Add clash detection setup card and fix marker positioning
 

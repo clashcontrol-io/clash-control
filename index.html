@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.61',hash:'3505082',date:'2026-03-24T07:11:59Z'};
+  var CC_VERSION = {v:'1.2.62',hash:'bd95383',date:'2026-03-24T07:36:23Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -3999,8 +3999,12 @@ function startApp() {
     d({t:'SWITCHING_PROJECT', v:true});
     // Save current project in background — don't block the switch on it
     _saveCurrentProjectData(s);
-    // Clear current scene immediately
+    // Clear current scene and markers immediately
     if(window._ccClearScene) window._ccClearScene();
+    if(window._ccRemoveActiveClashMarker) window._ccRemoveActiveClashMarker();
+    if(_clearClashMarkers) _clearClashMarkers();
+    if(_clearIssueMarkers) _clearIssueMarkers();
+    if(_resetView) _resetView();
     // Reset state to fresh (keep switchingProject:true while files load)
     d({t:'LOAD_PROJECT_STATE', data:{
       models:[], clashes:[], issues:[], activeId:null, detecting:false,
@@ -4055,7 +4059,6 @@ function startApp() {
       d({t:'SET_PROJECT_LIST', v:list});
       if(s.activeProject===id) _switchProject(list[0].id, s, d);
       setConfirmDelete(null);
-      setProjOpen(false);
     }
     function startRename(p) {
       setRenaming(p.id);
@@ -7750,7 +7753,7 @@ function startApp() {
       if(!list.length) list=[{id:'default',name:'Default Project',createdAt:Date.now()}];
       saveProjects(list); d({t:'SET_PROJECT_LIST',v:list});
       if(s.activeProject===id) _switchProject(list[0].id,s,d);
-      setConfirmDel(null); setProjOpen(false);
+      setConfirmDel(null);
     }
 
     function iconBtn(onClick, content, title) {
