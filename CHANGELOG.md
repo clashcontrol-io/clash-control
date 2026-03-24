@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.87 (2026-03-24)
+- Add group and sort to both clashes and issues tabs
+
 ## v1.2.86 (2026-03-24)
 - Add sort-within-group for clash list (group by storey, sort by gap)
 

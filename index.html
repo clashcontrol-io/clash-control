@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.86',hash:'1154f5a',date:'2026-03-24T09:40:43Z'};
+  var CC_VERSION = {v:'1.2.87',hash:'a2be1ac',date:'2026-03-24T09:41:54Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -1391,8 +1391,9 @@ function startApp() {
 
         // Apply model rules
         if (sameModel) {
-          // Self-clash only valid if model is in both groups and not excluded
-          if (rules.excludeSelf || !inA[cur.m.id] || !inB[cur.m.id]) continue;
+          // Self-clash: skip if excluded, or if model isn't in any selected group
+          if (rules.excludeSelf) continue;
+          if (!inA[cur.m.id] && !inB[cur.m.id]) continue;
         } else {
           // Cross-model: one must be from A, the other from B
           if (!(inA[cur.m.id]&&inB[oth.m.id]) && !(inB[cur.m.id]&&inA[oth.m.id])) continue;
@@ -1406,7 +1407,7 @@ function startApp() {
             bC.min[axis3]-margin > bO.max[axis3]+margin) continue;
 
         // Emit with canonical A/B model ordering
-        if (inA[cur.m.id] && inB[oth.m.id]) {
+        if (sameModel || (inA[cur.m.id] && inB[oth.m.id])) {
           pairs.push({eA:cur.el, mA:cur.m, eB:oth.el, mB:oth.m, sameModel:sameModel});
         } else {
           pairs.push({eA:oth.el, mA:oth.m, eB:cur.el, mB:cur.m, sameModel:sameModel});
