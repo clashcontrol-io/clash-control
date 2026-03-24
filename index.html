@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.67',hash:'0f4cf9d',date:'2026-03-24T08:06:38Z'};
+  var CC_VERSION = {v:'1.2.70',hash:'35341e3',date:'2026-03-24T08:16:24Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -625,13 +625,14 @@ function startApp() {
   }
 
   function extractProperties(api, modelID, expressID) {
-    var props = {expressId:expressID, ifcType:'', name:'', description:'', objectType:'', storey:'', storeyId:null, material:'', quantities:{}, psets:{}};
+    var props = {expressId:expressID, globalId:'', ifcType:'', name:'', description:'', objectType:'', storey:'', storeyId:null, material:'', quantities:{}, psets:{}};
     try {
       var line = api.GetLine(modelID, expressID);
       if (line) {
         props.ifcType = String(line.__proto__.constructor.name || line.type || '');
         // Try to get a readable type name from the IFC type number
         if (line.constructor && line.constructor.name) props.ifcType = line.constructor.name;
+        props.globalId = safeStr(line.GlobalId);
         props.name = safeStr(line.Name);
         props.description = safeStr(line.Description);
         props.objectType = safeStr(line.ObjectType);
@@ -1074,6 +1075,7 @@ function startApp() {
     else proj=function(x,y,z){return z;};
 
     // Compute intervals on intersection line for each triangle
+    // Returns [projMin, projMax, 3D point at projMin, 3D point at projMax]
     function interval(v0x,v0y,v0z,v1x,v1y,v1z,v2x,v2y,v2z,dd0,dd1,dd2) {
       // Sort so dd0 is the lone vertex on its side
       var i0x,i0y,i0z,i1x,i1y,i1z,i2x,i2y,i2z,di0,di1,di2;
@@ -1081,13 +1083,27 @@ function startApp() {
       else if(dd0*dd2>0){i0x=v1x;i0y=v1y;i0z=v1z;i1x=v0x;i1y=v0y;i1z=v0z;i2x=v2x;i2y=v2y;i2z=v2z;di0=dd1;di1=dd0;di2=dd2;}
       else{i0x=v0x;i0y=v0y;i0z=v0z;i1x=v1x;i1y=v1y;i1z=v1z;i2x=v2x;i2y=v2y;i2z=v2z;di0=dd0;di1=dd1;di2=dd2;}
       var p0=proj(i0x,i0y,i0z), p1=proj(i1x,i1y,i1z), p2=proj(i2x,i2y,i2z);
-      var t1=p0+(p1-p0)*di0/(di0-di1);
-      var t2=p0+(p2-p0)*di0/(di0-di2);
-      return t1<t2?[t1,t2]:[t2,t1];
+      var r1=di0/(di0-di1), r2=di0/(di0-di2);
+      var t1=p0+(p1-p0)*r1;
+      var t2=p0+(p2-p0)*r2;
+      // 3D points where edges cross the other triangle's plane
+      var q1x=i0x+(i1x-i0x)*r1, q1y=i0y+(i1y-i0y)*r1, q1z=i0z+(i1z-i0z)*r1;
+      var q2x=i0x+(i2x-i0x)*r2, q2y=i0y+(i2y-i0y)*r2, q2z=i0z+(i2z-i0z)*r2;
+      return t1<t2?[t1,t2,q1x,q1y,q1z,q2x,q2y,q2z]:[t2,t1,q2x,q2y,q2z,q1x,q1y,q1z];
     }
     var iA=interval(a0x,a0y,a0z,a1x,a1y,a1z,a2x,a2y,a2z,da0,da1,da2);
     var iB=interval(b0x,b0y,b0z,b1x,b1y,b1z,b2x,b2y,b2z,db0,db1,db2);
-    return iA[0]<iB[1]&&iB[0]<iA[1]; // strict < to exclude edge-only touches
+    if(iA[0]>=iB[1]||iB[0]>=iA[1]) return null; // strict < to exclude edge-only touches
+    // Compute 3D midpoint of the overlap segment on the intersection line
+    var oMin=Math.max(iA[0],iB[0]), oMax=Math.min(iA[1],iB[1]);
+    // Lerp along the longer interval to get 3D points at oMin and oMax
+    var src=iA[1]-iA[0]>=iB[1]-iB[0]?iA:iB;
+    var len=src[1]-src[0];
+    if(len<1e-12) return [src[2],src[3],src[4]];
+    var rMin=(oMin-src[0])/len, rMax=(oMax-src[0])/len;
+    return [(src[2]+(src[5]-src[2])*rMin + src[2]+(src[5]-src[2])*rMax)/2,
+            (src[3]+(src[6]-src[3])*rMin + src[3]+(src[6]-src[3])*rMax)/2,
+            (src[4]+(src[7]-src[4])*rMin + src[4]+(src[7]-src[4])*rMax)/2];
   }
 
   // ── BVH (Bounding Volume Hierarchy) for triangles ───────────────
@@ -1153,18 +1169,10 @@ function startApp() {
     if (aLeaf && bLeaf) {
       // L3: Möller tri-tri on every pair in these two leaves
       for (var i=nA.lo; i<nA.hi && pts.length<maxPts; i++)
-        for (var j=nB.lo; j<nB.hi && pts.length<maxPts; j++)
-          if (_triTriTest(trisA, nA.idx[i]*9, trisB, nB.idx[j]*9)) {
-            // Compute AABB overlap center of the two intersecting triangles
-            var oi=nA.idx[i]*9, oj=nB.idx[j]*9;
-            var mnx=Math.max(Math.min(trisA[oi],trisA[oi+3],trisA[oi+6]), Math.min(trisB[oj],trisB[oj+3],trisB[oj+6]));
-            var mxx=Math.min(Math.max(trisA[oi],trisA[oi+3],trisA[oi+6]), Math.max(trisB[oj],trisB[oj+3],trisB[oj+6]));
-            var mny=Math.max(Math.min(trisA[oi+1],trisA[oi+4],trisA[oi+7]), Math.min(trisB[oj+1],trisB[oj+4],trisB[oj+7]));
-            var mxy=Math.min(Math.max(trisA[oi+1],trisA[oi+4],trisA[oi+7]), Math.max(trisB[oj+1],trisB[oj+4],trisB[oj+7]));
-            var mnz=Math.max(Math.min(trisA[oi+2],trisA[oi+5],trisA[oi+8]), Math.min(trisB[oj+2],trisB[oj+5],trisB[oj+8]));
-            var mxz=Math.min(Math.max(trisA[oi+2],trisA[oi+5],trisA[oi+8]), Math.max(trisB[oj+2],trisB[oj+5],trisB[oj+8]));
-            pts.push((mnx+mxx)/2, (mny+mxy)/2, (mnz+mxz)/2);
-          }
+        for (var j=nB.lo; j<nB.hi && pts.length<maxPts; j++) {
+          var cp = _triTriTest(trisA, nA.idx[i]*9, trisB, nB.idx[j]*9);
+          if (cp) { pts.push(cp[0], cp[1], cp[2]); }
+        }
       return;
     }
     // Descend into the node with more triangles (maximises early rejection)
@@ -1398,6 +1406,7 @@ function startApp() {
             distance:0, elevation:Math.round(ctrA.y*1000)/1000,
             disciplines:[mA.discipline,mB.discipline], selfClash:sameModel,
             elemAType:tA, elemBType:tB, elemAName:nA, elemBName:nB,
+            globalIdA:pA.globalId||'', globalIdB:pB.globalId||'',
             elemAStorey:pA.storey||'', elemBStorey:pB.storey||'',
             elemAMaterial:pA.material||'', elemBMaterial:pB.material||''
           });
@@ -1446,6 +1455,7 @@ function startApp() {
           distance:dist, elevation:Math.round(cpy*1000)/1000,
           disciplines:[mA.discipline,mB.discipline], selfClash:sameModel,
           elemAType:tA, elemBType:tB, elemAName:nA, elemBName:nB,
+          globalIdA:pA.globalId||'', globalIdB:pB.globalId||'',
           elemAStorey:pA.storey||'', elemBStorey:pB.storey||'',
           elemAMaterial:pA.material||'', elemBMaterial:pB.material||''
         });
@@ -4062,6 +4072,7 @@ function startApp() {
     var rnv = useState(''), renameVal=rnv[0], setRenameVal=rnv[1];
     var cf = useState(null), confirmDelete=cf[0], setConfirmDelete=cf[1];
     var tut = useState(false), showTutorial=tut[0], setShowTutorial=tut[1];
+    window._ccToggleTutorial = function(){ setShowTutorial(function(v){return !v;}); };
 
     function createProject() {
       var name = prompt('New project name:');
@@ -4107,9 +4118,6 @@ function startApp() {
           <span style=${{fontWeight:600,cursor:'default'}} title="ClashControl — Free, open-source IFC clash detection for the browser. Load BIM models, detect geometric clashes, manage issues, and export to BCF.">ClashControl</span>
           <span style=${{color:'var(--text-muted)',fontSize:'.7rem',marginLeft:'.4rem',cursor:'default'}} title=${'v'+CC_VERSION.v+' — Latest features:\n• Natural language app control (theme, files, viewer, tools)\n• Revit Bridge: AI-powered sync with Autodesk Revit\n• Soft clash / proximity detection\n• Light & dark theme with full UI polish\n• BCF 2.1 & 3.0 import/export\n• Floor plans, section planes & measurements\n\nBuild: '+CC_VERSION.hash+' ('+new Date(CC_VERSION.date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})+')'}>v${CC_VERSION.v}</span>
         </div>
-        <button onClick=${function(){setShowTutorial(!showTutorial)}}
-          style=${{...S_BTN,background:'none',border:'1px solid var(--border)',color:'var(--text-muted)',width:22,height:22,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'.7rem',padding:0,cursor:'pointer',flexShrink:0}}
-          title="Quick start guide">ⓘ</button>
         <div style=${{position:'relative'}}>
           <button onClick=${function(){setProjOpen(!projOpen)}}
             style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'.3rem',fontSize:'.7rem',padding:'.3rem .6rem'}}>
@@ -5300,6 +5308,7 @@ function startApp() {
       ${p.objectType && html`<div style=${ROW}><span style=${LS}>Object Type</span><span style=${VS}>${p.objectType}</span></div>`}
       ${p.storey && html`<div style=${ROW}><span style=${LS}>Storey</span><span style=${VS}>${p.storey}</span></div>`}
       ${p.material && html`<div style=${ROW}><span style=${LS}>Material</span><span style=${VS}>${p.material}</span></div>`}
+      ${p.globalId && html`<div style=${ROW}><span style=${LS}>GlobalId</span><span style=${VS}>${p.globalId}</span></div>`}
       <div style=${ROW}><span style=${LS}>Express ID</span><span style=${VS}>#${p.expressId}</span></div>
       ${qKeys.length>0 && html`<div style=${{marginTop:'.2rem',borderTop:'1px solid var(--border-subtle)',paddingTop:'.2rem'}}>
         <div style=${{fontSize:'.55rem',fontWeight:600,color:'var(--text-muted)',marginBottom:'.1rem'}}>Quantities</div>
@@ -7936,6 +7945,9 @@ function startApp() {
       ${iconBtn(function(){d({t:'SETTINGS',v:true});},
         html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:SVG_GEAR}}></svg>`,
         'Settings')}
+      ${iconBtn(function(){if(window._ccToggleTutorial)window._ccToggleTutorial();},
+        html`<span style=${{fontSize:'.8rem',fontWeight:700}}>ⓘ</span>`,
+        'Quick start guide')}
     </div>`;
   }
 

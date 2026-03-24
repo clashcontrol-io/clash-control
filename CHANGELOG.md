@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.70 (2026-03-24)
+- Fix clash marker placement using exact intersection line midpoints
+
+## v1.2.69 (2026-03-24)
+- Move info button from header to bottom of left sidebar
+
+## v1.2.68 (2026-03-24)
+- Bump version for distance slider and clash detection fixes
+
 ## v1.2.67 (2026-03-24)
 - Reduce max intersection sample points from 150 to 24
 
