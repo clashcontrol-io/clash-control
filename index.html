@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.0.2',hash:'c08a984',date:'2026-03-24T10:22:37Z'};
+  var CC_VERSION = {v:'2.0.4',hash:'64b1733',date:'2026-03-24T10:36:04Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -2050,6 +2050,7 @@ function startApp() {
     var ref = useRef(null);
     var state3d = useRef({scene:null,camera:null,renderer:null,orbit:null,mg:null,map:{},raf:null});
     var se = useState(null), selectedEl=se[0], setSelectedEl=se[1];
+    window._ccSelectedExpressId = selectedEl ? selectedEl.expressId : null;
     var cm = useState(null), ctxMenu=cm[0], setCtxMenu=cm[1];
     var hlRef = useRef(null); // highlighted mesh outline
     var outlineRef = useRef(null); // outliner mesh
@@ -2237,6 +2238,38 @@ function startApp() {
       S._unghostAll = unghostAll;
       _ghostOthers = ghostOthers;
       _unghostAll = unghostAll;
+
+      // Temporary hide: make meshes with given expressIds invisible
+      var _tempHiddenMeshes = [];
+      window._ccTempHide = function(expressIds) {
+        if(!expressIds||!expressIds.length||!S.mg) return;
+        var idSet = {};
+        expressIds.forEach(function(id){idSet[id]=true;});
+        S.mg.traverse(function(obj){
+          if(!obj.isMesh) return;
+          var eid = obj.userData.expressID;
+          if(eid!=null && idSet[eid] && obj.visible){
+            obj.visible = false;
+            _tempHiddenMeshes.push(obj);
+          }
+        });
+        invalidate();
+      };
+      // Restore all temporarily hidden elements
+      window._ccTempUnhide = function() {
+        _tempHiddenMeshes.forEach(function(m){ m.visible = true; });
+        _tempHiddenMeshes = [];
+        invalidate();
+      };
+      // Isolate: ghost everything except given expressIds
+      window._ccIsolate = function(expressIds) {
+        if(!expressIds||!expressIds.length) return;
+        ghostOthers(expressIds);
+      };
+      // Unisolate: restore all ghosted
+      window._ccUnisolate = function() {
+        unghostAll();
+      };
 
       _highlightById = function(expressId, alsoGhost) {
         if(!expressId||!S.mg) return;
@@ -8738,11 +8771,26 @@ function startApp() {
           // Helper: get expressIds from active clash/issue
           function getActiveEids(){
             var all=s.clashes.concat(s.issues);
-            var item=all.find(function(c){return c.id===s.activeId;});
-            if(!item) return null;
             var ids=[];
-            if(item.elemA) ids.push(item.elemA);
-            if(item.elemB) ids.push(item.elemB);
+            // Collect from all multi-selected items first
+            var selKeys=Object.keys(s.selected||{});
+            if(selKeys.length>0){
+              selKeys.forEach(function(sid){
+                var it=all.find(function(c){return c.id===sid;});
+                if(it){
+                  if(it.elemA) ids.push(it.elemA);
+                  if(it.elemB) ids.push(it.elemB);
+                }
+              });
+            }
+            // Fall back to single active item
+            if(!ids.length && s.activeId){
+              var item=all.find(function(c){return c.id===s.activeId;});
+              if(item){
+                if(item.elemA) ids.push(item.elemA);
+                if(item.elemB) ids.push(item.elemB);
+              }
+            }
             return ids.length?ids:null;
           }
 
@@ -8780,6 +8828,26 @@ function startApp() {
           if(chord==='cs'){ d({t:'SECTION',axis:null}); d({t:'SECTION_BOX',v:null}); return; }
           // WT — Toggle wireframe (render style)
           if(chord==='wt'){ d({t:'PREF',k:'renderStyle',v:s.prefs.renderStyle==='wireframe'?'standard':'wireframe'}); return; }
+          // HH — Temporarily hide selected/active element(s)
+          if(chord==='hh'){
+            var hhIds=getActiveEids();
+            if(!hhIds && window._ccSelectedExpressId) hhIds=[window._ccSelectedExpressId];
+            if(hhIds && window._ccTempHide) window._ccTempHide(hhIds);
+            return;
+          }
+          // HI — Hide/isolate: ghost everything except selected/active element(s)
+          if(chord==='hi'){
+            var hiIds=getActiveEids();
+            if(!hiIds && window._ccSelectedExpressId) hiIds=[window._ccSelectedExpressId];
+            if(hiIds && window._ccIsolate) window._ccIsolate(hiIds);
+            return;
+          }
+          // HR — Reset hidden/isolated: unhide + unisolate all
+          if(chord==='hr'){
+            if(window._ccTempUnhide) window._ccTempUnhide();
+            if(window._ccUnisolate) window._ccUnisolate();
+            return;
+          }
 
           // Chord not recognized — fall through (don't consume)
           return;
@@ -8787,7 +8855,7 @@ function startApp() {
 
         // ── Start a chord if this is a chord-starter key ──
         var k=e.key.toLowerCase();
-        var chordStarters = {b:1,s:1,z:1,v:1,d:1,c:1,w:1};
+        var chordStarters = {b:1,s:1,z:1,v:1,d:1,c:1,w:1,h:1};
         if(!ctrl && !e.altKey && !e.shiftKey && chordStarters[k]){
           ch.key=k;
           ch.timer=setTimeout(function(){
@@ -8805,8 +8873,6 @@ function startApp() {
           if(e.key==='3'){ d({t:'TAB',v:'explorer'}); return; }
         }
 
-        // H — Home / reset view
-        if(e.key==='h'&&!ctrl){ if(_resetView)_resetView(); if(s.floorPlan)d({t:'FLOOR_PLAN',v:null}); return; }
         // M — Toggle measure mode
         if(e.key==='m'&&!ctrl){ d({t:'MEASURE_MODE',v:s.measureMode?null:'length'}); return; }
         // L/A/R — Measure length/angle/area (only when measure mode is active)
