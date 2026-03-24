@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.60',hash:'e795d48',date:'2026-03-24T07:00:17Z'};
+  var CC_VERSION = {v:'1.2.61',hash:'3505082',date:'2026-03-24T07:11:59Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -243,7 +243,7 @@ function startApp() {
   };
   var INIT_PREFS = {
     autoFlyTo:true, autoHighlight:true, showGrid:true, showAxes:true,
-    showClashMarkers:false, hoverHighlight:true, outlineSelected:true,
+    showClashMarkers:false, showIssueMarkers:true, hoverHighlight:true, outlineSelected:true,
     defaultPriority:'normal', defaultCategory:'design', defaultStatus:'open',
     defaultClearance:50, resetFiltersOnRun:true,
     theme:(function(){ try { return localStorage.getItem('cc_theme')||'dark'; } catch(e){ return 'dark'; } })(),
@@ -1808,6 +1808,8 @@ function startApp() {
   var _flyToElements = null;
   var _showClashMarkers = null;
   var _clearClashMarkers = null;
+  var _showIssueMarkers = null;
+  var _clearIssueMarkers = null;
   var _findAndHighlightElements = null;
   var _clearFoundElements = null;
   var _ghostOthers = null;
@@ -1833,6 +1835,7 @@ function startApp() {
     var outlineRef = useRef(null); // outliner mesh
     var hoverRef = useRef(null); // hover highlight mesh
     var clashMarkersRef = useRef(null); // group of clash markers
+    var issueMarkersRef = useRef(null); // group of issue markers
     var foundMarkersRef = useRef([]); // items finder highlights
     var measureObjsRef = useRef([]); // measurement 3D objects
     var measurePtsRef = useRef([]); // current measurement click points
@@ -2122,6 +2125,41 @@ function startApp() {
           clashMarkersRef.current.traverse(function(obj){if(obj.isMesh){obj.geometry&&obj.geometry.dispose();obj.material&&obj.material.dispose();}});
           scene.remove(clashMarkersRef.current);
           clashMarkersRef.current = null;
+          invalidate();
+        }
+      };
+
+      // ── Issue Markers (green) ──
+      _showIssueMarkers = function(issues) {
+        _clearIssueMarkers();
+        if(!issues||!issues.length) return;
+        var withPt = issues.filter(function(i){return i.point&&i.point.length>=3;});
+        if(!withPt.length) return;
+        var grp = new THREE.Group();
+        grp.name = 'issueMarkers';
+        var issueMat = new THREE.MeshBasicMaterial({color:0x22c55e, transparent:true, opacity:0.85});
+        var pinGeo = new THREE.SphereGeometry(0.15, 12, 12);
+        var ringGeo = new THREE.RingGeometry(0.25, 0.4, 24);
+        var ringMat = new THREE.MeshBasicMaterial({color:0x86efac, transparent:true, opacity:0.4, side:THREE.DoubleSide});
+        withPt.forEach(function(iss){
+          var pin = new THREE.Mesh(pinGeo, issueMat);
+          pin.position.set(iss.point[0],iss.point[1],iss.point[2]);
+          pin.userData.issueId = iss.id;
+          grp.add(pin);
+          var ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.position.set(iss.point[0],iss.point[1],iss.point[2]);
+          ring.rotation.x = -Math.PI/2;
+          grp.add(ring);
+        });
+        scene.add(grp);
+        issueMarkersRef.current = grp;
+        invalidate();
+      };
+      _clearIssueMarkers = function() {
+        if(issueMarkersRef.current){
+          issueMarkersRef.current.traverse(function(obj){if(obj.isMesh){obj.geometry&&obj.geometry.dispose();obj.material&&obj.material.dispose();}});
+          scene.remove(issueMarkersRef.current);
+          issueMarkersRef.current = null;
           invalidate();
         }
       };
@@ -3188,6 +3226,15 @@ function startApp() {
         _clearClashMarkers();
       }
     }, [s.clashes, s.prefs.showClashMarkers]);
+
+    // Sync issue markers when issues change
+    useEffect(function(){
+      if(s.prefs.showIssueMarkers!==false && s.issues.length>0 && _showIssueMarkers){
+        _showIssueMarkers(s.issues);
+      } else if(_clearIssueMarkers){
+        _clearIssueMarkers();
+      }
+    }, [s.issues, s.prefs.showIssueMarkers]);
 
     // Clear measurement 3D objects when measurements list is cleared
     useEffect(function(){
@@ -5204,8 +5251,12 @@ function startApp() {
 
         <div style=${{fontSize:'.6rem',color:'var(--text-faint)',textAlign:'right'}}>${items.length} / ${rawItems.length} shown</div>
       </div>`}
-      ${s.tab==='issues' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
-        <button onClick=${function(){d({t:'MODAL',v:true})}} style=${{...S_BTN,width:'100%',background:'#2563eb',color:'#fff'}}>+ New Issue</button>
+      ${s.tab==='issues' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,display:'flex',gap:'.3rem'}}>
+        <button onClick=${function(){d({t:'MODAL',v:true})}} style=${{...S_BTN,flex:1,background:'#2563eb',color:'#fff'}}>+ New Issue</button>
+        <button onClick=${function(){d({t:'UPD_PREFS',u:{showIssueMarkers:!s.prefs.showIssueMarkers}})}}
+          style=${{...S_BTN,background:s.prefs.showIssueMarkers!==false?'rgba(34,197,94,.7)':'var(--overlay-bg)',color:s.prefs.showIssueMarkers!==false?'#fff':'var(--text-muted)',border:'1px solid var(--border)',fontSize:'.65rem',padding:'.25rem .5rem',whiteSpace:'nowrap'}}>
+          ${s.prefs.showIssueMarkers!==false?'Markers On':'Markers Off'}
+        </button>
       </div>`}
       ${!isExplorerTab && isClashTab && items.length>0 && html`<div style=${{padding:'.25rem .5rem',borderBottom:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:'.3rem',flexShrink:0}}>
         <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>Group:</span>
@@ -5613,6 +5664,10 @@ function startApp() {
         <div style=${TROW}>
           <div><div style=${TLBL}>Show clash markers</div><div style=${TSUB}>Display 3D markers at clash points (red=hard, yellow=soft)</div></div>
           <${Toggle} on=${p.showClashMarkers!==false} onToggle=${tog('showClashMarkers')} />
+        </div>
+        <div style=${TROW}>
+          <div><div style=${TLBL}>Show issue markers</div><div style=${TSUB}>Display green 3D markers at issue locations</div></div>
+          <${Toggle} on=${p.showIssueMarkers!==false} onToggle=${tog('showIssueMarkers')} />
         </div>
         <div style=${TROW}>
           <div><div style=${TLBL}>Hover highlight</div><div style=${TSUB}>Highlight elements on mouse hover with wireframe overlay</div></div>

@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.61 (2026-03-24)
+- Add clash detection setup card and fix marker positioning
+
 ## v1.2.60 (2026-03-24)
 - Add logo/version tooltips and quick start guide
 
