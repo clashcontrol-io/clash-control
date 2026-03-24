@@ -193,7 +193,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'1.2.65',hash:'b38e1d6',date:'2026-03-24T07:42:41Z'};
+  var CC_VERSION = {v:'1.2.66',hash:'05d5ab0',date:'2026-03-24T07:43:54Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -7623,6 +7623,24 @@ function startApp() {
       if (e.key === 'Escape') setOpen(false);
     }
 
+    // Resizable panel
+    var stW = useState(500), panelW = stW[0], setPanelW = stW[1];
+    var stH = useState(300), panelH = stH[0], setPanelH = stH[1];
+    var dragRef = useRef(null);
+    function onResizeStart(e, dir) {
+      e.preventDefault();
+      var startX = e.clientX, startY = e.clientY, startW = panelW, startH = panelH;
+      function onMove(ev) {
+        if (dir === 'w' || dir === 'nw' || dir === 'n') {
+          if (dir !== 'n') setPanelW(Math.max(320, Math.min(800, startW - 2*(ev.clientX - startX))));
+          if (dir !== 'w') setPanelH(Math.max(150, Math.min(600, startH - (ev.clientY - startY))));
+        }
+      }
+      function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+
     var isDark = (s.prefs && s.prefs.theme) !== 'light';
     var panelBg  = 'var(--bg-secondary)';
     var borderCol = 'var(--border)';
@@ -7664,14 +7682,17 @@ function startApp() {
     var backendColor = backend === 'ollama' ? '#22c55e' : backend === 'browser' ? '#f59e0b' : mutedCol;
     return html`<div style=${{
       position:'fixed', bottom:'1rem', left:'50%', transform:'translateX(-50%)',
-      zIndex:1200, width:'min(500px, calc(100vw - 2rem))',
+      zIndex:1200, width:'min('+panelW+'px, calc(100vw - 2rem))',
       background:panelBg, border:'1px solid '+panelBorderCol,
       borderRadius:12, boxShadow:'var(--shadow-lg)',
       display:'flex', flexDirection:'column', overflow:'hidden',
       animation:panelAnimation
     }}>
+      <div onMouseDown=${function(e){onResizeStart(e,'n')}} style=${{
+        height:4, cursor:'ns-resize', flexShrink:0
+      }}></div>
       <div style=${{
-        display:'flex', alignItems:'center', padding:'.55rem .8rem',
+        display:'flex', alignItems:'center', padding:'0 .8rem .55rem',
         borderBottom:'1px solid '+borderCol, gap:'.5rem'
       }}>
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style=${{flexShrink:0}}>
@@ -7715,7 +7736,7 @@ function startApp() {
       <div style=${{
         overflowY:'auto', padding:'.7rem .8rem',
         display:'flex', flexDirection:'column', gap:'.55rem',
-        maxHeight:300, minHeight:80
+        maxHeight:panelH, minHeight:80
       }}>
         ${msgs.map(function(m, i) {
           var isUser = m.role === 'user';
