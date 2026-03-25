@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.9.1 (2026-03-25)
+- Persist sort/group and all preferences across page refresh
+
 ## v2.8.0 (2026-03-25)
 - Carry over all training feedback and detection metadata to issues
 
