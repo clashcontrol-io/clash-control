@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.2.1 (2026-03-25)
+- Add quick start guide with interactive walkthrough tour
+
+## v3.0.0 (2026-03-25)
+- Add / keyboard shortcut to open AI chat input
+
 ## v2.1.4 (2026-03-25)
 - Make training pill a toggle with separate dropdown chevron
 

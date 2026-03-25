@@ -43,30 +43,26 @@ if [ -n "$BUMP" ]; then
 else
   LEVEL="patch"
 
-  # MAJOR signals: CDN/dependency changes, INIT state shape changes, removed exports
-  if echo "$DIFF" | grep -qE '^\+.*<script.*(src=|cdn)'; then
+  # MAJOR signals: CDN/dependency swaps or INIT state shape rewrite.
+  # Only triggers when a script tag or INIT definition is CHANGED (added AND removed),
+  # not when lines are merely moved or new globals are added.
+  ADDED_SCRIPTS=$(printf '%s\n' "$DIFF" | grep -cE '^\+.*<script.*(src=|cdn)' || true)
+  REMOVED_SCRIPTS=$(printf '%s\n' "$DIFF" | grep -cE '^\-.*<script.*(src=|cdn)' || true)
+  ADDED_SCRIPTS=${ADDED_SCRIPTS:-0}
+  REMOVED_SCRIPTS=${REMOVED_SCRIPTS:-0}
+  if [ "$ADDED_SCRIPTS" -gt 0 ] && [ "$REMOVED_SCRIPTS" -gt 0 ]; then
     LEVEL="major"
-  elif echo "$DIFF" | grep -qE '^\-.*<script.*(src=|cdn)'; then
-    LEVEL="major"
-  elif echo "$DIFF" | grep -qE '^\+.*var INIT\s*='; then
-    LEVEL="major"
-  elif echo "$DIFF" | grep -qE '^\-.*window\._cc[A-Z]'; then
+  elif echo "$DIFF" | grep -qE '^\+.*var INIT\s*=' && echo "$DIFF" | grep -qE '^\-.*var INIT\s*='; then
     LEVEL="major"
   fi
 
-  # MINOR signals (only upgrade if still patch): new functions, new reducer cases, new components
+  # MINOR signals (only upgrade if still patch): new components, new reducer cases
   if [ "$LEVEL" = "patch" ]; then
-    ADDED_LINES=$(echo "$DIFF" | grep -c '^\+' 2>/dev/null || echo 0)
-    REMOVED_LINES=$(echo "$DIFF" | grep -c '^\-' 2>/dev/null || echo 0)
-    NET_LINES=$((ADDED_LINES - REMOVED_LINES))
-
     if echo "$DIFF" | grep -qE "^\+\s*case '[A-Z_]+'"; then
       LEVEL="minor"
     elif echo "$DIFF" | grep -qE '^\+\s*function [A-Z][a-zA-Z]+\('; then
       LEVEL="minor"
     elif echo "$DIFF" | grep -qE '^\+.*var (STAT|INIT_FILTERS)\['; then
-      LEVEL="minor"
-    elif [ "$NET_LINES" -gt 150 ]; then
       LEVEL="minor"
     fi
   fi
