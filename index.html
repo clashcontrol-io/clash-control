@@ -245,7 +245,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.2.1',hash:'86f41ce',date:'2026-03-25T08:15:03Z'};
+  var CC_VERSION = {v:'2.2.2',hash:'2734e84',date:'2026-03-25T08:24:42Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -9900,6 +9900,13 @@ function startApp() {
     var clashes = s.clashes;
     var ss = useState({status:null,msg:null}), shareState=ss[0], setShareState=ss[1];
     var stExpanded = useState(false), isExpanded=stExpanded[0], setExpanded=stExpanded[1];
+    var stNotice = useState(false), showNotice=stNotice[0], setShowNotice=stNotice[1];
+    var prevTraining = useRef(false);
+    useEffect(function(){
+      if(s.trainingMode && !prevTraining.current){setExpanded(true);setShowNotice(true);}
+      if(!s.trainingMode){setShowNotice(false);setExpanded(false);}
+      prevTraining.current = s.trainingMode;
+    },[s.trainingMode]);
 
     var reviewedCount = clashes.filter(function(c){return c.status!=='open';}).length;
     var feedbackCount = clashes.filter(function(c){return c.aiFeedback;}).length;
@@ -9941,6 +9948,14 @@ function startApp() {
       ${s.trainingMode && isExpanded && html`<div style=${{marginTop:'.35rem',
         background:'var(--overlay-bg-strong)',border:'1px solid rgba(124,58,237,.4)',borderRadius:10,
         boxShadow:'0 4px 16px rgba(0,0,0,.3)',width:260,padding:'.5rem'}}>
+        ${showNotice && html`<div style=${{background:'rgba(124,58,237,.12)',border:'1px solid rgba(167,139,250,.35)',
+          borderRadius:6,padding:'.4rem .5rem',marginBottom:'.4rem',lineHeight:1.45}}>
+          <div style=${{fontSize:'.58rem',fontWeight:700,color:'#c4b5fd',marginBottom:'.2rem'}}>Data Collection Notice</div>
+          <div style=${{fontSize:'.52rem',color:'var(--text-secondary)',marginBottom:'.25rem'}}>By using Training Mode you agree that clash labels, IFC type metadata, and geometric metrics may be collected to improve clash detection. No element names, coordinates, project names, or personal data is included.</div>
+          <div style=${{fontSize:'.5rem',color:'var(--text-muted)',marginBottom:'.3rem'}}>Sharing is optional — nothing is sent without your action. You can export or delete your data at any time.</div>
+          <button onClick=${function(){setShowNotice(false);}} style=${{...S_BTN,fontSize:'.5rem',padding:'.15rem .5rem',
+            background:'rgba(124,58,237,.3)',color:'#e9d5ff',border:'1px solid rgba(167,139,250,.4)',width:'100%'}}>Understood</button>
+        </div>`}
         <div style=${{fontSize:'.55rem',color:'var(--text-muted)',marginBottom:'.3rem',lineHeight:1.4}}>
           Use ▲▼ on each clash to label true/false positives. Annotations appear when you expand a clash row.
         </div>
