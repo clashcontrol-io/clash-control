@@ -1,11 +1,10 @@
 // ClashControl Service Worker — offline caching
 // Updates automatically when index.html changes (cache name includes version)
 
-var CACHE = 'clashcontrol-v2.12.1';
+var CACHE = 'clashcontrol-v2.12.2';
 
 var PRECACHE = [
   './',
-  './index.html',
   'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
@@ -55,7 +54,10 @@ self.addEventListener('fetch', function(e) {
         }
         return response;
       }).catch(function() {
-        return caches.match(e.request);
+        return caches.match(e.request).then(function(cached) {
+          return cached || new Response('ClashControl is offline. Please reconnect and reload.',
+            {status:503, headers:{'Content-Type':'text/plain'}});
+        });
       })
     );
     return;

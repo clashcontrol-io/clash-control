@@ -229,26 +229,21 @@ window.addEventListener('unhandledrejection', function(e) {
 
 // Service worker registration (PWA offline support)
 if ('serviceWorker' in navigator) {
+  var _swReloading = false;
+  function _swReload() { if (!_swReloading) { _swReloading = true; window.location.reload(); } }
   navigator.serviceWorker.register('./sw.js').then(function(reg) {
-    // Check for updates on page load
     reg.update();
-    // When a new SW is installed and activates, reload to get fresh content
     if (reg.waiting) { reg.waiting.postMessage({type:'SKIP_WAITING'}); }
     reg.addEventListener('updatefound', function() {
       var newSW = reg.installing;
       if (newSW) newSW.addEventListener('statechange', function() {
-        if (newSW.state === 'activated' && navigator.serviceWorker.controller) {
-          window.location.reload();
-        }
+        if (newSW.state === 'activated' && navigator.serviceWorker.controller) _swReload();
       });
     });
   }).catch(function(e) {
     console.warn('[ClashControl] SW registration failed:', e);
   });
-  // Reload when a new service worker takes control
-  navigator.serviceWorker.addEventListener('controllerchange', function() {
-    window.location.reload();
-  });
+  navigator.serviceWorker.addEventListener('controllerchange', _swReload);
 }
 
 window.onload = function() {
@@ -262,7 +257,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.12.1',hash:'9962da6',date:'2026-03-25T21:06:06Z'};
+  var CC_VERSION = {v:'2.12.2',hash:'53397cb',date:'2026-03-25T21:14:24Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -5218,6 +5213,7 @@ function startApp() {
         vc.materials.forEach(function(mat, boxIdx) {
           var fi = BOX_FACE_MAP[boxIdx];
           var isHov = !!hovSet[fi];
+          if (mat.map) mat.map.dispose();
           mat.map = makeFaceTexture(FACES[fi].label, isHov);
           mat.map.needsUpdate = true;
           mat.color.setHex(isHov ? 0x2563eb : (FACE_CLR[FACES[fi].label]||0x3a5f8a));
@@ -10490,56 +10486,8 @@ function startApp() {
   }
 
   // ── Training Mode Info Popup ──────────────────────────────────
-  // ── Data Consent Popup (GDPR — Phase 0.5) ────────────────────
-  function DataConsentPopup() {
-    var stShow = useState(function(){
-      try { var v=localStorage.getItem('cc_data_consent'); return v!=='granted'&&v!=='denied'; } catch(e){ return true; }
-    });
-    var show=stShow[0], setShow=stShow[1];
-    if(!show) return null;
-    function decide(v){ try{localStorage.setItem('cc_data_consent',v);}catch(e){} setShow(false); window.dispatchEvent(new Event('cc-consent-change')); }
-    var EQ_BTN={cursor:'pointer',padding:'.55rem 1.2rem',fontSize:'.8rem',fontWeight:600,
-      borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-secondary)',color:'var(--text-primary)',flex:1};
-    return html`<div style=${{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:2100,
-      background:'rgba(0,0,0,.55)',display:'flex',alignItems:'flex-start',justifyContent:'center',
-      overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'3rem 1rem'}}>
-      <div onClick=${function(e){e.stopPropagation();}}
-        style=${{background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:14,
-          padding:'1.6rem',maxWidth:480,width:'100%',boxShadow:'0 12px 40px rgba(0,0,0,.5)',flexShrink:0}}>
-        <div style=${{fontSize:'1.05rem',fontWeight:700,color:'var(--text-primary)',marginBottom:'.8rem'}}>Help improve ClashControl</div>
-        <p style=${{fontSize:'.76rem',color:'var(--text-secondary)',lineHeight:1.65,marginBottom:'.7rem'}}>
-          When you review clashes, ClashControl can anonymously share your verdicts at the end of each session to help train a smarter clash classifier.
-        </p>
-        <p style=${{fontSize:'.76rem',color:'var(--text-secondary)',lineHeight:1.65,marginBottom:'.2rem'}}><strong style=${{color:'var(--text-primary)'}}>What is shared:</strong></p>
-        <ul style=${{fontSize:'.72rem',color:'var(--text-secondary)',lineHeight:1.65,marginBottom:'.7rem',paddingLeft:'1.2rem'}}>
-          <li>IFC element types and disciplines</li>
-          <li>Bounding box dimensions (size only, not position)</li>
-          <li>Penetration depth and overlap volume</li>
-          <li>Your verdict per clash</li>
-          <li>Detection settings used (clearance tolerance, discipline filters)</li>
-          <li>Any notes you write \u2014 do not include project names or locations</li>
-        </ul>
-        <p style=${{fontSize:'.76rem',color:'var(--text-secondary)',lineHeight:1.65,marginBottom:'.2rem'}}><strong style=${{color:'var(--text-primary)'}}>What is never shared:</strong></p>
-        <ul style=${{fontSize:'.72rem',color:'var(--text-secondary)',lineHeight:1.65,marginBottom:'.7rem',paddingLeft:'1.2rem'}}>
-          <li>Element names, GUIDs, or coordinates</li>
-          <li>Project or file names</li>
-          <li>Your identity</li>
-        </ul>
-        <p style=${{fontSize:'.68rem',color:'var(--text-muted)',lineHeight:1.55,marginBottom:'.5rem'}}>
-          Your IP address reaches our server briefly during transmission but is never logged or stored.
-        </p>
-        <p style=${{fontSize:'.68rem',color:'var(--text-muted)',lineHeight:1.55,marginBottom:'1rem'}}>
-          You can change this decision at any time in the Training Mode panel.
-        </p>
-        <div style=${{display:'flex',gap:'.5rem'}}>
-          <button onClick=${function(){decide('denied');}} style=${EQ_BTN}>No thanks</button>
-          <button onClick=${function(){decide('granted');}} style=${EQ_BTN}>Yes, share my data</button>
-        </div>
-      </div>
-    </div>`;
-  }
 
-  // ── sendBeacon auto-send (Phase 0.5) ──────────────────────────
+  // ── sendBeacon auto-send ──────────────────────────────────────
   function _beaconSendTrainingData(clashes, detectionSettings, models, defaultTolerances, issues) {
     try {
       if(localStorage.getItem('cc_data_consent')!=='granted') return;
@@ -10712,7 +10660,6 @@ function startApp() {
 
   function WelcomePopup(props) {
     var d = props.d;
-    var isDark = (props.theme||'dark')==='dark';
     var stShow = useState(function(){
       try { return !sessionStorage.getItem('cc_session_seen'); } catch(e){ return true; }
     });
@@ -10741,14 +10688,14 @@ function startApp() {
       function onKey(e){if(e.key==='Escape') dismiss(needsConsent?'denied':null);}
       window.addEventListener('keydown', onKey);
       return function(){window.removeEventListener('keydown', onKey);};
-    },[show]);
+    },[show,needsConsent]);
     if (!show) return null;
     var cardBg = 'var(--card-bg)';
     var cardBorder = 'var(--card-border)';
     var CARD = {background:cardBg,border:'1px solid '+cardBorder,borderRadius:10,padding:'.65rem .75rem',display:'flex',gap:'.6rem',alignItems:'flex-start',cursor:'default'};
 
     return html`<div style=${{position:'fixed',inset:0,background:vis?'var(--modal-bg)':'transparent',display:'flex',alignItems:'flex-start',justifyContent:'center',zIndex:60,transition:'background .2s',overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'2rem 0'}}
-      onClick=${function(e){if(e.target===e.currentTarget)dismiss();}}>
+      onClick=${function(e){if(e.target===e.currentTarget)dismiss(needsConsent?'denied':null);}}>
       <div style=${{background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:16,width:480,maxWidth:'92vw',boxShadow:'var(--shadow-lg)',overflow:'hidden',transform:vis?'translateY(0) scale(1)':'translateY(12px) scale(.97)',opacity:vis?1:0,transition:'transform .25s cubic-bezier(.16,1,.3,1), opacity .2s',flexShrink:0,marginBottom:'4rem'}}>
 
         <!-- Header -->
@@ -11323,7 +11270,7 @@ function startApp() {
       ${s.showRevitBridge && html`<${RevitBridgePanel} s=${s} d=${d} />`}
       <${NLCommandPanel} s=${s} d=${d} />
       <${MobileNav} s=${s} d=${d} />
-      <${WelcomePopup} d=${d} theme=${s.prefs.theme} />
+      <${WelcomePopup} d=${d} />
       <${TrainingModePopup} d=${d} active=${s.trainingMode} />
     </div>`;
   }

@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.12.2 (2026-03-25)
+- Fix React error #300: move useState for details toggle before early return
+
 ## v2.12.1 (2026-03-25)
 - Fix training mode toggle-off bug + add expandable GDPR data details to popup
 
