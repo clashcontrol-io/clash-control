@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.7.5 (2026-03-25)
+- Add Google Forms to CSP connect-src and frame-src
+
 ## v2.7.4 (2026-03-25)
 - Change verdict row labels to + - × symbols
 
