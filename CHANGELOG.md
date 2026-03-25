@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.11.1 (2026-03-25)
+- Add Phase 0.5: GDPR consent popup and automatic sendBeacon data sharing
+
 ## v2.11.0 (2026-03-25)
 - Keep denied clashes in state for training data, hide from UI
 

@@ -245,11 +245,13 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.11.0',hash:'cc98081',date:'2026-03-25T17:53:29Z'};
+  var CC_VERSION = {v:'2.11.1',hash:'2d0850d',date:'2026-03-25T17:56:21Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
-  var _beaconSentIds = {}; // in-memory dedup Set (reset each session)
+  var NL_DATA_ENDPOINT = 'https://your-server.com/api/nl-data';
+  var _beaconSentIds = {}; // in-memory clash dedup Set (reset each session)
+  var _beaconNLSentIdx = 0; // NL records sent up to this index (reset each session)
 
   // Check CDN deps loaded
   var need = [];
@@ -10568,6 +10570,29 @@ function startApp() {
     unsent.forEach(function(c){ _beaconSentIds[c.id]=true; });
   }
 
+  function _beaconSendNLTrainingData(models) {
+    try {
+      if(localStorage.getItem('cc_data_consent')!=='granted') return;
+    } catch(e){ return; }
+    var store = _getNLTrainStore();
+    if(store.length <= _beaconNLSentIdx) return;
+    var unsent = store.slice(_beaconNLSentIdx);
+    if(!unsent.length) return;
+    var records = unsent.map(function(r){
+      return {
+        input: _sanitizeNLInput(r.input||'', models),
+        matched: !!(r.output!=null),
+        path: r.meta&&r.meta.path||'unknown',
+        v: r.meta&&r.meta.v||'',
+        ts: r.meta&&r.meta.ts||0
+      };
+    });
+    var payload = {type:'nl_training', version:'1.0', app_version:CC_VERSION.v, count:records.length, records:records};
+    var blob = new Blob([JSON.stringify(payload)], {type:'application/json'});
+    navigator.sendBeacon(NL_DATA_ENDPOINT, blob);
+    _beaconNLSentIdx = store.length;
+  }
+
   function TrainingModePopup(props) {
     var d = props.d;
     var stShow = useState(function(){
@@ -11024,6 +11049,7 @@ function startApp() {
         if(_hasProjectData(cur)) _saveCurrentProjectData(cur);
         // Phase 0.5: beacon training data on tab close
         _beaconSendTrainingData(cur.clashes, cur.detectionSettings, cur.models, cur.prefs.defaultTolerances, cur.issues);
+        _beaconSendNLTrainingData(cur.models);
       }
       window.addEventListener('beforeunload', onUnload);
       return function(){ window.removeEventListener('beforeunload', onUnload); };
@@ -11040,6 +11066,16 @@ function startApp() {
       }
       if(reviewedNow < _beaconReviewRef.current) _beaconReviewRef.current = reviewedNow;
     }, [s.clashes, s.issues]);
+    // Phase 0.5: periodic auto-send NL training every 25 new records
+    var _beaconNLRef = useRef(0);
+    useEffect(function(){
+      var nlCount = _getNLTrainCount();
+      var unsentNL = nlCount - _beaconNLSentIdx;
+      if(unsentNL >= 25 && nlCount !== _beaconNLRef.current) {
+        _beaconNLRef.current = nlCount;
+        _beaconSendNLTrainingData(s.models);
+      }
+    });
     // ── Periodic memory cleanup (runs every 2 minutes) ──
     useEffect(function(){
       var timer = setInterval(function(){
