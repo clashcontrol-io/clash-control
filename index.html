@@ -245,7 +245,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.10.1',hash:'15dd054',date:'2026-03-25T16:20:20Z'};
+  var CC_VERSION = {v:'2.10.2',hash:'8287dd4',date:'2026-03-25T17:22:58Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -2213,10 +2213,10 @@ function startApp() {
     var pair = computeClashPair(clash);
     var denied = store[pair];
     if (!denied) return false;
-    // If contact point moved more than 500mm, elements likely moved — allow re-detection
+    // If contact point moved more than 150mm, elements likely moved — allow re-detection
     var p = clash.point||[0,0,0], dp = denied.point||[0,0,0];
     var distMm = Math.sqrt(Math.pow((p[0]-dp[0])*1000,2)+Math.pow((p[1]-dp[1])*1000,2)+Math.pow((p[2]-dp[2])*1000,2));
-    return distMm <= 500;
+    return distMm <= 150;
   }
 
   function mergeDetectionResults(newClashes, prevClashes) {
@@ -10397,7 +10397,7 @@ function startApp() {
     }
     function doDelete() { d({t:'CLEAR_TRAINING_DATA'}); }
     var isSending = shareState.status==='sending';
-    var hasData = reviewedCount > 0 || feedbackCount > 0;
+    var hasData = feedbackCount > 0;
 
     return html`<div style=${{position:'absolute',top:'2.6rem',left:'50%',transform:'translateX(-50%)',
       zIndex:20,pointerEvents:'auto',display:'flex',flexDirection:'column',alignItems:'center'}}>

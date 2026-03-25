@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.10.2 (2026-03-25)
+- Suppress denied clashes on re-detection unless elements moved
+
 ## v2.10.1 (2026-03-25)
 - Fix training pill counter not clearing after Send
 
