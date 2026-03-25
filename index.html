@@ -245,7 +245,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.5.0',hash:'6ac5a38',date:'2026-03-25T09:04:51Z'};
+  var CC_VERSION = {v:'2.5.1',hash:'7715de3',date:'2026-03-25T09:09:50Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -9110,12 +9110,40 @@ function startApp() {
       m = t.match(/(\d+(?:\.\d+)?)\s*m(?!m)/); if (m) return Math.round(parseFloat(m[1]) * 1000);
       return null;
     }
+    // Common IFC type shorthand → full IFC type name
+    var _IFC_SHORT = {wall:'IfcWall',slab:'IfcSlab',beam:'IfcBeam',column:'IfcColumn',door:'IfcDoor',
+      window:'IfcWindow',pipe:'IfcPipeSegment',duct:'IfcDuctSegment',cable:'IfcCableCarrierSegment',
+      plate:'IfcPlate',member:'IfcMember',railing:'IfcRailing',stair:'IfcStair',
+      covering:'IfcCovering',furniture:'IfcFurnishingElement',proxy:'IfcBuildingElementProxy',
+      curtainwall:'IfcCurtainWall',footing:'IfcFooting',roof:'IfcRoof',ramp:'IfcRamp'};
     function applyClashOpts(updRules) {
       var gap = parseMM(text); if (gap !== null) { updRules.maxGap = gap; updRules.hard = true; }
       if (/\bnear[\s-]*miss|\bproximity\b|\bwithin\b|\bnearby\b|\bclose\s+to\b|\bgap\b/.test(text)) { if (!gap) updRules.maxGap = updRules.maxGap || 50; updRules.hard = true; }
       if (/hard\s+only|no\s+gap|gap\s*(?:=\s*)?0/.test(text)) { updRules.hard=true; updRules.maxGap=0; }
       if (/\bduplicates?\b/.test(text) && !/no\s+dup|exclude\s+dup|ignore\s+dup/.test(text)) updRules.duplicates=true;
       if (/\bcross[\s-]*(?:model\s+)?only\b|\bno\s+self[\s-]*clash|\bexclude\s+self|\bnot?\s+with\s+itself|\b(?:against|vs)\s+(?:all\s+)?others?\b/.test(text)) updRules.excludeSelf=true;
+      // Parse -type exclusions: -beam, -IfcBeam, -wall, -IfcWall etc.
+      var exMatches = text.match(/-(\w+)/g);
+      if(exMatches){
+        var excludes = (updRules.excludeTypes||[]).slice();
+        exMatches.forEach(function(m){
+          var raw = m.slice(1); // remove leading -
+          // Try exact IFC match first (case-insensitive)
+          var exact = raw.match(/^ifc/i) ? raw.charAt(0).toUpperCase()+raw.slice(1).replace(/^FC/,'fc') : null;
+          if(exact){
+            // Normalize: IfcBeam, Ifcbeam → IfcBeam
+            var norm = 'Ifc'+exact.slice(3).charAt(0).toUpperCase()+exact.slice(4);
+            if(excludes.indexOf(norm)===-1) excludes.push(norm);
+          } else {
+            // Try shorthand lookup
+            var short = raw.toLowerCase();
+            if(_IFC_SHORT[short]){
+              if(excludes.indexOf(_IFC_SHORT[short])===-1) excludes.push(_IFC_SHORT[short]);
+            }
+          }
+        });
+        if(excludes.length) updRules.excludeTypes = excludes;
+      }
       return updRules;
     }
     function resolveModel(hint) {
@@ -9600,7 +9628,7 @@ function startApp() {
   function NLCommandPanel(props) {
     var s = props.s, d = props.d;
     var stOpen = useState(false), open = stOpen[0], setOpen = stOpen[1];
-    window._ccNLOpen = function(){ setOpen(true); };
+    window._ccNLOpen = function(){ setOpen(true); if(inputRef.current) setTimeout(function(){inputRef.current&&inputRef.current.focus();},50); };
     var stMsgs = useState([{role:'assistant', text:'Control ClashControl with plain English — try "load ifc", "structural vs MEP", "switch to light", "analyze clashes", or "help" for all commands.'}]);
     var msgs = stMsgs[0], setMsgs = stMsgs[1];
     var stInput = useState(''), input = stInput[0], setInput = stInput[1];

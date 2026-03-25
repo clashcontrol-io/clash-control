@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.5.1 (2026-03-25)
+- Add Advanced settings tab with tolerance matrix
+
 ## v2.5.0 (2026-03-25)
 - Add resolution feedback (Move A/B), neutral status label in clashes
 
