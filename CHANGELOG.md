@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.0.47 (2026-03-25)
+- Hide training mode pill when TrainingOverlay is active
+
 ## v2.0.46 (2026-03-25)
 - Fix stale delta pills on reload and modal title for clash-sourced issues
 
