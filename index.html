@@ -245,7 +245,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.4.0',hash:'ec82c40',date:'2026-03-25T08:55:45Z'};
+  var CC_VERSION = {v:'2.4.1',hash:'c60a044',date:'2026-03-25T08:57:21Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -391,7 +391,7 @@ function startApp() {
         return Object.assign({},c,upd2);
       })});
       case 'CLEAR_TRAINING_DATA': return Object.assign({},s,{clashes:s.clashes.map(function(c){
-        return Object.assign({},c,{aiFeedback:null,aiReasons:[],aiNote:'',aiSignals:[],clashTypeConfirmed:null});
+        return Object.assign({},c,{aiFeedback:null,aiReasons:[],aiResolution:null,aiNote:'',aiSignals:[],clashTypeConfirmed:null});
       })});
       case 'UPD_CLASH':
         // When confirmed, move clash to issues tab
@@ -2513,6 +2513,7 @@ function startApp() {
         bbox_b: c.bboxB || {dx:0,dy:0,dz:0},
         verdict: _AI_VERDICT_MAP[c.status] || 'unreviewed',
         reasons: c.aiReasons || [],
+        resolution: c.aiResolution || null,
         note: c.aiNote || '',
         app_version: CC_VERSION.v
       };
@@ -7292,7 +7293,7 @@ function startApp() {
       </div>
       ${active && html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid var(--border)'}}>
         <div style=${{display:'flex',gap:'.25rem',marginBottom:'.4rem',flexWrap:'wrap',alignItems:'center'}}>
-          ${isClash && html`<span style=${{fontSize:'.55rem',padding:'.15rem .35rem',borderRadius:4,background:(STAT[it.status||'open']||STAT.open).bg+'22',color:(STAT[it.status||'open']||STAT.open).bg,fontWeight:600}}>${(STAT[it.status||'open']||STAT.open).label}</span>`}
+          ${isClash && html`<span style=${{fontSize:'.55rem',padding:'.15rem .35rem',borderRadius:4,background:'var(--bg-secondary)',color:'var(--text-muted)',fontWeight:600}}>${(STAT[it.status||'open']||STAT.open).label}</span>`}
           ${isClash && it.status!=='confirmed' && html`<button onClick=${function(e){e.stopPropagation();d({t:'UPD_CLASH',id:it.id,u:{status:'confirmed'}});}}
             style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .5rem',background:'#166534',color:'#4ade80',border:'1px solid #22c55e66',fontWeight:600}}>Confirmed</button>`}
           ${!isClash && EDITABLE_STATUSES.map(function(k){return html`<button key=${k}
@@ -7333,6 +7334,18 @@ function startApp() {
                   border:'1px solid '+(sel?'#3b82f6':'var(--border)'),
                   background:sel?'#1e3a5f':'var(--bg-secondary)',
                   color:sel?'#93c5fd':'var(--text-muted)'}}>${r}</span>`})}
+            </div>
+            <div style=${{fontSize:'.55rem',fontWeight:600,color:'var(--text-muted)',marginBottom:'.15rem'}}>Resolution</div>
+            <div style=${{display:'flex',gap:'.2rem',marginBottom:'.3rem',flexWrap:'wrap'}}>
+              ${[{k:'move_a',l:'Move A'},{k:'move_b',l:'Move B'},{k:'redesign',l:'Redesign'},{k:'accept',l:'Accept'}].map(function(r){
+                var sel=(it.aiResolution||null)===r.k;
+                return html`<span key=${r.k}
+                  onClick=${function(e){e.stopPropagation();d({t:'UPD_CLASH',id:it.id,u:{aiResolution:sel?null:r.k}});}}
+                  style=${{fontSize:'.55rem',padding:'.1rem .35rem',borderRadius:10,cursor:'pointer',whiteSpace:'nowrap',
+                    border:'1px solid '+(sel?'#3b82f6':'var(--border)'),
+                    background:sel?'#1e3a5f':'var(--bg-secondary)',
+                    color:sel?'#93c5fd':'var(--text-muted)'}}>${r.l}</span>`;
+              })}
             </div>
             <input type="text" value=${curNote} maxLength="140" placeholder="Optional note \u2014 no project names or locations"
               onClick=${function(e){e.stopPropagation();}}

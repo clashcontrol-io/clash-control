@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.4.1 (2026-03-25)
+- Move confirmed clashes from Clashes tab to Issues tab
+
 ## v2.4.0 (2026-03-25)
 - Simplify clash row to status label + green Confirmed button
 
