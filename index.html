@@ -245,7 +245,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.0.45',hash:'48bb1a3',date:'2026-03-25T07:04:30Z'};
+  var CC_VERSION = {v:'2.0.46',hash:'5202fd3',date:'2026-03-25T07:08:24Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -4498,7 +4498,7 @@ function startApp() {
           ${s.prefs.showIssueMarkers!==false?'Issue Markers On':'Issue Markers Off'}
         </button>
       </div>`}
-      ${html`<button class="cc-training-btn-3d" onClick=${function(){d({t:'TRAINING_MODE'});}}
+      ${!s.trainingMode && html`<button class="cc-training-btn-3d" onClick=${function(){d({t:'TRAINING_MODE'});}}
         style=${{position:'absolute',top:'2.6rem',left:'50%',transform:'translateX(-50%)',
           zIndex:20,display:'flex',alignItems:'center',gap:'.4rem',pointerEvents:'auto',
           padding:'.45rem 1.1rem',borderRadius:999,
