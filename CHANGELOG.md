@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.2.4 (2026-03-25)
+- Improve training feedback reason presets
+
 ## v2.2.3 (2026-03-25)
 - Add data collection notice to training mode dropdown
 
