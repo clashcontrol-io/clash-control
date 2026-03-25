@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.6.8 (2026-03-25)
+- Distinguish detected vs confirmed clash type in training feedback
+
 ## v2.6.7 (2026-03-25)
 - Fix training feedback counter to include all annotation types
 
