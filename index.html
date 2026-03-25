@@ -281,6 +281,7 @@ function startApp() {
     auto_resolved: { label:'Auto-resolved', bg:'#475569' },
     closed:      { label:'Closed',      bg:'#64748b' },
   };
+  var EDITABLE_STATUSES = Object.keys(STAT).filter(function(k){return k!=='auto_resolved';});
 
   function uid()  { return Math.random().toString(36).slice(2,10).toUpperCase(); }
   function guid() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16)}); }
@@ -361,8 +362,8 @@ function startApp() {
       case 'UPD_MODEL':   return Object.assign({},s,{models:s.models.map(function(m){return m.id===a.id?Object.assign({},m,a.u):m})});
       case 'TOGGLE_STOREY': return Object.assign({},s,{models:s.models.map(function(m){if(m.id!==a.id)return m;var hs=Object.assign({},m.hiddenStoreys||{});if(hs[a.storey])delete hs[a.storey];else hs[a.storey]=true;return Object.assign({},m,{hiddenStoreys:hs});})});
       case 'TOGGLE_ALL_STOREYS': return Object.assign({},s,{models:s.models.map(function(m){if(m.id!==a.id)return m;return Object.assign({},m,{hiddenStoreys:a.hide?a.storeys.reduce(function(o,st){o[st]=true;return o;},{}):{}}); })});
-      case 'SET_CLASHES': var newSt={clashes:a.v, detecting:false, activeId:null, floors:deriveFloors(a.v), lastDeltaSummary:null}; if(a.detectionSettings) newSt.detectionSettings=a.detectionSettings; if(s.prefs.resetFiltersOnRun!==false) newSt.filters=Object.assign({},INIT_FILTERS); return Object.assign({},s,newSt);
-      case 'MERGE_CLASHES': var _mc=mergeDetectionResults(a.v, s.clashes); var _nw=0,_pe=0,_ar=0; _mc.forEach(function(c){if(c._delta==='new')_nw++;else if(c._delta==='persisting')_pe++;else if(c._delta==='auto_resolved')_ar++;}); var mSt={clashes:_mc,detecting:false,activeId:null,floors:deriveFloors(_mc),lastDeltaSummary:{newCount:_nw,persisting:_pe,autoResolved:_ar,ts:Date.now()}}; if(a.detectionSettings)mSt.detectionSettings=a.detectionSettings; if(s.prefs.resetFiltersOnRun!==false)mSt.filters=Object.assign({},INIT_FILTERS); return Object.assign({},s,mSt);
+      case 'SET_CLASHES': /* falls through to MERGE_CLASHES with no prev clashes */
+      case 'MERGE_CLASHES': var _mr=mergeDetectionResults(a.v, a.t==='MERGE_CLASHES'?s.clashes:[]); var _st={clashes:_mr.clashes,detecting:false,activeId:null,floors:deriveFloors(_mr.clashes),lastDeltaSummary:_mr.deltaSummary}; if(a.detectionSettings)_st.detectionSettings=a.detectionSettings; if(s.prefs.resetFiltersOnRun!==false)_st.filters=Object.assign({},INIT_FILTERS); return Object.assign({},s,_st);
       case 'DETECTING':   return Object.assign({},s,{detecting:true});
       case 'SWITCHING_PROJECT': return Object.assign({},s,{switchingProject:!!a.v});
       case 'ADD_ISSUE':
@@ -2071,12 +2072,16 @@ function startApp() {
 
   // ── Clash Identity & Delta Merge ──────────────────────────────
 
-  function computeClashIdentityKey(clash) {
+  function computeClashPair(clash) {
     // Prefer GlobalIDs (stable across re-exports), fall back to expressID
     var idA = (clash.globalIdA && clash.globalIdA !== '') ? clash.globalIdA : ('eid:'+clash.elemA);
     var idB = (clash.globalIdB && clash.globalIdB !== '') ? clash.globalIdB : ('eid:'+clash.elemB);
     // Sort pair so A/B labelling order doesn't matter
-    var pair = idA < idB ? idA+'|'+idB : idB+'|'+idA;
+    return idA < idB ? idA+'|'+idB : idB+'|'+idA;
+  }
+
+  function computeClashIdentityKey(clash) {
+    var pair = computeClashPair(clash);
     // Quantise contact point to 500mm grid cell
     var p = clash.point || [0,0,0];
     var gx = Math.round(p[0] / 0.5);
@@ -2089,9 +2094,10 @@ function startApp() {
     if (!prevClashes || prevClashes.length === 0) {
       // First ever run — tag everything as new
       var now0 = Date.now();
-      return newClashes.map(function(c) {
+      var firstRun = newClashes.map(function(c) {
         return Object.assign({}, c, {_identityKey:computeClashIdentityKey(c), _delta:'new', _firstSeen:now0, _lastSeen:now0, _runCount:1});
       });
+      return {clashes:firstRun, deltaSummary:{newCount:firstRun.length,persisting:0,autoResolved:0,ts:now0}};
     }
     var now = Date.now();
     // Build lookup: identity key → previous clash (also index adjacent cells)
@@ -2111,9 +2117,7 @@ function startApp() {
       if (!prev) {
         var p = c.point || [0,0,0];
         var gx = Math.round(p[0]/0.5), gy = Math.round(p[1]/0.5), gz = Math.round(p[2]/0.5);
-        var idA = (c.globalIdA && c.globalIdA!=='') ? c.globalIdA : ('eid:'+c.elemA);
-        var idB = (c.globalIdB && c.globalIdB!=='') ? c.globalIdB : ('eid:'+c.elemB);
-        var pair = idA < idB ? idA+'|'+idB : idB+'|'+idA;
+        var pair = computeClashPair(c);
         outer: for (var dx=-1; dx<=1; dx++) { for (var dy=-1; dy<=1; dy++) { for (var dz=-1; dz<=1; dz++) {
           if (dx===0 && dy===0 && dz===0) continue;
           var adjKey = pair+'@'+(gx+dx)+','+(gy+dy)+','+(gz+dz);
@@ -2148,15 +2152,21 @@ function startApp() {
       return Object.assign({}, c, {_identityKey:key, _delta:'new', _firstSeen:now, _lastSeen:now, _runCount:1});
     });
 
-    // Auto-resolve open clashes no longer detected
+    // Auto-resolve open clashes no longer detected (cap at 200 to prevent unbounded growth)
+    var arCount = 0, AR_CAP = 200;
     prevClashes.forEach(function(c) {
+      if (arCount >= AR_CAP) return;
       var key = c._identityKey || computeClashIdentityKey(c);
       if (!newKeys[key] && (c.status==='open' || c.status==='in_progress')) {
         merged.push(Object.assign({}, c, {_delta:'auto_resolved', _lastSeen:now, status:'auto_resolved'}));
+        arCount++;
       }
     });
 
-    return merged;
+    // Compute delta summary inline to avoid extra iteration in reducer
+    var _nw=0,_pe=0,_ar=0;
+    merged.forEach(function(c){if(c._delta==='new')_nw++;else if(c._delta==='persisting')_pe++;else if(c._delta==='auto_resolved')_ar++;});
+    return {clashes:merged, deltaSummary:{newCount:_nw,persisting:_pe,autoResolved:_ar,ts:now}};
   }
 
   // ── Save / Load Project ────────────────────────────────────────
@@ -6079,9 +6089,9 @@ function startApp() {
       </div>
       ${isClash && delta && html`<div style=${{display:'flex',gap:'.3rem',marginTop:'.25rem',alignItems:'center',flexWrap:'wrap'}}>
         <span style=${{fontSize:'.55rem',color:'var(--text-faint)',flexShrink:0}}>This run:</span>
-        ${delta.newCount > 0 && html`<span style=${{fontSize:'.58rem',padding:'1px 5px',borderRadius:99,background:'#1e3a5f',color:'#60a5fa',fontWeight:700,whiteSpace:'nowrap'}}>${delta.newCount} new</span>`}
-        ${delta.persisting > 0 && html`<span style=${{fontSize:'.58rem',padding:'1px 5px',borderRadius:99,background:'var(--tag-bg)',color:'var(--text-secondary)',fontWeight:600,whiteSpace:'nowrap'}}>${delta.persisting} unchanged</span>`}
-        ${delta.autoResolved > 0 && html`<span style=${{fontSize:'.58rem',padding:'1px 5px',borderRadius:99,background:'#0f172a',color:'#64748b',fontWeight:600,whiteSpace:'nowrap'}}>${delta.autoResolved} auto-resolved</span>`}
+        ${delta.newCount > 0 && CHIP('New', delta.newCount, '#1e3a5f', '#60a5fa')}
+        ${delta.persisting > 0 && CHIP('Unchanged', delta.persisting, 'var(--tag-bg)', 'var(--text-secondary)')}
+        ${delta.autoResolved > 0 && CHIP('Auto-res', delta.autoResolved, '#0f172a', '#64748b')}
       </div>`}
     </div>`;
   }
@@ -7142,7 +7152,7 @@ function startApp() {
       </div>
       ${active && html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid var(--border)'}}>
         <div style=${{display:'flex',gap:'.25rem',marginBottom:'.4rem',flexWrap:'wrap',alignItems:'center'}}>
-          ${Object.keys(STAT).filter(function(k){return k!=='auto_resolved';}).map(function(k){return html`<button key=${k}
+          ${EDITABLE_STATUSES.map(function(k){return html`<button key=${k}
             onClick=${function(e){e.stopPropagation();d({t:isClash?'UPD_CLASH':'UPD_ISSUE',id:it.id,u:{status:k}})}}
             style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .35rem',background:it.status===k?STAT[k].bg:'var(--bg-secondary)',color:it.status===k?'#fff':'var(--text-faint)'}}>${STAT[k].label}</button>`})}
           ${isClash && !it.linkedIssueId && html`<button
@@ -7287,7 +7297,7 @@ function startApp() {
         <div style=${{display:'flex',gap:'.5rem'}}>
           <div style=${{flex:1}}><label style=${LBL}>Status</label>
             <select value=${form.status} onChange=${upd('status')} style=${S_INPUT}>
-              ${Object.keys(STAT).filter(function(k){return k!=='auto_resolved';}).map(function(k){return html`<option key=${k} value=${k}>${STAT[k].label}</option>`})}
+              ${EDITABLE_STATUSES.map(function(k){return html`<option key=${k} value=${k}>${STAT[k].label}</option>`})}
             </select></div>
           <div style=${{flex:1}}><label style=${LBL}>Priority</label>
             <select value=${form.priority} onChange=${upd('priority')} style=${S_INPUT}>
