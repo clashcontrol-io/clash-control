@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.6.9 (2026-03-25)
+- Include confirmed clashes in training data count and export
+
 ## v2.6.8 (2026-03-25)
 - Distinguish detected vs confirmed clash type in training feedback
 

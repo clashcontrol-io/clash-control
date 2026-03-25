@@ -245,7 +245,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.6.8',hash:'5608a9e',date:'2026-03-25T10:43:42Z'};
+  var CC_VERSION = {v:'2.6.9',hash:'b27fd19',date:'2026-03-25T10:44:29Z'};
 
   // Check CDN deps loaded
   var need = [];
@@ -9442,6 +9442,12 @@ function startApp() {
       var wantLight = /light/.test(text);
       d({t:'UPD_PREFS',u:{theme:wantLight?'light':'dark'}});
       return 'Switched to ' + (wantLight?'light':'dark') + ' mode.';
+    }
+
+    // ── Reload ─────────────────────────────────────────────────
+    if (/^\/reload|^reload\s*page|^refresh\s*page|^reload$/.test(text)) {
+      setTimeout(function(){window.location.reload();},300);
+      return 'Reloading page\u2026';
     }
 
     // ── File Loading ─────────────────────────────────────────────
