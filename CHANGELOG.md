@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.7.1 (2026-03-25)
+- Add NL training data sharing, mailto fallback for blocked sends
+
 ## v2.7.0 (2026-03-25)
 - Add iframe fallback for Send, copy-to-clipboard on failure
 
