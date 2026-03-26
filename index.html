@@ -250,7 +250,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.5',hash:'ef62cc5',date:'2026-03-26T17:09:14Z'};
+  var CC_VERSION = {v:'3.2.9',hash:'f2232ec',date:'2026-03-26T17:30:13Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -1948,10 +1948,15 @@ function startApp() {
   // Returns a Promise that resolves with the clash array.
   var _DETECT_CHUNK_SIZE = 80; // candidates per chunk before yielding
   function detectClashesAsync(models, rules, onProgress) {
-    return new Promise(function(resolve) {
-      // Run synchronous detection but yield between chunks
-      var result = _detectClashesCore(models, rules, onProgress, resolve);
-      if (result !== undefined) resolve(result); // fell through synchronously (small dataset)
+    return new Promise(function(resolve, reject) {
+      try {
+        // Run synchronous detection but yield between chunks
+        var result = _detectClashesCore(models, rules, onProgress, resolve);
+        if (result !== undefined) resolve(result); // fell through synchronously (small dataset)
+      } catch(e) {
+        console.error('Clash detection failed:', e);
+        resolve([]); // resolve with empty array to unblock UI (sets detecting:false)
+      }
     });
   }
 
@@ -2052,9 +2057,10 @@ function startApp() {
     // each element's BVH is built exactly once (not repeatedly per pair).
     var _bvhSeen = {};
     for (var ci=0; ci<candidates.length; ci++) {
-      var _peA=candidates[ci].eA, _peB=candidates[ci].eB;
-      if (!_bvhSeen[_peA.expressId]) { _bvhSeen[_peA.expressId]=true; _getBVH(_peA); }
-      if (!_bvhSeen[_peB.expressId]) { _bvhSeen[_peB.expressId]=true; _getBVH(_peB); }
+      var _peA=candidates[ci].eA, _peB=candidates[ci].eB, _pmA=candidates[ci].mA, _pmB=candidates[ci].mB;
+      var _kA=_pmA.id+':'+_peA.expressId, _kB=_pmB.id+':'+_peB.expressId;
+      if (!_bvhSeen[_kA]) { _bvhSeen[_kA]=true; _getBVH(_peA); }
+      if (!_bvhSeen[_kB]) { _bvhSeen[_kB]=true; _getBVH(_peB); }
     }
 
     // ── Process candidate pairs (chunkable) ───────────────────────
@@ -2374,8 +2380,9 @@ function startApp() {
     // Async chunked path
     var chunkIdx = 0;
     function _runChunk() {
+      try {
       var end = Math.min(chunkIdx + _DETECT_CHUNK_SIZE, totalCandidates);
-      for (var i=chunkIdx; i<end; i++) _processCandidate(candidates[i]);
+      for (var i=chunkIdx; i<end; i++) { try { _processCandidate(candidates[i]); } catch(e) { /* skip bad candidate */ } }
       chunkIdx = end;
       if (onProgress) onProgress(chunkIdx, totalCandidates);
       if (chunkIdx < totalCandidates) {
@@ -2383,6 +2390,7 @@ function startApp() {
       } else {
         resolveAsync(_finalize());
       }
+      } catch(e) { console.error('Detection chunk error:', e); resolveAsync(_finalize()); }
     }
     _runChunk();
     return undefined; // signal async path taken
@@ -2753,7 +2761,7 @@ function startApp() {
     var payload = {type:'clash_training', version:'1.0', app_version:CC_VERSION.v, count:records.length, records:records};
     var json = JSON.stringify(payload);
     onStatus('sending', null);
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.1252313993', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
@@ -2906,7 +2914,7 @@ function startApp() {
     var payload = {type:'nl_training', version:'1.0', app_version:CC_VERSION.v, count:records.length, records:records};
     var json = JSON.stringify(payload);
     onStatus('sending',null);
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.65932609', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
@@ -3045,7 +3053,7 @@ function startApp() {
     if (!payload) { onStatus('error','No reviewed clashes to share.'); return; }
     var json = JSON.stringify(payload);
     onStatus('sending', null);
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.1252313993', json);
     // URL split to avoid heuristic phishing scanners flagging a Google Forms endpoint in static source
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
@@ -10144,6 +10152,7 @@ function startApp() {
       if (/hard\s+only|no\s+gap|gap\s*(?:=\s*)?0/.test(text)) { updRules.hard=true; updRules.maxGap=0; }
       if (/\bduplicates?\b/.test(text) && !/no\s+dup|exclude\s+dup|ignore\s+dup/.test(text)) updRules.duplicates=true;
       if (/\bcross[\s-]*(?:model\s+)?only\b|\bno\s+self[\s-]*clash|\bexclude\s+self|\bnot?\s+with\s+itself|\b(?:against|vs)\s+(?:all\s+)?others?\b/.test(text)) updRules.excludeSelf=true;
+      else if (/\bself[\s-]*clash|\bself\b|\binclude\s+self|\bintra[\s-]*model|\bwithin\s+(?:same\s+)?model/i.test(text)) updRules.excludeSelf=false;
       // Parse type-pair exclusions: -beam vs pipe, -IfcBeam x IfcPipe, -wall vs duct, etc.
       var pairExcludes = (updRules.excludeTypePairs||[]).slice();
       var pairMatches = text.match(/-\s*(\w+)\s*(?:vs\.?|versus|against|x|×)\s*(\w+)/gi);
@@ -11663,13 +11672,17 @@ function startApp() {
     var json = JSON.stringify(payload);
     _clearClashTrainStore();
     unsent.forEach(function(c){ _beaconSentIds[c.id]=true; });
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.1252313993', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
-    fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
-      window.dispatchEvent(new Event('cc-training-sent'));
-    }).catch(function(){});
+    fetch(baseUrl+'/formResponse',{method:'POST',body:fd}).then(function(resp){
+      if(resp.ok||resp.status===0) window.dispatchEvent(new Event('cc-training-sent'));
+    }).catch(function(){
+      fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
+        window.dispatchEvent(new Event('cc-training-sent'));
+      }).catch(function(){});
+    });
   }
 
   function _beaconSendNLTrainingData(models) {
@@ -11693,13 +11706,17 @@ function startApp() {
     var json = JSON.stringify(payload);
     // Clear BEFORE sending — ensures no re-sends even if fetch fails silently
     _clearNLTrainStore();
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.65932609', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
-    fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
-      window.dispatchEvent(new Event('cc-training-sent'));
-    }).catch(function(){});
+    fetch(baseUrl+'/formResponse',{method:'POST',body:fd}).then(function(resp){
+      if(resp.ok||resp.status===0) window.dispatchEvent(new Event('cc-training-sent'));
+    }).catch(function(){
+      fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
+        window.dispatchEvent(new Event('cc-training-sent'));
+      }).catch(function(){});
+    });
   }
 
   function _beaconSendDetectionRuns() {
@@ -11709,17 +11726,29 @@ function startApp() {
     var runs = [];
     try { runs = JSON.parse(localStorage.getItem('cc_detection_runs')||'[]'); } catch(e){ return; }
     if (!runs.length) return;
-    var payload = {type:'detection_runs', version:'1.0', app_version:CC_VERSION.v, count:runs.length, runs:runs};
+    // Slim payload: strip bulky clashFeatures/suppressedPairs to stay within form field limits
+    var slimRuns = runs.map(function(r){
+      var s = Object.assign({}, r);
+      delete s.clashFeatures;
+      delete s.suppressedPairs;
+      s.suppressedCount = r.suppressedCount || (r.suppressedPairs||[]).length;
+      return s;
+    });
+    var payload = {type:'detection_runs', version:'1.0', app_version:CC_VERSION.v, count:slimRuns.length, runs:slimRuns};
     var json = JSON.stringify(payload);
     try { localStorage.removeItem('cc_detection_runs'); } catch(e){}
     window.dispatchEvent(new Event('cc-training-data-change'));
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.61454827', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
-    fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
-      window.dispatchEvent(new Event('cc-training-sent'));
-    }).catch(function(){});
+    fetch(baseUrl+'/formResponse',{method:'POST',body:fd}).then(function(resp){
+      if(resp.ok||resp.status===0) window.dispatchEvent(new Event('cc-training-sent'));
+    }).catch(function(){
+      fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
+        window.dispatchEvent(new Event('cc-training-sent'));
+      }).catch(function(){});
+    });
   }
 
   function TrainingModePopup(props) {

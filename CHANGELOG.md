@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.2.9 (2026-03-26)
+- Fix detection run summary not appearing in Google Form
+
+## v3.2.8 (2026-03-26)
+- Add error handling to async detection and fix BVH pre-build key collision
+
+## v3.2.7 (2026-03-26)
+- Skip self-clash confirmation when 'self' is already in the NL command
+
+## v3.2.6 (2026-03-26)
+- Fix training pill counter and form send reliability
+
 ## v3.2.5 (2026-03-26)
 - Add 'Functional clearance' reason chip for element-type clearance envelopes
 
