@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.11',hash:'a374de7',date:'2026-03-26T09:47:45Z'};
+  var CC_VERSION = {v:'3.1.12',hash:'1353029',date:'2026-03-26T09:49:54Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -11083,7 +11083,7 @@ function startApp() {
     var payload = {type:'detection_runs', version:'1.0', app_version:CC_VERSION.v, count:runs.length, runs:runs};
     var json = JSON.stringify(payload);
     var fd = new FormData();
-    fd.append('entry.1450623071', json);
+    fd.append('entry.39972213', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSdSMbfjcApszFebuvQXHKiWhH-zQJhk','_38m1vvMQ-_bMP_6eA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){

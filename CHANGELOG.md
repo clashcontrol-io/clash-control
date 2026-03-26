@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.12 (2026-03-26)
+- Include semantic filter negatives in detection run summary
+
 ## v3.1.11 (2026-03-26)
 - Rename NL training path labels: regex→matched, no-llm→unmatched
 
