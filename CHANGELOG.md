@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.1.5 (2026-03-26)
+- Add descriptions to each roadmap milestone in Quick Start Guide
+
+## v3.1.4 (2026-03-26)
+- Roadmap: mark training data gathering as also active (already happening)
+
 ## v3.1.3 (2026-03-26)
 - Fix roadmap: open-source launch is current milestone, not completed
 
