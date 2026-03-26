@@ -257,7 +257,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.12.4',hash:'5372901',date:'2026-03-26T06:19:36Z'};
+  var CC_VERSION = {v:'2.12.5',hash:'5b77757',date:'2026-03-26T06:21:21Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -377,18 +377,52 @@ function startApp() {
     showRevitBridge:false,
     lastDeltaSummary: null // {new, persisting, autoResolved, ts} — set after each merge run
   };
+  // Action type constants — single source of truth for all dispatch/reducer references
+  var A = {
+    ADD_MODEL:'ADD_MODEL', DEL_MODEL:'DEL_MODEL', UPD_MODEL:'UPD_MODEL',
+    TOGGLE_STOREY:'TOGGLE_STOREY', TOGGLE_ALL_STOREYS:'TOGGLE_ALL_STOREYS',
+    SET_CLASHES:'SET_CLASHES', MERGE_CLASHES:'MERGE_CLASHES', DETECTING:'DETECTING',
+    SWITCHING_PROJECT:'SWITCHING_PROJECT',
+    ADD_ISSUE:'ADD_ISSUE', UPD_ISSUE:'UPD_ISSUE', BATCH_UPD_ISSUE:'BATCH_UPD_ISSUE',
+    AI_FEEDBACK:'AI_FEEDBACK', CLEAR_TRAINING_DATA:'CLEAR_TRAINING_DATA',
+    UPD_CLASH:'UPD_CLASH', BATCH_UPD_CLASH:'BATCH_UPD_CLASH',
+    ACTIVE:'ACTIVE', MODAL:'MODAL',
+    UPD_RULES:'UPD_RULES', UPD_FILTERS:'UPD_FILTERS', RESET_FILTERS:'RESET_FILTERS',
+    SECTION:'SECTION', SECTION_CUSTOM:'SECTION_CUSTOM', SECTION_BOX:'SECTION_BOX',
+    TAB:'TAB', SETTINGS:'SETTINGS', TRAINING_MODE:'TRAINING_MODE',
+    UPD_PREFS:'UPD_PREFS',
+    MEASURE_MODE:'MEASURE_MODE', ADD_MEASUREMENT:'ADD_MEASUREMENT',
+    DEL_MEASUREMENT:'DEL_MEASUREMENT', CLEAR_MEASUREMENTS:'CLEAR_MEASUREMENTS',
+    ADD_VIEWPOINT:'ADD_VIEWPOINT', DEL_VIEWPOINT:'DEL_VIEWPOINT',
+    SET_CLASSIFICATIONS:'SET_CLASSIFICATIONS',
+    TOGGLE_CLASS_VIS:'TOGGLE_CLASS_VIS', SHOW_ALL_CLASSES:'SHOW_ALL_CLASSES',
+    HIDE_ALL_CLASSES:'HIDE_ALL_CLASSES', COLOR_BY_CLASS:'COLOR_BY_CLASS',
+    TREE:'TREE', FLOOR_PLAN:'FLOOR_PLAN', SET_HIGHLIGHTED_STOREY:'SET_HIGHLIGHTED_STOREY',
+    SET_PROJECT:'SET_PROJECT', SET_PROJECT_LIST:'SET_PROJECT_LIST',
+    LOAD_PROJECT_STATE:'LOAD_PROJECT_STATE',
+    CLASH_GROUP_BY:'CLASH_GROUP_BY', CLASH_SORT_BY:'CLASH_SORT_BY',
+    ISSUE_GROUP_BY:'ISSUE_GROUP_BY', ISSUE_SORT_BY:'ISSUE_SORT_BY',
+    ADD_UNDERLAY:'ADD_UNDERLAY', DEL_UNDERLAY:'DEL_UNDERLAY',
+    UPD_UNDERLAY:'UPD_UNDERLAY', SET_UNDERLAY:'SET_UNDERLAY', UNDERLAY_MODE:'UNDERLAY_MODE',
+    ADD_MARKUP:'ADD_MARKUP', DEL_MARKUP:'DEL_MARKUP', CLEAR_MARKUPS:'CLEAR_MARKUPS',
+    MARKUP_TOOL:'MARKUP_TOOL',
+    SELECT_TOGGLE:'SELECT_TOGGLE', SELECT_ALL:'SELECT_ALL',
+    SELECT_NONE:'SELECT_NONE', SELECT_MODE:'SELECT_MODE',
+    REVIT_BRIDGE:'REVIT_BRIDGE', UPD_BRIDGE:'UPD_BRIDGE',
+    BRIDGE_LOG:'BRIDGE_LOG', CLEAR_BRIDGE_LOG:'CLEAR_BRIDGE_LOG'
+  };
   function reducer(s,a) {
     switch(a.t) {
-      case 'ADD_MODEL':   var _am=a.v; if(s.modelMeta){var _mm=s.modelMeta.find(function(m){return m.id===_am.id});if(_mm){if(_mm.visible===false)_am=Object.assign({},_am,{visible:false});if(_mm.discipline)_am=Object.assign({},_am,{discipline:_mm.discipline});if(_mm.color)_am=Object.assign({},_am,{color:_mm.color});}} return Object.assign({},s,{models:s.models.concat([_am])});
-      case 'DEL_MODEL':   return Object.assign({},s,{models:s.models.filter(function(m){return m.id!==a.id})});
-      case 'UPD_MODEL':   return Object.assign({},s,{models:s.models.map(function(m){return m.id===a.id?Object.assign({},m,a.u):m})});
-      case 'TOGGLE_STOREY': return Object.assign({},s,{models:s.models.map(function(m){if(m.id!==a.id)return m;var hs=Object.assign({},m.hiddenStoreys||{});if(hs[a.storey])delete hs[a.storey];else hs[a.storey]=true;return Object.assign({},m,{hiddenStoreys:hs});})});
-      case 'TOGGLE_ALL_STOREYS': return Object.assign({},s,{models:s.models.map(function(m){if(m.id!==a.id)return m;return Object.assign({},m,{hiddenStoreys:a.hide?a.storeys.reduce(function(o,st){o[st]=true;return o;},{}):{}}); })});
-      case 'SET_CLASHES': /* falls through to MERGE_CLASHES with no prev clashes */
-      case 'MERGE_CLASHES': var _mr=mergeDetectionResults(a.v, a.t==='MERGE_CLASHES'?s.clashes:[]); var _st={clashes:_mr.clashes,detecting:false,activeId:null,floors:deriveFloors(_mr.clashes),lastDeltaSummary:_mr.deltaSummary}; if(a.detectionSettings)_st.detectionSettings=a.detectionSettings; if(s.prefs.resetFiltersOnRun!==false)_st.filters=Object.assign({},INIT_FILTERS); return Object.assign({},s,_st);
-      case 'DETECTING':   return Object.assign({},s,{detecting:true});
-      case 'SWITCHING_PROJECT': return Object.assign({},s,{switchingProject:!!a.v});
-      case 'ADD_ISSUE':
+      case A.ADD_MODEL:   var _am=a.v; if(s.modelMeta){var _mm=s.modelMeta.find(function(m){return m.id===_am.id});if(_mm){if(_mm.visible===false)_am=Object.assign({},_am,{visible:false});if(_mm.discipline)_am=Object.assign({},_am,{discipline:_mm.discipline});if(_mm.color)_am=Object.assign({},_am,{color:_mm.color});}} return Object.assign({},s,{models:s.models.concat([_am])});
+      case A.DEL_MODEL:   return Object.assign({},s,{models:s.models.filter(function(m){return m.id!==a.id})});
+      case A.UPD_MODEL:   return Object.assign({},s,{models:s.models.map(function(m){return m.id===a.id?Object.assign({},m,a.u):m})});
+      case A.TOGGLE_STOREY: return Object.assign({},s,{models:s.models.map(function(m){if(m.id!==a.id)return m;var hs=Object.assign({},m.hiddenStoreys||{});if(hs[a.storey])delete hs[a.storey];else hs[a.storey]=true;return Object.assign({},m,{hiddenStoreys:hs});})});
+      case A.TOGGLE_ALL_STOREYS: return Object.assign({},s,{models:s.models.map(function(m){if(m.id!==a.id)return m;return Object.assign({},m,{hiddenStoreys:a.hide?a.storeys.reduce(function(o,st){o[st]=true;return o;},{}):{}}); })});
+      case A.SET_CLASHES: /* falls through to MERGE_CLASHES with no prev clashes */
+      case A.MERGE_CLASHES: var _mr=mergeDetectionResults(a.v, a.t===A.MERGE_CLASHES?s.clashes:[]); var _st={clashes:_mr.clashes,detecting:false,activeId:null,floors:deriveFloors(_mr.clashes),lastDeltaSummary:_mr.deltaSummary}; if(a.detectionSettings)_st.detectionSettings=a.detectionSettings; if(s.prefs.resetFiltersOnRun!==false)_st.filters=Object.assign({},INIT_FILTERS); return Object.assign({},s,_st);
+      case A.DETECTING:   return Object.assign({},s,{detecting:true});
+      case A.SWITCHING_PROJECT: return Object.assign({},s,{switchingProject:!!a.v});
+      case A.ADD_ISSUE:
         // Strong positive signal: issue created from a clash
         var aiClashes=s.clashes;
         if(a.v&&a.v.clashId){
@@ -400,8 +434,8 @@ function startApp() {
           });
         }
         return Object.assign({},s,{issues:s.issues.concat([a.v]),clashes:aiClashes});
-      case 'UPD_ISSUE':   return Object.assign({},s,{issues:s.issues.map(function(i){return i.id===a.id?Object.assign({},i,a.u):i})});
-      case 'AI_FEEDBACK': return Object.assign({},s,{clashes:s.clashes.map(function(c){
+      case A.UPD_ISSUE:   return Object.assign({},s,{issues:s.issues.map(function(i){return i.id===a.id?Object.assign({},i,a.u):i})});
+      case A.AI_FEEDBACK: return Object.assign({},s,{clashes:s.clashes.map(function(c){
         if(c.id!==a.id) return c;
         var upd2 = {aiFeedback:a.v};
         if(a.v) {
@@ -412,7 +446,7 @@ function startApp() {
         }
         return Object.assign({},c,upd2);
       })});
-      case 'CLEAR_TRAINING_DATA':
+      case A.CLEAR_TRAINING_DATA:
         try{localStorage.removeItem('cc_clash_training_data');}catch(e){}
         try{localStorage.removeItem('cc_trainingFeedback');}catch(e){}
         return Object.assign({},s,{
@@ -424,7 +458,7 @@ function startApp() {
           return Object.assign({},i,{aiFeedback:null,aiReasons:[],aiResolution:[],aiNote:'',aiSignals:[],clashTypeConfirmed:null});
         })
       });
-      case 'UPD_CLASH':
+      case A.UPD_CLASH:
         // When denied, keep in state (for training data) but auto-advance to next
         if(a.u&&a.u.status==='denied'){
           var dClash=s.clashes.find(function(c){return c.id===a.id;});
@@ -516,59 +550,59 @@ function startApp() {
         }
         return upd;
       })});
-      case 'ACTIVE':      return Object.assign({},s,{activeId:a.id});
-      case 'MODAL':       return Object.assign({},s,{showModal:a.v, modalElement:a.el||null});
-      case 'UPD_RULES':   return Object.assign({},s,{rules:Object.assign({},s.rules,a.u)});
-      case 'UPD_FILTERS': return Object.assign({},s,{filters:Object.assign({},s.filters,a.u)});
-      case 'RESET_FILTERS': return Object.assign({},s,{filters:Object.assign({},INIT_FILTERS)});
-      case 'SECTION':     return Object.assign({},s,{sectionAxis:a.axis, sectionPos:a.pos!=null?a.pos:s.sectionPos, sectionCustom:null});
-      case 'SECTION_CUSTOM': return Object.assign({},s,{sectionAxis:null, sectionCustom:a.v, sectionPos:a.pos!=null?a.pos:0.5});
-      case 'TAB':         var tabUpd={tab:a.v}; if(a.v!==s.tab&&(a.v==='clashes'||a.v==='issues'||s.tab==='clashes'||s.tab==='issues'))tabUpd.activeId=null; return Object.assign({},s,tabUpd);
-      case 'SETTINGS':    return Object.assign({},s,{showSettings:a.v});
-      case 'TRAINING_MODE': var tm=a.v!=null?!!a.v:!s.trainingMode;try{localStorage.setItem('cc_trainingMode',tm?'1':'0');}catch(e){}return Object.assign({},s,{trainingMode:tm});
-      case 'UPD_PREFS':
+      case A.ACTIVE:      return Object.assign({},s,{activeId:a.id});
+      case A.MODAL:       return Object.assign({},s,{showModal:a.v, modalElement:a.el||null});
+      case A.UPD_RULES:   return Object.assign({},s,{rules:Object.assign({},s.rules,a.u)});
+      case A.UPD_FILTERS: return Object.assign({},s,{filters:Object.assign({},s.filters,a.u)});
+      case A.RESET_FILTERS: return Object.assign({},s,{filters:Object.assign({},INIT_FILTERS)});
+      case A.SECTION:     return Object.assign({},s,{sectionAxis:a.axis, sectionPos:a.pos!=null?a.pos:s.sectionPos, sectionCustom:null});
+      case A.SECTION_CUSTOM: return Object.assign({},s,{sectionAxis:null, sectionCustom:a.v, sectionPos:a.pos!=null?a.pos:0.5});
+      case A.TAB:         var tabUpd={tab:a.v}; if(a.v!==s.tab&&(a.v==='clashes'||a.v==='issues'||s.tab==='clashes'||s.tab==='issues'))tabUpd.activeId=null; return Object.assign({},s,tabUpd);
+      case A.SETTINGS:    return Object.assign({},s,{showSettings:a.v});
+      case A.TRAINING_MODE: var tm=a.v!=null?!!a.v:!s.trainingMode;try{localStorage.setItem('cc_trainingMode',tm?'1':'0');}catch(e){}return Object.assign({},s,{trainingMode:tm});
+      case A.UPD_PREFS:
         if(a.u&&a.u.defaultTolerances!==undefined){try{localStorage.setItem('cc_defaultTolerances',JSON.stringify(a.u.defaultTolerances));}catch(e){}}
         if(a.u){var _pk=['autoFlyTo','autoHighlight','showGrid','showAxes','showMarkers','hoverHighlight','outlineSelected','defaultPriority','defaultCategory','defaultStatus','defaultMaxGap','resetFiltersOnRun','renderStyle'];_pk.forEach(function(k){if(a.u[k]!==undefined){try{localStorage.setItem('cc_'+k,JSON.stringify(a.u[k]));}catch(e){}}});}
         return Object.assign({},s,{prefs:Object.assign({},s.prefs,a.u)});
-      case 'MEASURE_MODE': return Object.assign({},s,{measureMode:a.v});
-      case 'ADD_MEASUREMENT': return Object.assign({},s,{measurements:s.measurements.concat([a.v])});
-      case 'DEL_MEASUREMENT': return Object.assign({},s,{measurements:s.measurements.filter(function(m){return m.id!==a.id})});
-      case 'CLEAR_MEASUREMENTS': return Object.assign({},s,{measurements:[]});
-      case 'ADD_VIEWPOINT': return Object.assign({},s,{viewpoints:s.viewpoints.concat([a.v])});
-      case 'DEL_VIEWPOINT': return Object.assign({},s,{viewpoints:s.viewpoints.filter(function(v){return v.id!==a.id})});
-      case 'SET_CLASSIFICATIONS': return Object.assign({},s,{classifications:a.v});
-      case 'SECTION_BOX':  return Object.assign({},s,{sectionBox:a.v, sectionAxis:null, sectionCustom:null});
-      case 'TOGGLE_CLASS_VIS': var hc2=Object.assign({},s.hiddenClasses); if(hc2[a.key])delete hc2[a.key];else hc2[a.key]=true; return Object.assign({},s,{hiddenClasses:hc2});
-      case 'SHOW_ALL_CLASSES': return Object.assign({},s,{hiddenClasses:{}});
-      case 'HIDE_ALL_CLASSES': var hca={}; if(s.classifications[a.view]){Object.keys(s.classifications[a.view]).forEach(function(k){hca[a.view+':'+k]=true;});} return Object.assign({},s,{hiddenClasses:hca});
-      case 'COLOR_BY_CLASS': return Object.assign({},s,{colorByClass:s.colorByClass===a.v?null:a.v});
+      case A.MEASURE_MODE: return Object.assign({},s,{measureMode:a.v});
+      case A.ADD_MEASUREMENT: return Object.assign({},s,{measurements:s.measurements.concat([a.v])});
+      case A.DEL_MEASUREMENT: return Object.assign({},s,{measurements:s.measurements.filter(function(m){return m.id!==a.id})});
+      case A.CLEAR_MEASUREMENTS: return Object.assign({},s,{measurements:[]});
+      case A.ADD_VIEWPOINT: return Object.assign({},s,{viewpoints:s.viewpoints.concat([a.v])});
+      case A.DEL_VIEWPOINT: return Object.assign({},s,{viewpoints:s.viewpoints.filter(function(v){return v.id!==a.id})});
+      case A.SET_CLASSIFICATIONS: return Object.assign({},s,{classifications:a.v});
+      case A.SECTION_BOX:  return Object.assign({},s,{sectionBox:a.v, sectionAxis:null, sectionCustom:null});
+      case A.TOGGLE_CLASS_VIS: var hc2=Object.assign({},s.hiddenClasses); if(hc2[a.key])delete hc2[a.key];else hc2[a.key]=true; return Object.assign({},s,{hiddenClasses:hc2});
+      case A.SHOW_ALL_CLASSES: return Object.assign({},s,{hiddenClasses:{}});
+      case A.HIDE_ALL_CLASSES: var hca={}; if(s.classifications[a.view]){Object.keys(s.classifications[a.view]).forEach(function(k){hca[a.view+':'+k]=true;});} return Object.assign({},s,{hiddenClasses:hca});
+      case A.COLOR_BY_CLASS: return Object.assign({},s,{colorByClass:s.colorByClass===a.v?null:a.v});
 
-      case 'TREE':         return Object.assign({},s,{treeOpen:a.v});
-      case 'FLOOR_PLAN':   return Object.assign({},s,{floorPlan:a.v, sectionAxis:null, sectionCustom:null, sectionBox:null});
-      case 'SET_HIGHLIGHTED_STOREY': return Object.assign({},s,{_highlightedStorey:a.v});
-      case 'SET_PROJECT':  return Object.assign({},s,{activeProject:a.id});
-      case 'SET_PROJECT_LIST': return Object.assign({},s,{projectList:a.v});
-      case 'LOAD_PROJECT_STATE': return Object.assign({},s,a.data);
-      case 'CLASH_GROUP_BY': try{localStorage.setItem('cc_clashGroupBy',JSON.stringify(a.v));}catch(e){} return Object.assign({},s,{clashGroupBy:a.v});
-      case 'CLASH_SORT_BY': try{localStorage.setItem('cc_clashSortBy',JSON.stringify(a.v));}catch(e){} return Object.assign({},s,{clashSortBy:a.v});
-      case 'ISSUE_GROUP_BY': try{localStorage.setItem('cc_issueGroupBy',JSON.stringify(a.v));}catch(e){} return Object.assign({},s,{issueGroupBy:a.v});
-      case 'ISSUE_SORT_BY': try{localStorage.setItem('cc_issueSortBy',JSON.stringify(a.v));}catch(e){} return Object.assign({},s,{issueSortBy:a.v});
+      case A.TREE:         return Object.assign({},s,{treeOpen:a.v});
+      case A.FLOOR_PLAN:   return Object.assign({},s,{floorPlan:a.v, sectionAxis:null, sectionCustom:null, sectionBox:null});
+      case A.SET_HIGHLIGHTED_STOREY: return Object.assign({},s,{_highlightedStorey:a.v});
+      case A.SET_PROJECT:  return Object.assign({},s,{activeProject:a.id});
+      case A.SET_PROJECT_LIST: return Object.assign({},s,{projectList:a.v});
+      case A.LOAD_PROJECT_STATE: return Object.assign({},s,a.data);
+      case A.CLASH_GROUP_BY: try{localStorage.setItem('cc_clashGroupBy',JSON.stringify(a.v));}catch(e){} return Object.assign({},s,{clashGroupBy:a.v});
+      case A.CLASH_SORT_BY: try{localStorage.setItem('cc_clashSortBy',JSON.stringify(a.v));}catch(e){} return Object.assign({},s,{clashSortBy:a.v});
+      case A.ISSUE_GROUP_BY: try{localStorage.setItem('cc_issueGroupBy',JSON.stringify(a.v));}catch(e){} return Object.assign({},s,{issueGroupBy:a.v});
+      case A.ISSUE_SORT_BY: try{localStorage.setItem('cc_issueSortBy',JSON.stringify(a.v));}catch(e){} return Object.assign({},s,{issueSortBy:a.v});
       // 2D Underlays
-      case 'ADD_UNDERLAY':    return Object.assign({},s,{underlays:s.underlays.concat([a.v]),activeUnderlay:a.v.id});
-      case 'DEL_UNDERLAY':    return Object.assign({},s,{underlays:s.underlays.filter(function(u){return u.id!==a.id}),activeUnderlay:s.activeUnderlay===a.id?null:s.activeUnderlay});
-      case 'UPD_UNDERLAY':    return Object.assign({},s,{underlays:s.underlays.map(function(u){return u.id===a.id?Object.assign({},u,a.u):u})});
-      case 'SET_UNDERLAY':    return Object.assign({},s,{activeUnderlay:a.id});
-      case 'UNDERLAY_MODE':   return Object.assign({},s,{underlayMode:a.v});
-      case 'ADD_MARKUP':      return Object.assign({},s,{markups:s.markups.concat([a.v])});
-      case 'DEL_MARKUP':      return Object.assign({},s,{markups:s.markups.filter(function(m){return m.id!==a.id})});
-      case 'CLEAR_MARKUPS':   return Object.assign({},s,{markups:[]});
-      case 'MARKUP_TOOL':     return Object.assign({},s,{markupTool:a.v});
+      case A.ADD_UNDERLAY:    return Object.assign({},s,{underlays:s.underlays.concat([a.v]),activeUnderlay:a.v.id});
+      case A.DEL_UNDERLAY:    return Object.assign({},s,{underlays:s.underlays.filter(function(u){return u.id!==a.id}),activeUnderlay:s.activeUnderlay===a.id?null:s.activeUnderlay});
+      case A.UPD_UNDERLAY:    return Object.assign({},s,{underlays:s.underlays.map(function(u){return u.id===a.id?Object.assign({},u,a.u):u})});
+      case A.SET_UNDERLAY:    return Object.assign({},s,{activeUnderlay:a.id});
+      case A.UNDERLAY_MODE:   return Object.assign({},s,{underlayMode:a.v});
+      case A.ADD_MARKUP:      return Object.assign({},s,{markups:s.markups.concat([a.v])});
+      case A.DEL_MARKUP:      return Object.assign({},s,{markups:s.markups.filter(function(m){return m.id!==a.id})});
+      case A.CLEAR_MARKUPS:   return Object.assign({},s,{markups:[]});
+      case A.MARKUP_TOOL:     return Object.assign({},s,{markupTool:a.v});
       // Bulk selection
-      case 'SELECT_TOGGLE':  var sel2=Object.assign({},s.selected); if(sel2[a.id])delete sel2[a.id];else sel2[a.id]=true; return Object.assign({},s,{selected:sel2});
-      case 'SELECT_ALL':     var sa={}; (a.ids||[]).forEach(function(id){sa[id]=true;}); return Object.assign({},s,{selected:sa});
-      case 'SELECT_NONE':    return Object.assign({},s,{selected:{}});
-      case 'SELECT_MODE':    return Object.assign({},s,{selectMode:a.v,selected:a.v?s.selected:{}});
-      case 'BATCH_UPD_CLASH':  return Object.assign({},s,{clashes:s.clashes.map(function(c){
+      case A.SELECT_TOGGLE:  var sel2=Object.assign({},s.selected); if(sel2[a.id])delete sel2[a.id];else sel2[a.id]=true; return Object.assign({},s,{selected:sel2});
+      case A.SELECT_ALL:     var sa={}; (a.ids||[]).forEach(function(id){sa[id]=true;}); return Object.assign({},s,{selected:sa});
+      case A.SELECT_NONE:    return Object.assign({},s,{selected:{}});
+      case A.SELECT_MODE:    return Object.assign({},s,{selectMode:a.v,selected:a.v?s.selected:{}});
+      case A.BATCH_UPD_CLASH:  return Object.assign({},s,{clashes:s.clashes.map(function(c){
         if(!s.selected[c.id]) return c;
         var upd=Object.assign({},c,a.u);
         if(a.u&&a.u.status&&a.u.status!==c.status){
@@ -579,12 +613,12 @@ function startApp() {
         }
         return upd;
       }),selected:{}});
-      case 'BATCH_UPD_ISSUE':  return Object.assign({},s,{issues:s.issues.map(function(i){return s.selected[i.id]?Object.assign({},i,a.u):i;}),selected:{}});
+      case A.BATCH_UPD_ISSUE:  return Object.assign({},s,{issues:s.issues.map(function(i){return s.selected[i.id]?Object.assign({},i,a.u):i;}),selected:{}});
       // Revit Bridge
-      case 'UPD_BRIDGE':      return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,a.u)});
-      case 'BRIDGE_LOG':      return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,{log:s.revitBridge.log.concat([{ts:Date.now(),type:a.logType||'info',text:a.text}])})});
-      case 'CLEAR_BRIDGE_LOG':return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,{log:[]})});
-      case 'REVIT_BRIDGE':    return Object.assign({},s,{showRevitBridge:a.v});
+      case A.UPD_BRIDGE:      return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,a.u)});
+      case A.BRIDGE_LOG:      return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,{log:s.revitBridge.log.concat([{ts:Date.now(),type:a.logType||'info',text:a.text}])})});
+      case A.CLEAR_BRIDGE_LOG:return Object.assign({},s,{revitBridge:Object.assign({},s.revitBridge,{log:[]})});
+      case A.REVIT_BRIDGE:    return Object.assign({},s,{showRevitBridge:a.v});
       default:            return s;
     }
   }
@@ -2350,15 +2384,15 @@ function startApp() {
           if (!data._cc || data._cc !== 'ClashControl') throw new Error('Not a ClashControl project file.');
           // Restore models as stubs (geometry must be re-uploaded)
           data.models.forEach(function(m) {
-            d({ t:'ADD_MODEL', v: Object.assign({}, m, { meshes:[], elements:[], _stub:true }) });
+            d({ t:A.ADD_MODEL, v: Object.assign({}, m, { meshes:[], elements:[], _stub:true }) });
           });
           // Restore rules
-          d({ t:'UPD_RULES', u: data.rules });
+          d({ t:A.UPD_RULES, u: data.rules });
           // Restore clashes & issues
-          if (data.clashes) d({ t:'SET_CLASHES', v: data.clashes });
-          (data.issues||[]).forEach(function(i) { d({ t:'ADD_ISSUE', v:i }); });
-          (data.viewpoints||[]).forEach(function(v) { d({ t:'ADD_VIEWPOINT', v:v }); });
-          if (data.measurements) data.measurements.forEach(function(m) { d({ t:'ADD_MEASUREMENT', v:m }); });
+          if (data.clashes) d({ t:A.SET_CLASHES, v: data.clashes });
+          (data.issues||[]).forEach(function(i) { d({ t:A.ADD_ISSUE, v:i }); });
+          (data.viewpoints||[]).forEach(function(v) { d({ t:A.ADD_VIEWPOINT, v:v }); });
+          if (data.measurements) data.measurements.forEach(function(m) { d({ t:A.ADD_MEASUREMENT, v:m }); });
         } catch(err) {
           alert('Load failed: ' + err.message);
         }
@@ -2448,7 +2482,7 @@ function startApp() {
             var mappedType = 'manual';
             if (topicType === 'issue' || topicType === 'error') mappedType = 'hard';
             else if (topicType === 'warning') mappedType = 'soft';
-            d({t:'ADD_ISSUE', v:{
+            d({t:A.ADD_ISSUE, v:{
               id:uid(), source:'bcf_import', type:mappedType, status:mappedStatus,
               title:title, description:desc, priority:priority.toLowerCase(),
               category:'coordination', assignee:'', dueDate:'',
@@ -2458,7 +2492,7 @@ function startApp() {
           } catch(e) { console.warn('BCF parse error:', e); }
         });
         if (imported > 0) {
-          d({t:'TAB', v:'issues'});
+          d({t:A.TAB, v:'issues'});
           alert('Imported ' + imported + ' topic' + (imported>1?'s':'') + ' from BCF.');
         } else {
           alert('No valid topics found in BCF file.');
@@ -2924,7 +2958,7 @@ function startApp() {
         if(fp){
           var delta = e.deltaY > 0 ? -0.15 : 0.15;
           var newElev = fp.elevation + delta;
-          window._ccDispatch({t:'FLOOR_PLAN',v:Object.assign({},fp,{elevation:newElev})});
+          window._ccDispatch({t:A.FLOOR_PLAN,v:Object.assign({},fp,{elevation:newElev})});
         }
         return;
       }
@@ -2935,14 +2969,14 @@ function startApp() {
           e.preventDefault();
           var delta2 = e.deltaY > 0 ? -0.02 : 0.02;
           var newPos = Math.max(0, Math.min(1, cs.pos + delta2));
-          window._ccDispatch({t:'SECTION',axis:cs.axis,pos:newPos});
+          window._ccDispatch({t:A.SECTION,axis:cs.axis,pos:newPos});
           return;
         }
         if(cs && cs.custom){
           e.preventDefault();
           var delta3 = e.deltaY > 0 ? -0.02 : 0.02;
           var newPos2 = Math.max(0, Math.min(1, cs.pos + delta3));
-          window._ccDispatch({t:'SECTION_CUSTOM',v:cs.custom,pos:newPos2});
+          window._ccDispatch({t:A.SECTION_CUSTOM,v:cs.custom,pos:newPos2});
           return;
         }
       }
@@ -3539,7 +3573,7 @@ function startApp() {
         box.expandByScalar(1.5); // padding around elements
         // Dispatch section box via the dispatch function stored on window
         if(window._ccDispatch){
-          window._ccDispatch({t:'SECTION_BOX',v:{enabled:true,min:[box.min.x,box.min.y,box.min.z],max:[box.max.x,box.max.y,box.max.z]}});
+          window._ccDispatch({t:A.SECTION_BOX,v:{enabled:true,min:[box.min.x,box.min.y,box.min.z],max:[box.max.x,box.max.y,box.max.z]}});
         }
       };
 
@@ -3702,7 +3736,7 @@ function startApp() {
           var dx=e.clientX-ds.startX;
           var newRot=ds.startRot+dx*0.01;
           var newSb=Object.assign({},ds.startSb,{min:ds.startSb.min.slice(),max:ds.startSb.max.slice(),rotation:newRot});
-          if(window._ccDispatch) window._ccDispatch({t:'SECTION_BOX',v:newSb});
+          if(window._ccDispatch) window._ccDispatch({t:A.SECTION_BOX,v:newSb});
         } else if(ds.type==='face'){
           // Project mouse ray onto drag plane to get world delta
           var intPt=new THREE.Vector3();
@@ -3718,7 +3752,7 @@ function startApp() {
               else newSb.min[ds.axis]=newSb.max[ds.axis]-0.01;
             }
             if(ds.startSb.rotation) newSb.rotation=ds.startSb.rotation;
-            if(window._ccDispatch) window._ccDispatch({t:'SECTION_BOX',v:newSb});
+            if(window._ccDispatch) window._ccDispatch({t:A.SECTION_BOX,v:newSb});
           }
         }
       });
@@ -3802,7 +3836,7 @@ function startApp() {
             var dist = pts[0].distanceTo(pts[1]);
             var mid = pts[0].clone().add(pts[1]).multiplyScalar(0.5);
             var label = dist < 1 ? (dist*1000).toFixed(0)+' mm' : dist.toFixed(3)+' m';
-            d({t:'ADD_MEASUREMENT', v:{id:uid(), type:'length', value:dist, label:label, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+            d({t:A.ADD_MEASUREMENT, v:{id:uid(), type:'length', value:dist, label:label, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
             measurePtsRef.current = [];
           }
           else if(mode==='angle' && pts.length===3) {
@@ -3818,7 +3852,7 @@ function startApp() {
             var v2 = pts[2].clone().sub(pts[1]).normalize();
             var angle = Math.acos(Math.max(-1,Math.min(1,v1.dot(v2))));
             var deg = (angle*180/Math.PI).toFixed(1);
-            d({t:'ADD_MEASUREMENT', v:{id:uid(), type:'angle', value:angle, label:deg+'°', points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+            d({t:A.ADD_MEASUREMENT, v:{id:uid(), type:'angle', value:angle, label:deg+'°', points:pts.map(function(p){return [p.x,p.y,p.z]})}});
             measurePtsRef.current = [];
           }
           else if(mode==='area' && pts.length>=3) {
@@ -3842,7 +3876,7 @@ function startApp() {
               }
               var area2 = normal2.length()/2;
               var areaLabel = area2 < 1 ? (area2*10000).toFixed(0)+' cm²' : area2.toFixed(3)+' m²';
-              d({t:'ADD_MEASUREMENT', v:{id:uid(), type:'area', value:area2, label:areaLabel, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+              d({t:A.ADD_MEASUREMENT, v:{id:uid(), type:'area', value:area2, label:areaLabel, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
               measurePtsRef.current = [];
             }
             // Otherwise keep collecting points
@@ -3857,8 +3891,8 @@ function startApp() {
             var mh = markerHits[mhi].object;
             if(mh.userData.clashId){
               // Select this clash and switch to clashes tab
-              d({t:'TAB',v:'clashes'});
-              d({t:'ACTIVE',id:mh.userData.clashId});
+              d({t:A.TAB,v:'clashes'});
+              d({t:A.ACTIVE,id:mh.userData.clashId});
               // Find the clash and do highlight/fly
               var allClashes = clashesRef.current||[];
               var hitClash = null;
@@ -3883,8 +3917,8 @@ function startApp() {
           for(var imhi=0;imhi<iMarkerHits.length;imhi++){
             var imh = iMarkerHits[imhi].object;
             if(imh.userData.issueId){
-              d({t:'TAB',v:'issues'});
-              d({t:'ACTIVE',id:imh.userData.issueId});
+              d({t:A.TAB,v:'issues'});
+              d({t:A.ACTIVE,id:imh.userData.issueId});
               var allIssues = issuesRef.current||[];
               var hitIssue = null;
               for(var ii=0;ii<allIssues.length;ii++){if(allIssues[ii].id===imh.userData.issueId){hitIssue=allIssues[ii];break;}}
@@ -4758,7 +4792,7 @@ function startApp() {
           style=${{...S_BTN,background:'var(--overlay-bg)',color:'#93c5fd',border:'1px solid var(--border)',fontSize:'.65rem',padding:'.25rem .5rem'}}>
           Fit All Clashes
         </button>
-        <button onClick=${function(){d({t:'UPD_PREFS',u:{showMarkers:!s.prefs.showMarkers}})}}
+        <button onClick=${function(){d({t:A.UPD_PREFS,u:{showMarkers:!s.prefs.showMarkers}})}}
           style=${{...S_BTN,background:s.prefs.showMarkers?'rgba(37,99,235,.7)':'var(--overlay-bg)',color:s.prefs.showMarkers?'#fff':'var(--text-muted)',border:'1px solid var(--border)',fontSize:'.65rem',padding:'.25rem .5rem'}}>
           ${s.prefs.showMarkers?'Markers On':'Markers Off'}
         </button>
@@ -4798,12 +4832,12 @@ function startApp() {
       </div>`}
       ${html`<${ViewCube} state3d=${state3d} theme=${s.prefs.theme||'dark'} />`}
       ${(s.sectionAxis||s.sectionCustom) && html`<div style=${{...P,top:'7.5rem',right:'.75rem',background:'rgba(30,58,138,.9)',color:'#93c5fd',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'.4rem'}}
-        onClick=${function(){d({t:'SECTION',axis:null})}}>
+        onClick=${function(){d({t:A.SECTION,axis:null})}}>
         <span>Section ${s.sectionAxis?(s.sectionAxis==='y'?'Z':s.sectionAxis==='z'?'Y':s.sectionAxis.toUpperCase()):'Surface'} · ${Math.round(s.sectionPos*100)}%</span>
         <span style=${{fontSize:'.6rem',opacity:.7}} title="Clear section" aria-label="Clear section view">✕</span>
       </div>`}
       ${s.floorPlan && html`<div style=${{...P,top:'7.5rem',right:'.75rem',background:'rgba(91,33,182,.9)',color:'#c084fc',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'.4rem'}}
-        onClick=${function(){d({t:'FLOOR_PLAN',v:null})}}>
+        onClick=${function(){d({t:A.FLOOR_PLAN,v:null})}}>
         <span>3D Section: ${s.floorPlan.storeyName} · ${(s.floorPlan.elevation+(s.floorPlan.cutHeight||1.2)).toFixed(1)}m</span>
         <span style=${{fontSize:'.6rem',opacity:.7}} title="Exit 3D section" aria-label="Exit floor plan view">✕</span>
       </div>`}
@@ -4886,7 +4920,7 @@ function startApp() {
             <span>${ep&&ep.ifcType||''}</span>
             <span>#${selectedEl.expressId}</span>
           </div>
-          <button onClick=${function(){d({t:'MODAL',v:true,el:selectedEl});d({t:'TAB',v:'issues'});}}
+          <button onClick=${function(){d({t:A.MODAL,v:true,el:selectedEl});d({t:A.TAB,v:'issues'});}}
             style=${{...S_BTN,width:'100%',padding:'.4rem',background:'#2563eb',color:'#fff',fontSize:'.7rem',fontWeight:600,borderRadius:6,textAlign:'center',justifyContent:'center'}}>
             + Create Issue from Element
           </button>
@@ -4904,7 +4938,7 @@ function startApp() {
           ${['standard','shaded','rendered','wireframe'].map(function(rs){
             var cur = s.prefs.renderStyle||'standard';
             var labels = {standard:'Standard',shaded:'Shaded',rendered:'Rendered',wireframe:'Wireframe'};
-            return html`<button key=${rs} onClick=${function(){d({t:'UPD_PREFS',u:{renderStyle:rs}})}}
+            return html`<button key=${rs} onClick=${function(){d({t:A.UPD_PREFS,u:{renderStyle:rs}})}}
               style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .4rem',background:cur===rs?'var(--accent)':'transparent',color:cur===rs?'#fff':'var(--text-muted)',border:'1px solid '+(cur===rs?'var(--accent-hover)':'transparent')}}>${labels[rs]}</button>`;
           })}
           <span style=${{width:1,background:'var(--border)',margin:'0 .1rem'}}></span>
@@ -4939,13 +4973,13 @@ function startApp() {
       </div>
       <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end',maxHeight:'calc(100% - 5rem)',overflowY:'auto'}}>
         <div style=${{display:'flex',gap:'.2rem',background:'var(--overlay-bg)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem'}}>
-          <button onClick=${function(){d({t:'MEASURE_MODE',v:s.measureMode?null:'length'});measurePtsRef.current=[];}}
+          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode?null:'length'});measurePtsRef.current=[];}}
             style=${{...S_BTN,fontSize:'.6rem',padding:'.2rem .5rem',background:s.measureMode?'#2563eb':'var(--bg-secondary)',color:s.measureMode?'#fff':'var(--text-secondary)',border:'1px solid '+(s.measureMode?'#3b82f6':'var(--border)')}}>
             ${s.measureMode?'Measuring':'Measure'}
           </button>
-          ${s.measureMode && ['length','angle','area'].map(function(m){return html`<button key=${m} onClick=${function(){d({t:'MEASURE_MODE',v:m});measurePtsRef.current=[];}}
+          ${s.measureMode && ['length','angle','area'].map(function(m){return html`<button key=${m} onClick=${function(){d({t:A.MEASURE_MODE,v:m});measurePtsRef.current=[];}}
             style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .35rem',background:s.measureMode===m?'#1e3a5f':'transparent',color:s.measureMode===m?'#93c5fd':'var(--text-muted)',border:'1px solid '+(s.measureMode===m?'#1e3a5f':'transparent')}}>${m.charAt(0).toUpperCase()+m.slice(1)}</button>`})}
-          ${s.measurements.length>0 && html`<button onClick=${function(){d({t:'CLEAR_MEASUREMENTS'});}}
+          ${s.measurements.length>0 && html`<button onClick=${function(){d({t:A.CLEAR_MEASUREMENTS});}}
             style=${{...S_BTN,fontSize:'.55rem',padding:'.2rem .3rem',background:'#450a0a',color:'#fca5a5'}}>Clear (${s.measurements.length})</button>`}
         </div>
         ${s.measureMode && html`<div style=${{fontSize:'.55rem',color:'#93c5fd',background:'rgba(30,58,138,.85)',padding:'.2rem .5rem',borderRadius:6}}>
@@ -4955,16 +4989,16 @@ function startApp() {
           ${s.measurements.map(function(m){return html`<div key=${m.id} style=${{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.15rem .2rem',fontSize:'.6rem',borderBottom:'1px solid var(--border-subtle)'}}>
             <span style=${{color:m.type==='length'?'#22c55e':m.type==='angle'?'#f59e0b':'#60a5fa'}}>${m.type}</span>
             <span style=${{color:'var(--text-primary)',fontWeight:600}}>${m.label}</span>
-            <button onClick=${function(){d({t:'DEL_MEASUREMENT',id:m.id})}} style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'.5rem'}} aria-label="Delete measurement">✕</button>
+            <button onClick=${function(){d({t:A.DEL_MEASUREMENT,id:m.id})}} style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'.5rem'}} aria-label="Delete measurement">✕</button>
           </div>`})}
         </div>`}
         <div style=${{display:'flex',gap:'.2rem'}}>
-          <button onClick=${function(){if(_resetView)_resetView();if(s.floorPlan)d({t:'FLOOR_PLAN',v:null});}}
+          <button onClick=${function(){if(_resetView)_resetView();if(s.floorPlan)d({t:A.FLOOR_PLAN,v:null});}}
             style=${{...S_BTN,fontSize:'.6rem',padding:'.2rem .5rem',background:'var(--overlay-bg)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}
             title="Reset camera to fit all models">
             Reset View
           </button>
-          <button onClick=${function(){if(_captureViewpoint){var vp=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:'ADD_VIEWPOINT',v:vp});}}}
+          <button onClick=${function(){if(_captureViewpoint){var vp=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:A.ADD_VIEWPOINT,v:vp});}}}
             style=${{...S_BTN,fontSize:'.6rem',padding:'.2rem .5rem',background:'var(--overlay-bg)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>
             Save Viewpoint
           </button>
@@ -4978,7 +5012,7 @@ function startApp() {
               <div style=${{fontSize:'.6rem',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${vp.name}</div>
               <div style=${{fontSize:'.5rem',color:'var(--text-faint)'}}>${new Date(vp.createdAt).toLocaleTimeString()}</div>
             </div>
-            <button onClick=${function(e){e.stopPropagation();d({t:'DEL_VIEWPOINT',id:vp.id});}}
+            <button onClick=${function(e){e.stopPropagation();d({t:A.DEL_VIEWPOINT,id:vp.id});}}
               style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'.5rem'}} aria-label="Delete viewpoint">✕</button>
           </div>`})}
         </div>`}
@@ -4986,7 +5020,7 @@ function startApp() {
       ${ctxMenu && html`<div onClick=${function(){setCtxMenu(null)}} style=${{position:'absolute',inset:0,zIndex:10}}>
         <div style=${{position:'absolute',left:ctxMenu.x,top:ctxMenu.y,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,.6)',overflow:'hidden',minWidth:160,zIndex:11}}
           onClick=${function(e){e.stopPropagation();}}>
-          <button onClick=${function(){d({t:'SECTION_CUSTOM',v:{normal:ctxMenu.normal,point:ctxMenu.point}});setCtxMenu(null);}}
+          <button onClick=${function(){d({t:A.SECTION_CUSTOM,v:{normal:ctxMenu.normal,point:ctxMenu.point}});setCtxMenu(null);}}
             style=${{...S_BTN,width:'100%',textAlign:'left',padding:'.5rem .7rem',background:'transparent',color:'var(--text-primary)',fontSize:'.75rem',borderRadius:0,display:'flex',alignItems:'center',gap:'.4rem'}}>
             <span style=${{fontSize:'.85rem'}}>✂</span> Make Section
           </button>
@@ -4994,7 +5028,7 @@ function startApp() {
             style=${{...S_BTN,width:'100%',textAlign:'left',padding:'.5rem .7rem',background:'transparent',color:'var(--text-primary)',fontSize:'.75rem',borderRadius:0,borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'.4rem'}}>
             <span style=${{fontSize:'.85rem'}}>◻</span> Section Box
           </button>`}
-          <button onClick=${function(){d({t:'SECTION_BOX',v:null});d({t:'SECTION',axis:null});setCtxMenu(null);}}
+          <button onClick=${function(){d({t:A.SECTION_BOX,v:null});d({t:A.SECTION,axis:null});setCtxMenu(null);}}
             style=${{...S_BTN,width:'100%',textAlign:'left',padding:'.5rem .7rem',background:'transparent',color:'var(--text-secondary)',fontSize:'.75rem',borderRadius:0,borderTop:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'.4rem'}}>
             <span style=${{fontSize:'.85rem'}}>○</span> Clear Section
           </button>
@@ -5297,7 +5331,7 @@ function startApp() {
     var sb=s.sectionBox;
     var active=sb&&sb.enabled;
     function toggleSectionBox(){
-      if(active){d({t:'SECTION_BOX',v:null});return;}
+      if(active){d({t:A.SECTION_BOX,v:null});return;}
       // If an element is selected, section box around it; otherwise around whole scene
       var selEid = window._ccSelectedExpressId;
       if(selEid!=null && _sboxAroundElements){
@@ -5306,13 +5340,13 @@ function startApp() {
       }
       if(_getSectionBoxFromScene){
         var box=_getSectionBoxFromScene();
-        if(box) d({t:'SECTION_BOX',v:{enabled:true,min:[box.min.x,box.min.y,box.min.z],max:[box.max.x,box.max.y,box.max.z]}});
+        if(box) d({t:A.SECTION_BOX,v:{enabled:true,min:[box.min.x,box.min.y,box.min.z],max:[box.max.x,box.max.y,box.max.z]}});
       }
     }
     function resetRotation(){
       if(!sb) return;
       var newSb=Object.assign({},sb,{min:sb.min.slice(),max:sb.max.slice(),rotation:0});
-      d({t:'SECTION_BOX',v:newSb});
+      d({t:A.SECTION_BOX,v:newSb});
     }
     return html`<div style=${{marginTop:'.4rem'}}>
       <button onClick=${toggleSectionBox}
@@ -5372,12 +5406,12 @@ function startApp() {
       if(data) {
         // Strip stale delta pills — _delta is only valid within the session that produced it
         if(data.clashes) data.clashes = data.clashes.map(function(c){ return c._delta ? Object.assign({},c,{_delta:null}) : c; });
-        d({t:'LOAD_PROJECT_STATE', data:data});
+        d({t:A.LOAD_PROJECT_STATE, data:data});
       }
     }).then(function(){
       return idbGetProjectFiles(pid);
     }).then(function(stored){
-      if(!stored.length) { d({t:'SWITCHING_PROJECT', v:false}); return; }
+      if(!stored.length) { d({t:A.SWITCHING_PROJECT, v:false}); return; }
       var chain = Promise.resolve();
       stored.forEach(function(entry){
         chain = chain.then(function(){
@@ -5394,17 +5428,17 @@ function startApp() {
             var dObj = DISC.find(function(x){return x.id===disc;});
             var col = dObj ? dObj.c : DISC[0].c;
             var fSize = result.stats ? result.stats.fileSize : entry.buffer.byteLength;
-            d({t:'ADD_MODEL', v:{id:entry.id, name:entry.name.replace(/\.ifc$/i,''), discipline:disc, color:col, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], relatedPairs:result.relatedPairs||{}, stats:result.stats||{fileSize:fSize}}});
+            d({t:A.ADD_MODEL, v:{id:entry.id, name:entry.name.replace(/\.ifc$/i,''), discipline:disc, color:col, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], relatedPairs:result.relatedPairs||{}, stats:result.stats||{fileSize:fSize}}});
           }).catch(function(e){ console.warn('Failed to restore '+entry.name+':', e); })
             .then(function(){ _setGlobalLoading(false); });
         });
       });
-      chain.then(function(){ d({t:'SWITCHING_PROJECT', v:false}); });
+      chain.then(function(){ d({t:A.SWITCHING_PROJECT, v:false}); });
     });
   }
 
   function _switchProject(newProjId, s, d) {
-    d({t:'SWITCHING_PROJECT', v:true});
+    d({t:A.SWITCHING_PROJECT, v:true});
     // Save current project in background — don't block the switch on it
     _saveCurrentProjectData(s);
     // Clear current scene and markers immediately
@@ -5414,7 +5448,7 @@ function startApp() {
     if(_clearIssueMarkers) _clearIssueMarkers();
     if(_resetView) _resetView();
     // Reset state to fresh (keep switchingProject:true while files load)
-    d({t:'LOAD_PROJECT_STATE', data:{
+    d({t:A.LOAD_PROJECT_STATE, data:{
       models:[], clashes:[], issues:[], activeId:null, detecting:false,
       switchingProject:true, lastDeltaSummary:null,
       sectionAxis:null, sectionPos:0.5, sectionCustom:null, sectionBox:null,
@@ -5423,7 +5457,7 @@ function startApp() {
       classifications:{}, hiddenClasses:{}, colorByClass:null,
       floorPlan:null, _highlightedStorey:null
     }});
-    d({t:'SET_PROJECT', id:newProjId});
+    d({t:A.SET_PROJECT, id:newProjId});
     setActiveProjectId(newProjId);
     // Trigger reload of stored files for new project (ModelSidebar will handle via effect)
     window._ccProjectSwitch = newProjId;
@@ -5568,7 +5602,7 @@ function startApp() {
       var id = uid();
       var list = getProjects().concat([{id:id, name:createName.trim(), createdAt:Date.now()}]);
       saveProjects(list);
-      d({t:'SET_PROJECT_LIST', v:list});
+      d({t:A.SET_PROJECT_LIST, v:list});
       _switchProject(id, s, d);
       setCreating(false);
       setProjOpen(false);
@@ -5584,7 +5618,7 @@ function startApp() {
       var list = getProjects().filter(function(p){return p.id!==id;});
       if(!list.length) { list = [{id:'default', name:'Default Project', createdAt:Date.now()}]; }
       saveProjects(list);
-      d({t:'SET_PROJECT_LIST', v:list});
+      d({t:A.SET_PROJECT_LIST, v:list});
       _switchProject(list[0].id, s, d);
       setConfirmDelete(null);
       setProjOpen(false);
@@ -5597,7 +5631,7 @@ function startApp() {
       if(!renameVal.trim()) { setRenaming(false); return; }
       var list = getProjects().map(function(p){return p.id===id?Object.assign({},p,{name:renameVal.trim()}):p;});
       saveProjects(list);
-      d({t:'SET_PROJECT_LIST', v:list});
+      d({t:A.SET_PROJECT_LIST, v:list});
       setRenaming(false);
     }
 
@@ -5686,10 +5720,10 @@ function startApp() {
           style=${{...S_BTN,background:all.length?'#1d4ed8':'var(--bg-secondary)',color:all.length?'#fff':'var(--text-faint)',cursor:all.length?'pointer':'not-allowed'}}>
           ↓ BCF 3.0
         </button>
-        <button onClick=${function(){d({t:'UPD_PREFS',u:{theme:isDark?'light':'dark'}})}}
+        <button onClick=${function(){d({t:A.UPD_PREFS,u:{theme:isDark?'light':'dark'}})}}
           style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',fontSize:'.8rem',padding:'.3rem .5rem'}}
           title=${isDark?'Switch to light mode':'Switch to dark mode'} aria-label=${isDark?'Switch to light mode':'Switch to dark mode'}>${isDark?'☀':'☾'}</button>
-        <button onClick=${function(){d({t:'SETTINGS',v:true})}}
+        <button onClick=${function(){d({t:A.SETTINGS,v:true})}}
           style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',fontSize:'.85rem',padding:'.3rem .5rem'}}
           title="Settings" aria-label="Open settings">⚙</button>
       </div>
@@ -5857,7 +5891,7 @@ function startApp() {
               col = dObj ? dObj.c : col;
               var fSize = result.stats ? result.stats.fileSize : buf.byteLength;
               var modelId = uid();
-              d({t:'ADD_MODEL', v:{id:modelId, name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], relatedPairs:result.relatedPairs||{}, stats:result.stats||{fileSize:fSize}}});
+              d({t:A.ADD_MODEL, v:{id:modelId, name:f.name.replace(/\.ifc$/i,''), discipline:disc, color:col, visible:true, meshes:result.meshes, elements:result.elements, storeys:result.storeys||[], storeyData:result.storeyData||[], relatedPairs:result.relatedPairs||{}, stats:result.stats||{fileSize:fSize}}});
               idbSaveFile(modelId, f.name, buf, s.activeProject||'default');
               idbSaveGeoCache(modelId, _geoSerialize(result)); // cache geometry for fast project-switch restore
             });
@@ -5933,16 +5967,16 @@ function startApp() {
         ${s.underlays.length > 0 && html`<div style=${{marginTop:'.4rem',borderTop:'1px solid var(--border-subtle)',paddingTop:'.4rem'}}>
           <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}}>
             <span style=${{fontSize:'.6rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>2D Underlays</span>
-            <button onClick=${function(){d({t:'UNDERLAY_MODE',v:'view2d'})}}
+            <button onClick=${function(){d({t:A.UNDERLAY_MODE,v:'view2d'})}}
               style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:'#7c3aed',color:'#fff'}}>View 2D</button>
           </div>
           ${s.underlays.map(function(ul){
             return html`<div key=${ul.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.25rem .3rem',background:s.activeUnderlay===ul.id?'var(--bg-tertiary)':'transparent',borderRadius:4,cursor:'pointer'}}
-              onClick=${function(){d({t:'SET_UNDERLAY',id:ul.id})}}>
+              onClick=${function(){d({t:A.SET_UNDERLAY,id:ul.id})}}>
               <span style=${{width:8,height:8,borderRadius:2,background:ul.type==='dxf'?'#22c55e':'#ef4444',flexShrink:0}}></span>
               <span style=${{fontSize:'.6rem',color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${ul.name}</span>
               <span style=${{fontSize:'.5rem',color:'var(--text-faint)',textTransform:'uppercase'}}>${ul.type}</span>
-              <button onClick=${function(e){e.stopPropagation();d({t:'DEL_UNDERLAY',id:ul.id})}}
+              <button onClick=${function(e){e.stopPropagation();d({t:A.DEL_UNDERLAY,id:ul.id})}}
                 style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>✕</button>
             </div>`;
           })}
@@ -5973,11 +6007,11 @@ function startApp() {
           <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}}>
             <span style=${{fontSize:'.65rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Levels</span>
             <div style=${{display:'flex',gap:'.2rem'}}>
-              ${activePlan && html`<button onClick=${function(){d({t:'FLOOR_PLAN',v:null})}}
+              ${activePlan && html`<button onClick=${function(){d({t:A.FLOOR_PLAN,v:null})}}
                 style=${{...S_BTN,fontSize:'.6rem',padding:'.1rem .3rem',background:'#7c3aed',color:'#fff'}}>Exit Plan</button>`}
-              <button onClick=${function(){s.models.forEach(function(m){d({t:'TOGGLE_ALL_STOREYS',id:m.id,storeys:m.storeys||[],hide:false})})}}
+              <button onClick=${function(){s.models.forEach(function(m){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:m.storeys||[],hide:false})})}}
                 style=${{...S_BTN,fontSize:'.6rem',padding:'.1rem .3rem',background:'var(--bg-primary)',color:'var(--text-secondary)'}}>All on</button>
-              <button onClick=${function(){s.models.forEach(function(m){d({t:'TOGGLE_ALL_STOREYS',id:m.id,storeys:m.storeys||[],hide:true})})}}
+              <button onClick=${function(){s.models.forEach(function(m){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:m.storeys||[],hide:true})})}}
                 style=${{...S_BTN,fontSize:'.6rem',padding:'.1rem .3rem',background:'var(--bg-primary)',color:'var(--text-secondary)'}}>All off</button>
             </div>
           </div>
@@ -5993,7 +6027,7 @@ function startApp() {
                 if(isHighlighted){
                   // Un-highlight: unghost all
                   if(_unghostAll) _unghostAll();
-                  d({t:'SET_HIGHLIGHTED_STOREY',v:null});
+                  d({t:A.SET_HIGHLIGHTED_STOREY,v:null});
                 } else {
                   var ids=[];
                   s.models.forEach(function(m){
@@ -6002,7 +6036,7 @@ function startApp() {
                     });
                   });
                   if(ids.length && _ghostOthers) _ghostOthers(ids);
-                  d({t:'SET_HIGHLIGHTED_STOREY',v:st});
+                  d({t:A.SET_HIGHLIGHTED_STOREY,v:st});
                 }
               }}
               onDblClick=${function(e){
@@ -6019,7 +6053,7 @@ function startApp() {
                   if(_ghostOthers) _ghostOthers(ids);
                   if(_flyToElements) _flyToElements(ids);
                 }
-                d({t:'SET_HIGHLIGHTED_STOREY',v:st});
+                d({t:A.SET_HIGHLIGHTED_STOREY,v:st});
               }}
               style=${{display:'flex',alignItems:'center',gap:'.25rem',padding:'.2rem .3rem',cursor:'pointer',borderRadius:4,background:isPlanActive?'#2d1a4e':isHighlighted?'var(--bg-secondary)':'transparent',transition:'background .15s'}}>
               <span style=${{fontSize:'.6rem',color:isPlanActive?'#c084fc':isHighlighted?'#38bdf8':'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:isHighlighted||isPlanActive?600:400}} title=${st+(hasElev?' ('+elev.toFixed(1)+'m)':'')}>${st}</span>
@@ -6032,7 +6066,7 @@ function startApp() {
             <div style=${{display:'flex',alignItems:'center',gap:'.2rem',marginBottom:'.15rem'}}>
               <span style=${{fontSize:'.5rem',color:'var(--text-muted)'}}>Cut height:</span>
               <input type="range" min="0.3" max="4" step="0.1" value=${activePlan.cutHeight||1.2}
-                onInput=${function(e){d({t:'FLOOR_PLAN',v:Object.assign({},activePlan,{cutHeight:parseFloat(e.target.value)})});}}
+                onInput=${function(e){d({t:A.FLOOR_PLAN,v:Object.assign({},activePlan,{cutHeight:parseFloat(e.target.value)})});}}
                 style=${{flex:1,height:10}} />
               <span style=${{fontSize:'.5rem',color:'#a78bfa',minWidth:25}}>${(activePlan.cutHeight||1.2).toFixed(1)}m</span>
             </div>
@@ -6043,9 +6077,9 @@ function startApp() {
       <div style=${{padding:'.75rem',borderTop:'1px solid var(--border-subtle)',flexShrink:0}}>
         <span style=${{fontSize:'.7rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em',display:'block',marginBottom:'.4rem'}}>Section / Clipping</span>
         <div style=${{display:'flex',gap:'.2rem',marginBottom:'.3rem'}}>
-          ${[{axis:'x',label:'X'},{axis:'z',label:'Y'},{axis:'y',label:'Z'}].map(function(item){return html`<button key=${item.axis} onClick=${function(){d({t:'SECTION_BOX',v:null});d({t:'SECTION',axis:s.sectionAxis===item.axis?null:item.axis});}}
+          ${[{axis:'x',label:'X'},{axis:'z',label:'Y'},{axis:'y',label:'Z'}].map(function(item){return html`<button key=${item.axis} onClick=${function(){d({t:A.SECTION_BOX,v:null});d({t:A.SECTION,axis:s.sectionAxis===item.axis?null:item.axis});}}
             style=${{...S_BTN,flex:1,padding:'.25rem',background:s.sectionAxis===item.axis?'#2563eb':'var(--bg-secondary)',color:s.sectionAxis===item.axis?'#fff':'var(--text-muted)'}}>${item.label}</button>`})}
-          <button onClick=${function(){d({t:'SECTION',axis:null});d({t:'SECTION_BOX',v:null});}}
+          <button onClick=${function(){d({t:A.SECTION,axis:null});d({t:A.SECTION_BOX,v:null});}}
             style=${{...S_BTN,flex:1,padding:'.25rem',background:!s.sectionAxis&&!s.sectionCustom&&(!s.sectionBox||!s.sectionBox.enabled)?'#2563eb':'var(--bg-secondary)',color:!s.sectionAxis&&!s.sectionCustom&&(!s.sectionBox||!s.sectionBox.enabled)?'#fff':'var(--text-muted)'}}>Off</button>
         </div>
         ${s.sectionCustom && html`<div style=${{marginTop:'.3rem',fontSize:'.6rem',color:'#93c5fd',background:'#1e3a5f',padding:'.2rem .4rem',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -6054,7 +6088,7 @@ function startApp() {
         </div>`}
         ${(s.sectionAxis||s.sectionCustom) && html`<div style=${{marginTop:'.3rem'}}>
           <input type="range" min="0" max="1" step="0.005" value=${s.sectionPos}
-            onInput=${function(e){var pos=parseFloat(e.target.value);if(s.sectionAxis)d({t:'SECTION',axis:s.sectionAxis,pos:pos});else if(s.sectionCustom)d({t:'SECTION_CUSTOM',v:s.sectionCustom,pos:pos});}}
+            onInput=${function(e){var pos=parseFloat(e.target.value);if(s.sectionAxis)d({t:A.SECTION,axis:s.sectionAxis,pos:pos});else if(s.sectionCustom)d({t:A.SECTION_CUSTOM,v:s.sectionCustom,pos:pos});}}
             style=${{width:'100%'}} />
           <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>${Math.round(s.sectionPos*100)}%</span>
         </div>`}
@@ -6068,7 +6102,7 @@ function startApp() {
     var op=useState(false), open=op[0], setOpen=op[1];
     return html`<div style=${{background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden'}}>
       <div style=${{display:'flex',alignItems:'center',gap:'.35rem',padding:'.35rem .5rem'}}>
-        <span onClick=${function(){d({t:'UPD_MODEL',id:m.id,u:{visible:!m.visible}})}}
+        <span onClick=${function(){d({t:A.UPD_MODEL,id:m.id,u:{visible:!m.visible}})}}
           style=${{width:14,height:14,borderRadius:3,border:'2px solid '+(m.visible!==false?'#3b82f6':'#475569'),background:m.visible!==false?'#3b82f6':'transparent',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
           ${m.visible!==false && html`<span style=${{color:'#fff',fontSize:9}}>✓</span>`}
         </span>
@@ -6076,16 +6110,16 @@ function startApp() {
         <span style=${{color:'var(--text-primary)',fontSize:'.75rem',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${m.name}>${m.name}</span>
         ${m._stub && html`<span style=${{fontSize:'.55rem',color:'#f59e0b',background:'var(--pill-amber-bg)',padding:'.05rem .3rem',borderRadius:4,flexShrink:0}}>stub</span>`}
         <button onClick=${function(){setOpen(!open)}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>${open?'▲':'▼'}</button>
-        <button onClick=${function(){if(!confirm('Remove "'+m.name+'" from this project?'))return;d({t:'DEL_MODEL',id:m.id});idbDeleteFile(m.id);idbDeleteGeoCache(m.id);}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>✕</button>
+        <button onClick=${function(){if(!confirm('Remove "'+m.name+'" from this project?'))return;d({t:A.DEL_MODEL,id:m.id});idbDeleteFile(m.id);idbDeleteGeoCache(m.id);}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'.6rem'}}>✕</button>
       </div>
       ${open && html`<div style=${{padding:'.5rem',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:'.35rem'}}>
-        <select value=${m.discipline} onChange=${function(e){var p=DISC.find(function(x){return x.id===e.target.value});d({t:'UPD_MODEL',id:m.id,u:{discipline:e.target.value,color:p?p.c:m.color}})}}
+        <select value=${m.discipline} onChange=${function(e){var p=DISC.find(function(x){return x.id===e.target.value});d({t:A.UPD_MODEL,id:m.id,u:{discipline:e.target.value,color:p?p.c:m.color}})}}
           style=${{...S_INPUT,fontSize:'.7rem',padding:'.2rem .4rem'}}>
           ${DISC.map(function(p){return html`<option key=${p.id} value=${p.id}>${p.label}</option>`})}
         </select>
         <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
           <span style=${{fontSize:'.7rem',color:'var(--text-faint)'}}>Colour</span>
-          <input type="color" value=${m.color} onChange=${function(e){d({t:'UPD_MODEL',id:m.id,u:{color:e.target.value}})}} style=${{width:24,height:20,border:'none',padding:0,background:'none',cursor:'pointer'}} />
+          <input type="color" value=${m.color} onChange=${function(e){d({t:A.UPD_MODEL,id:m.id,u:{color:e.target.value}})}} style=${{width:24,height:20,border:'none',padding:0,background:'none',cursor:'pointer'}} />
         </div>
         <span style=${{fontSize:'.65rem',color:'var(--text-faint)'}}>${(m.elements&&m.elements.length||0)} elements · ${(m.meshes&&m.meshes.length||0)} meshes</span>
         ${m.stats && html`<div style=${{fontSize:'.55rem',color:'var(--text-faint)',display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
@@ -6096,9 +6130,9 @@ function startApp() {
           <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.25rem'}}>
             <span style=${{fontSize:'.6rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.03em'}}>Levels</span>
             <div style=${{display:'flex',gap:'.2rem'}}>
-              <button onClick=${function(){d({t:'TOGGLE_ALL_STOREYS',id:m.id,storeys:m.storeys,hide:false})}}
+              <button onClick=${function(){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:m.storeys,hide:false})}}
                 style=${{...S_BTN,fontSize:'.5rem',padding:'.1rem .25rem',background:'var(--bg-primary)',color:'var(--text-muted)'}}>All on</button>
-              <button onClick=${function(){d({t:'TOGGLE_ALL_STOREYS',id:m.id,storeys:m.storeys,hide:true})}}
+              <button onClick=${function(){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:m.storeys,hide:true})}}
                 style=${{...S_BTN,fontSize:'.5rem',padding:'.1rem .25rem',background:'var(--bg-primary)',color:'var(--text-muted)'}}>All off</button>
             </div>
           </div>
@@ -6106,7 +6140,7 @@ function startApp() {
             ${m.storeys.map(function(st){
               var hidden = m.hiddenStoreys&&m.hiddenStoreys[st];
               return html`<label key=${st} style=${{display:'flex',alignItems:'center',gap:'.3rem',cursor:'pointer',padding:'.1rem 0'}}>
-                <span onClick=${function(e){e.preventDefault();d({t:'TOGGLE_STOREY',id:m.id,storey:st})}}
+                <span onClick=${function(e){e.preventDefault();d({t:A.TOGGLE_STOREY,id:m.id,storey:st})}}
                   style=${{width:12,height:12,borderRadius:2,border:'2px solid '+(hidden?'#475569':'#3b82f6'),background:hidden?'transparent':'#3b82f6',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
                   ${!hidden && html`<span style=${{color:'#fff',fontSize:8}}>✓</span>`}
                 </span>
@@ -6141,11 +6175,11 @@ function startApp() {
     var lastClassifyRef = useRef('');
     useEffect(function(){
       var vis = s.models.filter(function(m){return m.visible!==false});
-      if(vis.length===0){ d({t:'SET_CLASSIFICATIONS',v:{}}); lastClassifyRef.current=''; return; }
+      if(vis.length===0){ d({t:A.SET_CLASSIFICATIONS,v:{}}); lastClassifyRef.current=''; return; }
       var sig = vis.map(function(m){return m.id+':'+(m.elements?m.elements.length:0)+':'+(m.visible!==false)}).join(',');
       if(sig===lastClassifyRef.current) return;
       lastClassifyRef.current = sig;
-      d({t:'SET_CLASSIFICATIONS',v:classifyModels(vis)});
+      d({t:A.SET_CLASSIFICATIONS,v:classifyModels(vis)});
     }, [s.models]);
     var hasCls = cls && Object.keys(cls).length>0;
     var classView = viewMode!=='tree' ? viewMode : null;
@@ -6256,7 +6290,7 @@ function startApp() {
         </div>`}
         ${classView && total>0 && html`<div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'.15rem'}}>
           <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
-            <span onClick=${function(){if(hiddenCount>0){d({t:'SHOW_ALL_CLASSES'})}else{d({t:'HIDE_ALL_CLASSES',view:classView})}}}
+            <span onClick=${function(){if(hiddenCount>0){d({t:A.SHOW_ALL_CLASSES})}else{d({t:A.HIDE_ALL_CLASSES,view:classView})}}}
               style=${{width:12,height:12,borderRadius:2,border:'2px solid '+(hiddenCount===0?'#3b82f6':hiddenCount<keys.length?'#64748b':'#475569'),background:hiddenCount===0?'#3b82f6':hiddenCount<keys.length?'#334155':'transparent',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}
               title=${hiddenCount>0?'Show all':'Hide all'}>
               ${hiddenCount===0 && html`<span style=${{color:'#fff',fontSize:8}}>✓</span>`}
@@ -6265,7 +6299,7 @@ function startApp() {
             <span style=${{fontSize:'.55rem',color:'var(--text-faint)'}}>${keys.length} groups · ${total} elements</span>
           </div>
           <div style=${{display:'flex',gap:'.2rem'}}>
-            <button onClick=${function(){d({t:'COLOR_BY_CLASS',v:classView})}}
+            <button onClick=${function(){d({t:A.COLOR_BY_CLASS,v:classView})}}
               style=${{...S_BTN,fontSize:'.5rem',padding:'.1rem .3rem',background:s.colorByClass===classView?'#7c3aed':'var(--bg-secondary)',color:s.colorByClass===classView?'#fff':'var(--text-faint)'}}
               title="Color elements by this classification">Color</button>
           </div>
@@ -6356,7 +6390,7 @@ function startApp() {
           var barColor = s.colorByClass===classView ? CLASS_COLORS[idx%CLASS_COLORS.length] : (classView==='byDiscipline'?'#60a5fa':classView==='byType'?'#c084fc':classView==='byStorey'?'#34d399':'#fbbf24');
           return html`<div key=${k} style=${{padding:'.3rem .6rem',borderBottom:'1px solid var(--border-subtle)',opacity:isHidden?.4:1,transition:'opacity .2s'}}>
             <div style=${{display:'flex',alignItems:'center',gap:'.3rem',marginBottom:'.15rem'}}>
-              <span onClick=${function(){d({t:'TOGGLE_CLASS_VIS',key:visKey})}}
+              <span onClick=${function(){d({t:A.TOGGLE_CLASS_VIS,key:visKey})}}
                 style=${{width:12,height:12,borderRadius:2,border:'2px solid '+(isHidden?'#475569':'#3b82f6'),background:isHidden?'transparent':'#3b82f6',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
                 ${!isHidden && html`<span style=${{color:'#fff',fontSize:8}}>✓</span>`}
               </span>
@@ -6472,7 +6506,7 @@ function startApp() {
     var count = Object.keys(sel).length;
     if (!s.selectMode) {
       return html`<div style=${{padding:'.25rem .5rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <button onClick=${function(){d({t:'SELECT_MODE',v:true})}}
+        <button onClick=${function(){d({t:A.SELECT_MODE,v:true})}}
           style=${{...S_BTN,fontSize:'.58rem',padding:'.15rem .4rem',background:'none',color:'var(--text-faint)',border:'1px solid var(--border)'}}>
           Select Multiple
         </button>
@@ -6480,12 +6514,12 @@ function startApp() {
     }
     return html`<div style=${{padding:'.35rem .5rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,background:'var(--accent-bg)'}}>
       <div style=${{display:'flex',alignItems:'center',gap:'.3rem',marginBottom:count>0?'.3rem':0}}>
-        <button onClick=${function(){var ids=items.map(function(i){return i.id;}); d({t:'SELECT_ALL',ids:ids})}}
+        <button onClick=${function(){var ids=items.map(function(i){return i.id;}); d({t:A.SELECT_ALL,ids:ids})}}
           style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .3rem',background:'var(--accent)',color:'#fff'}}>All</button>
-        <button onClick=${function(){d({t:'SELECT_NONE'})}}
+        <button onClick=${function(){d({t:A.SELECT_NONE})}}
           style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .3rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>None</button>
         <span style=${{flex:1,fontSize:'.62rem',color:'var(--accent-subtle)',fontWeight:600}}>${count} selected</span>
-        <button onClick=${function(){d({t:'SELECT_MODE',v:false})}}
+        <button onClick=${function(){d({t:A.SELECT_MODE,v:false})}}
           style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .3rem',background:'none',color:'var(--text-muted)'}}>Cancel</button>
       </div>
       ${count > 0 && html`<div style=${{display:'flex',gap:'.25rem',flexWrap:'wrap'}}>
@@ -6495,7 +6529,7 @@ function startApp() {
           ${Object.keys(STAT).map(function(k){return html`<option key=${k} value=${k}>${STAT[k].label}</option>`})}
         </select>
         ${!isClash && html`<input type="text" placeholder="Assign to..." onKeyDown=${function(e){
-            if(e.key==='Enter'&&e.target.value.trim()){d({t:'BATCH_UPD_ISSUE',u:{assignee:e.target.value.trim()}});e.target.value='';}
+            if(e.key==='Enter'&&e.target.value.trim()){d({t:A.BATCH_UPD_ISSUE,u:{assignee:e.target.value.trim()}});e.target.value='';}
           }} style=${{...S_INPUT,fontSize:'.6rem',padding:'.15rem .25rem',width:'auto',flex:1}} />`}
       </div>`}
     </div>`;
@@ -6532,7 +6566,7 @@ function startApp() {
     ];
 
     function applyPreset(preset) {
-      d({t:'UPD_RULES', u:preset.r});
+      d({t:A.UPD_RULES, u:preset.r});
     }
     function _confirmIfClashes(cb) {
       if (s.clashes && s.clashes.length > 0) {
@@ -6553,8 +6587,8 @@ function startApp() {
       if (!canRun) return;
       _confirmIfClashes(function(){
         var ds = _captureDetectionSettings(s.rules, s.models);
-        d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
-        setTimeout(function(){ d({t:'MERGE_CLASHES', v:detectClashes(s.models, s.rules), detectionSettings:ds}); }, 20);
+        d({t:A.DETECTING}); d({t:A.TAB,v:'clashes'});
+        setTimeout(function(){ d({t:A.MERGE_CLASHES, v:detectClashes(s.models, s.rules), detectionSettings:ds}); }, 20);
       });
     }
     function applyAndRun(preset) {
@@ -6562,9 +6596,9 @@ function startApp() {
       _confirmIfClashes(function(){
         var merged = Object.assign({}, s.rules, preset.r);
         var ds = _captureDetectionSettings(merged, s.models);
-        d({t:'UPD_RULES', u:preset.r});
-        d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
-        setTimeout(function(){ d({t:'MERGE_CLASHES', v:detectClashes(s.models, merged), detectionSettings:ds}); }, 20);
+        d({t:A.UPD_RULES, u:preset.r});
+        d({t:A.DETECTING}); d({t:A.TAB,v:'clashes'});
+        setTimeout(function(){ d({t:A.MERGE_CLASHES, v:detectClashes(s.models, merged), detectionSettings:ds}); }, 20);
       });
     }
 
@@ -6619,15 +6653,15 @@ function startApp() {
           <div style=${{display:'flex',gap:'.2rem',flexWrap:'wrap'}}>
             ${savedPresets.map(function(sp){
               return html`<div key=${sp.id} style=${{display:'inline-flex',alignItems:'center',gap:'2px'}}>
-                <button onClick=${function(){d({t:'UPD_RULES',u:sp.rules})}} title=${'Load: '+sp.name}
+                <button onClick=${function(){d({t:A.UPD_RULES,u:sp.rules})}} title=${'Load: '+sp.name}
                   style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .35rem',background:'var(--bg-tertiary)',color:'var(--text-secondary)',borderRadius:'8px 0 0 8px'}}>
                   ${sp.name}
                 </button>
                 <button onClick=${function(){
                   if(!canRun)return;
                   var merged=Object.assign({},s.rules,sp.rules);
-                  d({t:'UPD_RULES',u:sp.rules});d({t:'DETECTING'});d({t:'TAB',v:'clashes'});
-                  setTimeout(function(){d({t:'MERGE_CLASHES',v:detectClashes(s.models,merged)});},20);
+                  d({t:A.UPD_RULES,u:sp.rules});d({t:A.DETECTING});d({t:A.TAB,v:'clashes'});
+                  setTimeout(function(){d({t:A.MERGE_CLASHES,v:detectClashes(s.models,merged)});},20);
                 }} disabled=${!canRun} title="Load & Run"
                   style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .25rem',background:'var(--accent-bg)',color:'var(--accent-subtle)',borderRadius:'0',borderLeft:'1px solid var(--border-subtle)'}}>▶</button>
                 <button onClick=${function(){
@@ -6645,14 +6679,14 @@ function startApp() {
       ${expanded && html`<div style=${{padding:'0 .5rem .4rem',borderTop:'1px solid var(--border-subtle)'}}>
         <div style=${{marginTop:'.3rem'}}>
           <span class="cc-tip cc-tip-delay" data-tip="First group of elements to check. Clashes are detected between Model A and Model B." style=${{...FL,cursor:'help'}}>Model A</span>
-          <select value=${rules.modelA} onChange=${function(e){d({t:'UPD_RULES',u:{modelA:e.target.value}})}}
+          <select value=${rules.modelA} onChange=${function(e){d({t:A.UPD_RULES,u:{modelA:e.target.value}})}}
             style=${{...S_INPUT,fontSize:'.65rem',padding:'.2rem .3rem',marginBottom:'.25rem'}}>
             <option value="all">All models</option>
             ${DISC.map(function(p){return html`<option key=${p.id} value=${'disc:'+p.id}>${p.label} models</option>`})}
             ${models.map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
           </select>
           <span class="cc-tip cc-tip-delay" data-tip="Second group of elements to check against Model A." style=${{...FL,cursor:'help'}}>Model B</span>
-          <select value=${rules.modelB} onChange=${function(e){d({t:'UPD_RULES',u:{modelB:e.target.value}})}}
+          <select value=${rules.modelB} onChange=${function(e){d({t:A.UPD_RULES,u:{modelB:e.target.value}})}}
             style=${{...S_INPUT,fontSize:'.65rem',padding:'.2rem .3rem',marginBottom:'.25rem'}}>
             <option value="all">All models</option>
             ${DISC.map(function(p){return html`<option key=${p.id} value=${'disc:'+p.id}>${p.label} models</option>`})}
@@ -6661,13 +6695,13 @@ function startApp() {
         </div>
         <div style=${TOGROW}>
           <span class="cc-tip cc-tip-delay" data-tip="Detect elements that physically intersect. Disable to only check for near misses using the max gap distance." style=${{fontSize:'.68rem',color:'var(--text-primary)',cursor:'help'}}>Hard clashes</span>
-          <${MiniToggle} on=${rules.hard} onToggle=${function(){d({t:'UPD_RULES',u:{hard:!rules.hard}})}} />
+          <${MiniToggle} on=${rules.hard} onToggle=${function(){d({t:A.UPD_RULES,u:{hard:!rules.hard}})}} />
         </div>
         <div style=${{marginBottom:'.25rem'}}>
           <span class="cc-tip cc-tip-delay" data-tip="Elements within this distance are flagged as near misses. Set to 0 for hard clashes only." style=${{...FL,cursor:'help'}}>Max gap (mm)</span>
           <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
             <input type="range" min="0" max="500" step="5" value=${rules.maxGap||0}
-              onInput=${function(e){d({t:'UPD_RULES',u:{maxGap:+e.target.value}})}}
+              onInput=${function(e){d({t:A.UPD_RULES,u:{maxGap:+e.target.value}})}}
               style=${{flex:1,height:4}} />
             <span style=${{fontSize:'.65rem',color:'var(--accent-subtle)',fontWeight:600,minWidth:30,textAlign:'right'}}>${rules.maxGap||0}</span>
           </div>
@@ -6676,7 +6710,7 @@ function startApp() {
           <span class="cc-tip cc-tip-delay" data-tip=${'Minimum AABB overlap volume to count as a hard clash. Filters flush-surface false positives. 0 = detect everything. Current: '+(rules.minOverlapVolM3*1e6).toFixed(0)+' cm³'} style=${{...FL,cursor:'help'}}>Min overlap volume (cm³)</span>
           <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
             <input type="range" min="0" max="200" step="1" value=${Math.round((rules.minOverlapVolM3||0)*1e6)}
-              onInput=${function(e){d({t:'UPD_RULES',u:{minOverlapVolM3:+e.target.value/1e6}})}}
+              onInput=${function(e){d({t:A.UPD_RULES,u:{minOverlapVolM3:+e.target.value/1e6}})}}
               style=${{flex:1,height:4}} />
             <span style=${{fontSize:'.65rem',color:'var(--accent-subtle)',fontWeight:600,minWidth:30,textAlign:'right'}}>${Math.round((rules.minOverlapVolM3||0)*1e6)}</span>
           </div>
@@ -6694,7 +6728,7 @@ function startApp() {
               return html`<div key=${k} style=${{display:'flex',alignItems:'center',gap:'.2rem',marginBottom:'.15rem'}}>
                 <span style=${{fontSize:'.58rem',color:'var(--text-secondary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${k.replace(':',' ↔ ').replace(/Ifc/g,'')}</span>
                 <span style=${{fontSize:'.58rem',color:'var(--accent-subtle)',fontWeight:600}}>${tpPairs[k]}mm</span>
-                <button onClick=${function(){var u=Object.assign({},tpPairs);delete u[k];d({t:'UPD_RULES',u:{toleranceByTypePair:u}})}}
+                <button onClick=${function(){var u=Object.assign({},tpPairs);delete u[k];d({t:A.UPD_RULES,u:{toleranceByTypePair:u}})}}
                   style=${{...S_BTN,fontSize:'.5rem',padding:'0 3px',background:'none',color:'var(--text-faint)'}}>✕</button>
               </div>`;
             })}
@@ -6711,7 +6745,7 @@ function startApp() {
                   if(!tp.a||!tp.b||tp.a===tp.b) return;
                   var key=tp.a<tp.b?tp.a+':'+tp.b:tp.b+':'+tp.a;
                   var u=Object.assign({},tpPairs);u[key]=+tp.mm||0;
-                  d({t:'UPD_RULES',u:{toleranceByTypePair:u}});
+                  d({t:A.UPD_RULES,u:{toleranceByTypePair:u}});
                 }} style=${{...S_BTN,fontSize:'.55rem',padding:'1px 5px',background:'var(--accent-bg)',color:'var(--accent-subtle)'}}>Add</button>
               </div>`;
             }()}
@@ -6719,11 +6753,11 @@ function startApp() {
         }()}
         <div style=${TOGROW}>
           <span class="cc-tip cc-tip-delay" data-tip="Include clashes where the same pair of elements overlap in multiple locations. Off by default to reduce noise." style=${{fontSize:'.68rem',color:'var(--text-primary)',cursor:'help'}}>Duplicates</span>
-          <${MiniToggle} on=${rules.duplicates} onToggle=${function(){d({t:'UPD_RULES',u:{duplicates:!rules.duplicates}})}} />
+          <${MiniToggle} on=${rules.duplicates} onToggle=${function(){d({t:A.UPD_RULES,u:{duplicates:!rules.duplicates}})}} />
         </div>
         <div style=${{marginBottom:'.25rem'}}>
           <span style=${{...FL,cursor:'help'}} class="cc-tip cc-tip-delay" data-tip="Check elements within the same model for clashes. Can target just Model A, just Model B, or both.">Self-clashes</span>
-          <select value=${rules.selfClashGroup||(rules.excludeSelf?'none':'both')} onChange=${function(e){d({t:'UPD_RULES',u:{selfClashGroup:e.target.value,excludeSelf:e.target.value==='none'}})}}
+          <select value=${rules.selfClashGroup||(rules.excludeSelf?'none':'both')} onChange=${function(e){d({t:A.UPD_RULES,u:{selfClashGroup:e.target.value,excludeSelf:e.target.value==='none'}})}}
             style=${{...S_INPUT,fontSize:'.65rem',padding:'.2rem .3rem'}}>
             <option value="none">Off</option>
             <option value="both">Both groups</option>
@@ -6733,11 +6767,11 @@ function startApp() {
         </div>
         <div style=${TOGROW}>
           <span class="cc-tip cc-tip-delay" data-tip="Only report clashes involving elements that changed since the last detection run. Useful for iterative workflows on evolving models." style=${{fontSize:'.68rem',color:'var(--text-primary)',cursor:'help'}}>Change-aware</span>
-          <${MiniToggle} on=${rules.changeAware} onToggle=${function(){d({t:'UPD_RULES',u:{changeAware:!rules.changeAware}})}} />
+          <${MiniToggle} on=${rules.changeAware} onToggle=${function(){d({t:A.UPD_RULES,u:{changeAware:!rules.changeAware}})}} />
         </div>
         <div style=${TOGROW}>
           <span class="cc-tip cc-tip-delay" data-tip="Suppress hard clashes between intentionally related elements such as doors in walls, assembly parts, and openings. Uses IFC relationship data." style=${{fontSize:'.68rem',color:'var(--text-primary)',cursor:'help'}}>Semantic filter</span>
-          <${MiniToggle} on=${rules.useSemanticFilter!==false} onToggle=${function(){d({t:'UPD_RULES',u:{useSemanticFilter:rules.useSemanticFilter===false?true:false}})}} />
+          <${MiniToggle} on=${rules.useSemanticFilter!==false} onToggle=${function(){d({t:A.UPD_RULES,u:{useSemanticFilter:rules.useSemanticFilter===false?true:false}})}} />
         </div>
         <button onClick=${runDetection} disabled=${!canRun}
           style=${{...S_BTN,width:'100%',background:canRun?'var(--accent)':'var(--bg-secondary)',color:canRun?'#fff':'var(--text-faint)',marginTop:'.3rem',fontWeight:600}}>
@@ -6872,7 +6906,7 @@ function startApp() {
     return html`<div style=${{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',minHeight:0}}>
       ${!hideTabBar && html`<div style=${{display:'flex',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}} role="tablist">
         ${[{id:'clashes',label:'Clashes',n:oC,bg:'#ef4444'},{id:'issues',label:'Issues',n:oI,bg:'#f59e0b'},{id:'explorer',label:'Explorer',n:0,bg:'#34d399'}].map(function(t){return html`
-          <button key=${t.id} onClick=${function(){d({t:'TAB',v:t.id})}} role="tab" aria-selected=${s.tab===t.id}
+          <button key=${t.id} onClick=${function(){d({t:A.TAB,v:t.id})}} role="tab" aria-selected=${s.tab===t.id}
             style=${{...S_BTN,flex:1,background:'none',borderRadius:0,padding:'.6rem',color:s.tab===t.id?'var(--text-primary)':'var(--text-faint)',borderBottom:s.tab===t.id?'2px solid #3b82f6':'2px solid transparent'}}>
             ${t.label}${t.n>0?html`<span style=${{marginLeft:'.3rem',background:t.bg,color:'#fff',fontSize:'.6rem',padding:'.05rem .35rem',borderRadius:99}}>${t.n}</span>`:''}
           </button>`})}
@@ -6889,9 +6923,9 @@ function startApp() {
               <path d="M2 4h12M2 8h8M2 12h10" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round"/>
             </svg>
             <input type="text" placeholder=${isClashTab ? 'Filter… e.g. "hard on floor 2" or "open pipes"' : 'Search…'} value=${f.search}
-              onInput=${function(e){d({t:'UPD_FILTERS',u:{search:e.target.value}})}}
+              onInput=${function(e){d({t:A.UPD_FILTERS,u:{search:e.target.value}})}}
               style=${{...S_INPUT,fontSize:'.7rem',padding:'.3rem .4rem .3rem 1.85rem',width:'100%',background:f.search?'#0f1e33':'var(--bg-secondary)',border:f.search?'1px solid #3b82f6':'1px solid var(--border)',transition:'all .15s'}} />
-            ${f.search && html`<button onClick=${function(){d({t:'UPD_FILTERS',u:{search:''}})}} style=${{position:'absolute',right:'.35rem',background:'none',border:'none',cursor:'pointer',color:'var(--text-faint)',fontSize:'.75rem',padding:0,lineHeight:1}}>✕</button>`}
+            ${f.search && html`<button onClick=${function(){d({t:A.UPD_FILTERS,u:{search:''}})}} style=${{position:'absolute',right:'.35rem',background:'none',border:'none',cursor:'pointer',color:'var(--text-faint)',fontSize:'.75rem',padding:0,lineHeight:1}}>✕</button>`}
           </div>
           <span style=${{fontSize:'.58rem',color:items.length<rawItems.length?'#60a5fa':'var(--text-faint)',fontWeight:items.length<rawItems.length?600:400,whiteSpace:'nowrap',flexShrink:0}}>${items.length}${items.length<rawItems.length?' / '+rawItems.length:''}</span>
           <button onClick=${function(){setFiltersOpen(!filtersOpen)}}
@@ -6903,13 +6937,13 @@ function startApp() {
       ${!isExplorerTab && filtersOpen && html`<div style=${{padding:'.5rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,display:'flex',flexDirection:'column',gap:'.4rem',background:'var(--bg-tertiary)'}}>
         <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <span style=${{fontSize:'.65rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Filters</span>
-          <button onClick=${function(){d({t:'RESET_FILTERS'})}} style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:'none',color:'var(--text-faint)',textDecoration:'underline'}}>Clear all</button>
+          <button onClick=${function(){d({t:A.RESET_FILTERS})}} style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .3rem',background:'none',color:'var(--text-faint)',textDecoration:'underline'}}>Clear all</button>
         </div>
 
         <div>
           <span style=${FL}>Status</span>
           <div style=${{display:'flex',gap:'.2rem',flexWrap:'wrap'}}>
-            ${['all','open','in_progress','resolved'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:'UPD_FILTERS',u:{status:v}})}}
+            ${['all','open','in_progress','resolved'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:A.UPD_FILTERS,u:{status:v}})}}
               style=${PILL(f.status===v)}>${v==='all'?'All':v==='in_progress'?'In prog':v.charAt(0).toUpperCase()+v.slice(1)}</button>`})}
           </div>
         </div>
@@ -6918,7 +6952,7 @@ function startApp() {
         ${isClashTab && s.clashes.some(function(c){return c._delta;}) && html`<div>
           <span style=${FL}>Run delta</span>
           <div style=${{display:'flex',gap:'.2rem',flexWrap:'wrap'}}>
-            ${[['all','All'],['new','New'],['persisting','Persisting'],['auto_resolved','Auto-resolved']].map(function(pair){return html`<button key=${pair[0]} onClick=${function(){d({t:'UPD_FILTERS',u:{deltaState:pair[0]}})}}
+            ${[['all','All'],['new','New'],['persisting','Persisting'],['auto_resolved','Auto-resolved']].map(function(pair){return html`<button key=${pair[0]} onClick=${function(){d({t:A.UPD_FILTERS,u:{deltaState:pair[0]}})}}
               style=${PILL(f.deltaState===pair[0]||(!f.deltaState&&pair[0]==='all'))}>${pair[1]}</button>`;})}
           </div>
         </div>`}
@@ -6926,14 +6960,14 @@ function startApp() {
         ${isClashTab && html`<div>
           <span style=${FL}>Self / Cross-model</span>
           <div style=${{display:'flex',gap:'.2rem'}}>
-            ${['all','self','cross'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:'UPD_FILTERS',u:{selfClash:v}})}}
+            ${['all','self','cross'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:A.UPD_FILTERS,u:{selfClash:v}})}}
               style=${PILL(f.selfClash===v)}>${v==='all'?'All':v==='self'?'Self':'Cross'}</button>`})}
           </div>
         </div>`}
 
         ${isClashTab && html`<div>
           <span style=${FL}>Discipline</span>
-          <select value=${f.discipline} onChange=${function(e){d({t:'UPD_FILTERS',u:{discipline:e.target.value}})}} style=${SELSTYLE}>
+          <select value=${f.discipline} onChange=${function(e){d({t:A.UPD_FILTERS,u:{discipline:e.target.value}})}} style=${SELSTYLE}>
             <option value="all">All disciplines</option>
             ${DISC.map(function(p){return html`<option key=${p.id} value=${p.id}>${p.label}</option>`})}
           </select>
@@ -6941,7 +6975,7 @@ function startApp() {
 
         ${isClashTab && s.floors.length>0 && html`<div>
           <span style=${FL}>Floor / Level</span>
-          <select value=${f.floor} onChange=${function(e){d({t:'UPD_FILTERS',u:{floor:e.target.value}})}} style=${SELSTYLE}>
+          <select value=${f.floor} onChange=${function(e){d({t:A.UPD_FILTERS,u:{floor:e.target.value}})}} style=${SELSTYLE}>
             <option value="all">All levels</option>
             ${s.floors.map(function(fl){return html`<option key=${fl.id} value=${fl.id}>${fl.label}</option>`})}
           </select>
@@ -6954,7 +6988,7 @@ function startApp() {
           var val = Math.min(f.distMax===9999?maxDist:f.distMax, maxDist);
           var pct = (val/maxDist)*100;
           var trackBg = 'linear-gradient(to right, #3b82f6 '+pct+'%, var(--bg-primary) '+pct+'%)';
-          function onChange(e){var v=+e.target.value;d({t:'UPD_FILTERS',u:{distMax:v,distMin:0,type:'all'}});}
+          function onChange(e){var v=+e.target.value;d({t:A.UPD_FILTERS,u:{distMax:v,distMin:0,type:'all'}});}
           var label = val===0?'Hard only':val>=maxDist?'All (hard+soft)':'0 (hard)–'+val+'mm';
           return html`<div>
             <div style=${{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.15rem'}}>
@@ -6977,34 +7011,34 @@ function startApp() {
         ${isClashTab && typeList.length>0 && html`<div>
           <span style=${FL}>Element Type</span>
           <${MultiSelectDropdown} items=${typeList} excluded=${f.excludedTypes||[]}
-            onToggle=${function(t){var ex=f.excludedTypes||[];d({t:'UPD_FILTERS',u:{excludedTypes:ex.indexOf(t)===-1?ex.concat(t):ex.filter(function(x){return x!==t;})}});}}
-            onToggleAll=${function(){var ex=f.excludedTypes||[];d({t:'UPD_FILTERS',u:{excludedTypes:ex.length===0?typeList.slice():[]}});}} />
+            onToggle=${function(t){var ex=f.excludedTypes||[];d({t:A.UPD_FILTERS,u:{excludedTypes:ex.indexOf(t)===-1?ex.concat(t):ex.filter(function(x){return x!==t;})}});}}
+            onToggleAll=${function(){var ex=f.excludedTypes||[];d({t:A.UPD_FILTERS,u:{excludedTypes:ex.length===0?typeList.slice():[]}});}} />
         </div>`}
 
         ${isClashTab && storeyList.length>0 && html`<div>
           <span style=${FL}>Storey</span>
           <${MultiSelectDropdown} items=${storeyList} excluded=${f.excludedStoreys||[]}
-            onToggle=${function(t){var ex=f.excludedStoreys||[];d({t:'UPD_FILTERS',u:{excludedStoreys:ex.indexOf(t)===-1?ex.concat(t):ex.filter(function(x){return x!==t;})}});}}
-            onToggleAll=${function(){var ex=f.excludedStoreys||[];d({t:'UPD_FILTERS',u:{excludedStoreys:ex.length===0?storeyList.slice():[]}});}} />
+            onToggle=${function(t){var ex=f.excludedStoreys||[];d({t:A.UPD_FILTERS,u:{excludedStoreys:ex.indexOf(t)===-1?ex.concat(t):ex.filter(function(x){return x!==t;})}});}}
+            onToggleAll=${function(){var ex=f.excludedStoreys||[];d({t:A.UPD_FILTERS,u:{excludedStoreys:ex.length===0?storeyList.slice():[]}});}} />
         </div>`}
 
         ${isClashTab && materialList.length>0 && html`<div>
           <span style=${FL}>Material</span>
           <${MultiSelectDropdown} items=${materialList} excluded=${f.excludedMaterials||[]}
-            onToggle=${function(t){var ex=f.excludedMaterials||[];d({t:'UPD_FILTERS',u:{excludedMaterials:ex.indexOf(t)===-1?ex.concat(t):ex.filter(function(x){return x!==t;})}});}}
-            onToggleAll=${function(){var ex=f.excludedMaterials||[];d({t:'UPD_FILTERS',u:{excludedMaterials:ex.length===0?materialList.slice():[]}});}} />
+            onToggle=${function(t){var ex=f.excludedMaterials||[];d({t:A.UPD_FILTERS,u:{excludedMaterials:ex.indexOf(t)===-1?ex.concat(t):ex.filter(function(x){return x!==t;})}});}}
+            onToggleAll=${function(){var ex=f.excludedMaterials||[];d({t:A.UPD_FILTERS,u:{excludedMaterials:ex.length===0?materialList.slice():[]}});}} />
         </div>`}
 
         ${isClashTab && html`<div>
           <span style=${FL}>Element ID</span>
-          <input type="text" placeholder="e.g. 12345" value=${f.elementId} onInput=${function(e){d({t:'UPD_FILTERS',u:{elementId:e.target.value}})}}
+          <input type="text" placeholder="e.g. 12345" value=${f.elementId} onInput=${function(e){d({t:A.UPD_FILTERS,u:{elementId:e.target.value}})}}
             style=${{...S_INPUT,fontSize:'.65rem',padding:'.2rem .3rem'}} />
         </div>`}
 
         ${!isClashTab && html`<div>
           <span style=${FL}>Priority</span>
           <div style=${{display:'flex',gap:'.2rem',flexWrap:'wrap'}}>
-            ${['all','low','normal','high','critical'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:'UPD_FILTERS',u:{priority:v}})}}
+            ${['all','low','normal','high','critical'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:A.UPD_FILTERS,u:{priority:v}})}}
               style=${PILL(f.priority===v)}>${v==='all'?'All':v.charAt(0).toUpperCase()+v.slice(1)}</button>`})}
           </div>
         </div>`}
@@ -7012,14 +7046,14 @@ function startApp() {
         ${!isClashTab && html`<div>
           <span style=${FL}>Category</span>
           <div style=${{display:'flex',gap:'.2rem',flexWrap:'wrap'}}>
-            ${['all','design','coordination','safety','structural','mep','other'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:'UPD_FILTERS',u:{category:v}})}}
+            ${['all','design','coordination','safety','structural','mep','other'].map(function(v){return html`<button key=${v} onClick=${function(){d({t:A.UPD_FILTERS,u:{category:v}})}}
               style=${PILL(f.category===v)}>${v==='all'?'All':v.charAt(0).toUpperCase()+v.slice(1)}</button>`})}
           </div>
         </div>`}
 
         ${!isClashTab && filterLists.assignees.length>0 && html`<div>
           <span style=${FL}>Assignee</span>
-          <select value=${f.assignee} onChange=${function(e){d({t:'UPD_FILTERS',u:{assignee:e.target.value}})}} style=${SELSTYLE}>
+          <select value=${f.assignee} onChange=${function(e){d({t:A.UPD_FILTERS,u:{assignee:e.target.value}})}} style=${SELSTYLE}>
             <option value="all">All assignees</option>
             ${filterLists.assignees.map(function(a){return html`<option key=${a} value=${a}>${a}</option>`})}
           </select>
@@ -7027,7 +7061,7 @@ function startApp() {
 
         ${!isClashTab && filterLists.issueTypes.length>0 && html`<div>
           <span style=${FL}>Element Type</span>
-          <select value=${f.issueElementType} onChange=${function(e){d({t:'UPD_FILTERS',u:{issueElementType:e.target.value}})}} style=${SELSTYLE}>
+          <select value=${f.issueElementType} onChange=${function(e){d({t:A.UPD_FILTERS,u:{issueElementType:e.target.value}})}} style=${SELSTYLE}>
             <option value="all">All types</option>
             ${filterLists.issueTypes.map(function(t){return html`<option key=${t} value=${t}>${t}</option>`})}
           </select>
@@ -7035,7 +7069,7 @@ function startApp() {
 
         ${!isClashTab && filterLists.issueStoreys.length>0 && html`<div>
           <span style=${FL}>Storey</span>
-          <select value=${f.issueStorey} onChange=${function(e){d({t:'UPD_FILTERS',u:{issueStorey:e.target.value}})}} style=${SELSTYLE}>
+          <select value=${f.issueStorey} onChange=${function(e){d({t:A.UPD_FILTERS,u:{issueStorey:e.target.value}})}} style=${SELSTYLE}>
             <option value="all">All storeys</option>
             ${filterLists.issueStoreys.map(function(t){return html`<option key=${t} value=${t}>${t}</option>`})}
           </select>
@@ -7044,7 +7078,7 @@ function startApp() {
         <div style=${{fontSize:'.6rem',color:'var(--text-faint)',textAlign:'right'}}>${items.length} / ${rawItems.length} shown</div>
       </div>`}
       ${s.tab==='issues' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,display:'flex',gap:'.3rem'}}>
-        <button onClick=${function(){d({t:'MODAL',v:true,el:window._ccSelectedEl||undefined})}} style=${{...S_BTN,flex:1,background:'#2563eb',color:'#fff'}}>+ New Issue</button>
+        <button onClick=${function(){d({t:A.MODAL,v:true,el:window._ccSelectedEl||undefined})}} style=${{...S_BTN,flex:1,background:'#2563eb',color:'#fff'}}>+ New Issue</button>
       </div>`}
       ${!isExplorerTab && items.length>0 && function(){
         var grpAction = isClashTab ? 'CLASH_GROUP_BY' : 'ISSUE_GROUP_BY';
@@ -7248,7 +7282,7 @@ function startApp() {
       function onKey(e){
         if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
         if(e.key==='Escape'&&activeId!=null){
-          d({t:'ACTIVE',id:null});
+          d({t:A.ACTIVE,id:null});
           if(_unghostAll)_unghostAll();
           if(window._ccRemoveActiveClashMarker) window._ccRemoveActiveClashMarker();
           return;
@@ -7280,7 +7314,7 @@ function startApp() {
         }
         if(nextIdx!=null && nextIdx>=0 && nextIdx<flatItems.length){
           var nxt = flatItems[nextIdx];
-          d({t:'ACTIVE',id:nxt.id});
+          d({t:A.ACTIVE,id:nxt.id});
           // Trigger highlight + fly-to for the newly selected item
           var hIds=[];
           if(nxt.elemA) hIds.push(nxt.elemA);
@@ -7455,10 +7489,10 @@ function startApp() {
           else if(it.point && _flyTo) _flyTo(it.point);
           return;
         }
-        d({t:'ACTIVE',id:it.id});
+        d({t:A.ACTIVE,id:it.id});
         // Auto turn off section box when selecting a different clash/issue
         if(window._ccCurrentSbox && window._ccDispatch){
-          window._ccDispatch({t:'SECTION_BOX',v:null});
+          window._ccDispatch({t:A.SECTION_BOX,v:null});
         }
         if(pr.autoHighlight!==false){
           var ids=[];
@@ -7485,7 +7519,7 @@ function startApp() {
       data-item-id=${it.id}
       style=${{padding:'.6rem .7rem',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer',background:active?'var(--bg-secondary)':'transparent',borderLeft:active?'2px solid #3b82f6':'2px solid transparent'}}>
       <div style=${{display:'flex',gap:'.35rem',alignItems:'flex-start'}}>
-        ${selectMode && html`<input type="checkbox" checked=${isSelected} onClick=${function(e){e.stopPropagation();d({t:'SELECT_TOGGLE',id:it.id});}}
+        ${selectMode && html`<input type="checkbox" checked=${isSelected} onClick=${function(e){e.stopPropagation();d({t:A.SELECT_TOGGLE,id:it.id});}}
           style=${{marginTop:3,flexShrink:0,accentColor:'var(--accent)',cursor:'pointer'}} />`}
         ${!isClash && html`<span style=${{fontSize:'.85rem',flexShrink:0}}>${icon}</span>`}
         <div style=${{flex:1,minWidth:0}}>
@@ -7501,7 +7535,7 @@ function startApp() {
                 ${fb && html`<span style=${{fontSize:'.55rem',padding:'.02rem .2rem',borderRadius:3,lineHeight:1,fontWeight:700,
                   background:fb==='real_clash'?'#166534':fb==='acceptable'?'#1e3a5f':'#7f1d1d',
                   color:fb==='real_clash'?'#4ade80':fb==='acceptable'?'#93c5fd':'#fca5a5'}}>${fb==='real_clash'?'+':fb==='acceptable'?'-':'×'}</span>`}
-                ${!active && html`<button onClick=${function(e){e.stopPropagation();d({t:'ACTIVE',id:it.id});}}
+                ${!active && html`<button onClick=${function(e){e.stopPropagation();d({t:A.ACTIVE,id:it.id});}}
                   title="Expand training feedback" style=${{background:'transparent',color:'#a78bfa',border:'none',cursor:'pointer',fontSize:'.6rem',padding:'1px 4px',borderRadius:3,lineHeight:1}}>▼</button>`}
               </span>`;
             }()}
@@ -7526,19 +7560,19 @@ function startApp() {
           ${isClash && it.status!=='confirmed' && html`<button onClick=${function(e){
               e.stopPropagation();
               var btn=e.target;btn.style.color='#4ade80';btn.style.background='#166534';btn.style.borderColor='#22c55e66';btn.textContent='Confirmed ✓';
-              setTimeout(function(){d({t:'UPD_CLASH',id:it.id,u:{status:'confirmed'}});},600);
+              setTimeout(function(){d({t:A.UPD_CLASH,id:it.id,u:{status:'confirmed'}});},600);
             }}
             style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .5rem',background:'var(--bg-secondary)',color:'#4ade80',border:'1px solid #22c55e44',fontWeight:600,transition:'all .2s'}}>Confirm</button>`}
           ${isClash && it.status!=='confirmed' && html`<button onClick=${function(e){
               e.stopPropagation();
               var btn=e.target;btn.style.color='#fca5a5';btn.style.background='#7f1d1d';btn.style.borderColor='#ef444466';btn.textContent='Denied ✗';
-              setTimeout(function(){d({t:'UPD_CLASH',id:it.id,u:{status:'denied'}});},600);
+              setTimeout(function(){d({t:A.UPD_CLASH,id:it.id,u:{status:'denied'}});},600);
             }}
             style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .5rem',background:'var(--bg-secondary)',color:'#f87171',border:'1px solid #ef444444',fontWeight:600,transition:'all .2s'}}>Deny</button>`}
           ${!isClash && EDITABLE_STATUSES.map(function(k){return html`<button key=${k}
-            onClick=${function(e){e.stopPropagation();d({t:'UPD_ISSUE',id:it.id,u:{status:k}})}}
+            onClick=${function(e){e.stopPropagation();d({t:A.UPD_ISSUE,id:it.id,u:{status:k}})}}
             style=${{...S_BTN,fontSize:'.6rem',padding:'.15rem .35rem',background:it.status===k?STAT[k].bg:'var(--bg-secondary)',color:it.status===k?'#fff':'var(--text-faint)'}}>${STAT[k].label}</button>`})}
-          <button onClick=${function(e){e.stopPropagation();d({t:'ACTIVE',id:null});if(_unghostAll)_unghostAll();if(window._ccRemoveActiveClashMarker)window._ccRemoveActiveClashMarker();}}
+          <button onClick=${function(e){e.stopPropagation();d({t:A.ACTIVE,id:null});if(_unghostAll)_unghostAll();if(window._ccRemoveActiveClashMarker)window._ccRemoveActiveClashMarker();}}
             title="Collapse" style=${{...S_BTN,marginLeft:'auto',padding:'0 4px',background:'none',color:'var(--text-faint)',fontSize:'.7rem',flexShrink:0}}>▲</button>
         </div>
         ${html`<${ClashProps} item=${it} models=${pr._models||[]} isClash=${isClash} />`}
@@ -7564,7 +7598,7 @@ function startApp() {
             <div style=${{fontSize:'.55rem',fontWeight:600,color:'var(--text-muted)',marginBottom:'.15rem'}}>Verdict</div>
             <div style=${{display:'flex',gap:'.25rem',marginBottom:'.3rem',flexWrap:'wrap'}}>
               ${VERDICTS.map(function(v){var sel=fb===v.k;return html`<button key=${v.k}
-                onClick=${function(e){e.stopPropagation();d({t:'AI_FEEDBACK',id:it.id,v:sel?null:v.k});}}
+                onClick=${function(e){e.stopPropagation();d({t:A.AI_FEEDBACK,id:it.id,v:sel?null:v.k});}}
                 style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .4rem',
                   background:sel?v.bg:'var(--bg-secondary)',color:sel?v.col:'var(--text-faint)',
                   border:'1px solid '+(sel?v.brd:'var(--border)')}}>${v.l}</button>`})}
@@ -7572,7 +7606,7 @@ function startApp() {
             <div style=${{fontSize:'.55rem',fontWeight:600,color:'var(--text-muted)',marginBottom:'.15rem'}}>Clash type</div>
             <div style=${{display:'flex',gap:'.25rem',marginBottom:'.3rem',flexWrap:'wrap'}}>
               ${CTYPES.map(function(ct){var confirmed=it.clashTypeConfirmed!=null;var sel=curCT===ct.k;var isDefault=!confirmed&&it.type===ct.k;return html`<button key=${ct.k}
-                onClick=${function(e){e.stopPropagation();d({t:'UPD_CLASH',id:it.id,u:{clashTypeConfirmed:ct.k}});}}
+                onClick=${function(e){e.stopPropagation();d({t:A.UPD_CLASH,id:it.id,u:{clashTypeConfirmed:ct.k}});}}
                 style=${{...S_BTN,fontSize:'.55rem',padding:'.1rem .35rem',
                   background:sel||isDefault?'#1e3a5f':'var(--bg-secondary)',
                   color:sel||isDefault?'#93c5fd':'var(--text-faint)',
@@ -7581,7 +7615,7 @@ function startApp() {
             <div style=${{fontSize:'.55rem',fontWeight:600,color:'var(--text-muted)',marginBottom:'.15rem'}}>Reason</div>
             <div style=${{display:'flex',gap:'.2rem',marginBottom:'.3rem',flexWrap:'wrap'}}>
               ${REASONS.map(function(r){var sel=curReasons.indexOf(r)>=0;return html`<span key=${r}
-                onClick=${function(e){e.stopPropagation();var nr=sel?curReasons.filter(function(x){return x!==r}):curReasons.concat([r]);d({t:'UPD_CLASH',id:it.id,u:{aiReasons:nr}});}}
+                onClick=${function(e){e.stopPropagation();var nr=sel?curReasons.filter(function(x){return x!==r}):curReasons.concat([r]);d({t:A.UPD_CLASH,id:it.id,u:{aiReasons:nr}});}}
                 style=${{fontSize:'.55rem',padding:'.1rem .35rem',borderRadius:10,cursor:'pointer',whiteSpace:'nowrap',
                   border:'1px solid '+(sel?'#3b82f6':'var(--border)'),
                   background:sel?'#1e3a5f':'var(--bg-secondary)',
@@ -7593,7 +7627,7 @@ function startApp() {
                 var curRes=it.aiResolution||[];if(typeof curRes==='string')curRes=curRes?[curRes]:[];
                 var sel=curRes.indexOf(r.k)>=0;
                 return html`<span key=${r.k}
-                  onClick=${function(e){e.stopPropagation();var nr=sel?curRes.filter(function(x){return x!==r.k}):curRes.concat([r.k]);d({t:'UPD_CLASH',id:it.id,u:{aiResolution:nr}});}}
+                  onClick=${function(e){e.stopPropagation();var nr=sel?curRes.filter(function(x){return x!==r.k}):curRes.concat([r.k]);d({t:A.UPD_CLASH,id:it.id,u:{aiResolution:nr}});}}
                   style=${{fontSize:'.55rem',padding:'.1rem .35rem',borderRadius:10,cursor:'pointer',whiteSpace:'nowrap',
                     border:'1px solid '+(sel?'#3b82f6':'var(--border)'),
                     background:sel?'#1e3a5f':'var(--bg-secondary)',
@@ -7602,7 +7636,7 @@ function startApp() {
             </div>
             <input type="text" value=${curNote} maxLength="140" placeholder="Optional note \u2014 no project names or locations"
               onClick=${function(e){e.stopPropagation();}}
-              onInput=${function(e){d({t:'UPD_CLASH',id:it.id,u:{aiNote:e.target.value}});}}
+              onInput=${function(e){d({t:A.UPD_CLASH,id:it.id,u:{aiNote:e.target.value}});}}
               style=${{width:'100%',fontSize:'.55rem',padding:'.2rem .3rem',background:'var(--bg-secondary)',
                 border:'1px solid var(--border)',borderRadius:3,color:'var(--text-primary)',boxSizing:'border-box'}} />
           </div>`;
@@ -7633,7 +7667,7 @@ function startApp() {
 
     var f=useState({title:defaultTitle,desc:defaultDesc,priority:pr.defaultPriority||'normal',status:pr.defaultStatus||'open',category:pr.defaultCategory||'design',assignee:'',dueDate:''}), form=f[0], setForm=f[1];
     useEffect(function(){
-      function onKey(e){if(e.key==='Escape')d({t:'MODAL',v:false});}
+      function onKey(e){if(e.key==='Escape')d({t:A.MODAL,v:false});}
       window.addEventListener('keydown',onKey);
       return function(){window.removeEventListener('keydown',onKey);};
     },[]);
@@ -7662,14 +7696,14 @@ function startApp() {
           issue.point = fromClash.point;
           issue.storey = fromClash.elemAStorey || fromClash.elemBStorey || '';
           // Mark the clash as having a linked issue (stable across runs via identity key)
-          d({t:'UPD_CLASH', id:fromClash.id, u:{linkedIssueId:issue.id, status:'in_progress'}});
+          d({t:A.UPD_CLASH, id:fromClash.id, u:{linkedIssueId:issue.id, status:'in_progress'}});
         } else if (activeId) {
           var linkedClash = clashes.find(function(c){return c.id===activeId && (c.elemA===el.expressId || c.elemB===el.expressId);});
           if (linkedClash) { issue.clashId = linkedClash.id; issue.clashIdentityKey = linkedClash._identityKey; }
         }
       }
-      d({t:'ADD_ISSUE',v:issue});
-      d({t:'MODAL',v:false}); d({t:'TAB',v:'issues'});
+      d({t:A.ADD_ISSUE,v:issue});
+      d({t:A.MODAL,v:false}); d({t:A.TAB,v:'issues'});
     }
     var MS={position:'fixed',inset:0,background:'rgba(0,0,0,.7)',display:'flex',alignItems:'flex-start',justifyContent:'center',zIndex:50,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'2rem 0'};
     var MX={background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:12,width:420,maxWidth:'95vw',overflowY:'auto',boxShadow:'0 25px 50px rgba(0,0,0,.5)',flexShrink:0,marginBottom:'4rem'};
@@ -7679,7 +7713,7 @@ function startApp() {
     return html`<div style=${MS} role="dialog" aria-label=${fromClash?'New Issue from Clash':hasEl?'New Element Issue':'New Issue'}><div style=${MX}>
       <div style=${{display:'flex',justifyContent:'space-between',padding:'.8rem 1rem',borderBottom:'1px solid var(--border)'}}>
         <span style=${{fontWeight:600,fontSize:'.875rem'}}>${fromClash?'New Issue from Clash':hasEl?'New Element Issue':'New Issue'}</span>
-        <button onClick=${function(){d({t:'MODAL',v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.1rem',padding:0}} aria-label="Close modal">✕</button>
+        <button onClick=${function(){d({t:A.MODAL,v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.1rem',padding:0}} aria-label="Close modal">✕</button>
       </div>
       ${fromClash && html`<div style=${{padding:'.6rem 1rem',borderBottom:'1px solid var(--border)',background:'var(--bg-primary)'}}>
         <div style=${{fontSize:'.65rem',fontWeight:600,color:'#93c5fd',marginBottom:'.3rem'}}>From Clash</div>
@@ -7728,7 +7762,7 @@ function startApp() {
             <input type="date" value=${form.dueDate} onInput=${upd('dueDate')} style=${S_INPUT} /></div>
         </div>
         <div style=${{display:'flex',gap:'.4rem',paddingTop:'.3rem'}}>
-          <button type="button" onClick=${function(){d({t:'MODAL',v:false})}} style=${{...S_BTN,flex:1,background:'var(--border)',color:'var(--text-primary)'}}>Cancel</button>
+          <button type="button" onClick=${function(){d({t:A.MODAL,v:false})}} style=${{...S_BTN,flex:1,background:'var(--border)',color:'var(--text-primary)'}}>Cancel</button>
           <button type="submit" style=${{...S_BTN,flex:1,background:'#2563eb',color:'#fff',fontWeight:600}}>Create Issue</button>
         </div>
       </form>
@@ -7741,12 +7775,12 @@ function startApp() {
     var d=props.d, p=props.prefs, models=props.models||[], rules=props.rules||{};
     var stTab = useState('general'), settingsTab=stTab[0], setSettingsTab=stTab[1];
     useEffect(function(){
-      function onKey(e){if(e.key==='Escape')d({t:'SETTINGS',v:false});}
+      function onKey(e){if(e.key==='Escape')d({t:A.SETTINGS,v:false});}
       window.addEventListener('keydown',onKey);
       return function(){window.removeEventListener('keydown',onKey);};
     },[]);
-    function tog(k){return function(){var u={};u[k]=!p[k];d({t:'UPD_PREFS',u:u});}}
-    function sel(k){return function(e){var u={};u[k]=e.target.value;d({t:'UPD_PREFS',u:u});}}
+    function tog(k){return function(){var u={};u[k]=!p[k];d({t:A.UPD_PREFS,u:u});}}
+    function sel(k){return function(e){var u={};u[k]=e.target.value;d({t:A.UPD_PREFS,u:u});}}
     var MS={position:'fixed',inset:0,background:'var(--modal-bg)',display:'flex',alignItems:'flex-start',justifyContent:'center',zIndex:50,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'2rem 0'};
     var MX={background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:14,width:460,maxWidth:'95vw',overflowY:'auto',boxShadow:'0 25px 50px rgba(0,0,0,.5)',flexShrink:0,marginBottom:'4rem'};
     var LBL={fontSize:'.72rem',color:'var(--text-muted)',display:'block',marginBottom:'.25rem'};
@@ -7768,7 +7802,7 @@ function startApp() {
     return html`<div style=${MS} role="dialog" aria-label="Settings"><div style=${MX}>
       <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'1rem 1.2rem',borderBottom:'1px solid var(--border)'}}>
         <span style=${{fontWeight:600,fontSize:'.9rem'}}>Settings</span>
-        <button onClick=${function(){d({t:'SETTINGS',v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.1rem',padding:0}} aria-label="Close settings">✕</button>
+        <button onClick=${function(){d({t:A.SETTINGS,v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.1rem',padding:0}} aria-label="Close settings">✕</button>
       </div>
       <div style=${{display:'flex',gap:'.3rem',padding:'.6rem 1.2rem',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-primary)'}}>
         ${TAB_BTN('general','General')}
@@ -7809,7 +7843,7 @@ function startApp() {
         <div style=${TROW}>
           <div><div style=${TLBL}>Default max gap</div><div style=${TSUB}>Initial max gap distance for near misses (mm)</div></div>
           <input type="number" min="0" max="2000" step="5" value=${p.defaultMaxGap||50}
-            onChange=${function(e){d({t:'UPD_PREFS',u:{defaultMaxGap:+e.target.value}});d({t:'UPD_RULES',u:{maxGap:+e.target.value}});}}
+            onChange=${function(e){d({t:A.UPD_PREFS,u:{defaultMaxGap:+e.target.value}});d({t:A.UPD_RULES,u:{maxGap:+e.target.value}});}}
             style=${{...S_INPUT,width:70,textAlign:'center'}} />
         </div>
         <div style=${TROW}>
@@ -7924,16 +7958,16 @@ function startApp() {
     function setTol(key, val) {
       var u = Object.assign({}, defaultTols);
       if(val===null||val===undefined||val==='') delete u[key]; else u[key]=+val;
-      d({t:'UPD_PREFS',u:{defaultTolerances:u}});
+      d({t:A.UPD_PREFS,u:{defaultTolerances:u}});
     }
 
     function toggleEnabled() {
-      d({t:'UPD_PREFS',u:{useTypePairTolerances:!tolEnabled}});
+      d({t:A.UPD_PREFS,u:{useTypePairTolerances:!tolEnabled}});
       if(!tolEnabled) setExpanded(true);
     }
 
     function applyToRules() {
-      d({t:'UPD_RULES',u:{toleranceByTypePair:Object.assign({},defaultTols)}});
+      d({t:A.UPD_RULES,u:{toleranceByTypePair:Object.assign({},defaultTols)}});
     }
 
     // Build unique pairs for the matrix (upper triangle only, no self-pairs)
@@ -8133,7 +8167,7 @@ function startApp() {
         if (args.clash_id && args.status) {
           var upd = { status: args.status };
           if (args.comment) upd.description = args.comment;
-          d({ t:'UPD_CLASH', id:args.clash_id, u:upd });
+          d({ t:A.UPD_CLASH, id:args.clash_id, u:upd });
           return JSON.stringify({ success:true, id:args.clash_id, newStatus:args.status });
         }
         return JSON.stringify({ success:false, error:'Missing clash_id or status' });
@@ -8142,7 +8176,7 @@ function startApp() {
         if (args.issue_id && args.status) {
           var upd2 = { status: args.status };
           if (args.comment) upd2.description = args.comment;
-          d({ t:'UPD_ISSUE', id:args.issue_id, u:upd2 });
+          d({ t:A.UPD_ISSUE, id:args.issue_id, u:upd2 });
           return JSON.stringify({ success:true, id:args.issue_id, newStatus:args.status });
         }
         return JSON.stringify({ success:false, error:'Missing issue_id or status' });
@@ -8214,7 +8248,7 @@ function startApp() {
       }
       case 'batch_assign': {
         if (args.ids && args.assignee) {
-          args.ids.forEach(function(id) { d({ t:'UPD_ISSUE', id:id, u:{assignee:args.assignee} }); });
+          args.ids.forEach(function(id) { d({ t:A.UPD_ISSUE, id:id, u:{assignee:args.assignee} }); });
           return JSON.stringify({ success:true, assigned:args.ids.length, assignee:args.assignee });
         }
         return JSON.stringify({ success:false, error:'Missing ids or assignee' });
@@ -8328,8 +8362,8 @@ function startApp() {
     var bridge = s.revitBridge;
     if (!bridge.provider || !bridge.apiKey) return Promise.reject(new Error('Configure AI provider and API key first'));
 
-    d({t:'UPD_BRIDGE',u:{syncing:true}});
-    d({t:'BRIDGE_LOG',logType:'push',text:'Pushing ' + s.clashes.filter(function(c){return c.status==='open';}).length + ' open clashes + ' + s.issues.filter(function(i){return i.status==='open';}).length + ' open issues to Revit...'});
+    d({t:A.UPD_BRIDGE,u:{syncing:true}});
+    d({t:A.BRIDGE_LOG,logType:'push',text:'Pushing ' + s.clashes.filter(function(c){return c.status==='open';}).length + ' open clashes + ' + s.issues.filter(function(i){return i.status==='open';}).length + ' open issues to Revit...'});
 
     var tools = _buildCCTools();
     var userMsg = 'Push all open clashes and issues from ClashControl to Revit. First use get_clashes and get_issues to read the data, then describe the Revit MCP calls needed to create markers and tag elements. Finally summarize what would be pushed.';
@@ -8345,13 +8379,13 @@ function startApp() {
         if (toolResults.length) {
           summary += '\n\nTool calls executed: ' + toolResults.map(function(tr){ return tr.name; }).join(', ');
         }
-        d({t:'BRIDGE_LOG',logType:'push',text:summary});
-        d({t:'UPD_BRIDGE',u:{syncing:false,lastSync:Date.now()}});
+        d({t:A.BRIDGE_LOG,logType:'push',text:summary});
+        d({t:A.UPD_BRIDGE,u:{syncing:false,lastSync:Date.now()}});
         return summary;
       })
       .catch(function(err) {
-        d({t:'BRIDGE_LOG',logType:'error',text:'Push failed: '+err.message});
-        d({t:'UPD_BRIDGE',u:{syncing:false}});
+        d({t:A.BRIDGE_LOG,logType:'error',text:'Push failed: '+err.message});
+        d({t:A.UPD_BRIDGE,u:{syncing:false}});
         throw err;
       });
   }
@@ -8360,8 +8394,8 @@ function startApp() {
     var bridge = s.revitBridge;
     if (!bridge.provider || !bridge.apiKey) return Promise.reject(new Error('Configure AI provider and API key first'));
 
-    d({t:'UPD_BRIDGE',u:{syncing:true}});
-    d({t:'BRIDGE_LOG',logType:'pull',text:'Pulling status updates from Revit...'});
+    d({t:A.UPD_BRIDGE,u:{syncing:true}});
+    d({t:A.BRIDGE_LOG,logType:'pull',text:'Pulling status updates from Revit...'});
 
     var tools = _buildCCTools();
     var userMsg = 'Pull resolution status from Revit back to ClashControl. First check Revit MCP status, then check which clashes have been resolved in Revit, and update ClashControl accordingly using update_clash_status and update_issue_status tools.';
@@ -8373,31 +8407,31 @@ function startApp() {
           _executeCCTool(tc.name, tc.args, s, d);
         });
         var summary = parsed.text || 'Pull completed.';
-        d({t:'BRIDGE_LOG',logType:'pull',text:summary});
-        d({t:'UPD_BRIDGE',u:{syncing:false,lastSync:Date.now()}});
+        d({t:A.BRIDGE_LOG,logType:'pull',text:summary});
+        d({t:A.UPD_BRIDGE,u:{syncing:false,lastSync:Date.now()}});
         return summary;
       })
       .catch(function(err) {
-        d({t:'BRIDGE_LOG',logType:'error',text:'Pull failed: '+err.message});
-        d({t:'UPD_BRIDGE',u:{syncing:false}});
+        d({t:A.BRIDGE_LOG,logType:'error',text:'Pull failed: '+err.message});
+        d({t:A.UPD_BRIDGE,u:{syncing:false}});
         throw err;
       });
   }
 
   // Test the AI connection
   function _testBridgeConnection(bridge, d) {
-    d({t:'BRIDGE_LOG',logType:'info',text:'Testing connection to '+bridge.provider+'...'});
+    d({t:A.BRIDGE_LOG,logType:'info',text:'Testing connection to '+bridge.provider+'...'});
     var tools = _buildCCTools();
     return _callAIWithTools(bridge.provider, bridge.apiKey, BRIDGE_SYSTEM_PROMPT, 'Say "Connection successful" and nothing else.', tools.slice(0,1), bridge)
       .then(function(response) {
         var parsed = _parseAIToolCalls(bridge.provider, response);
-        d({t:'UPD_BRIDGE',u:{connected:true}});
-        d({t:'BRIDGE_LOG',logType:'info',text:'Connected to '+bridge.provider+': '+(parsed.text||'OK')});
+        d({t:A.UPD_BRIDGE,u:{connected:true}});
+        d({t:A.BRIDGE_LOG,logType:'info',text:'Connected to '+bridge.provider+': '+(parsed.text||'OK')});
         return true;
       })
       .catch(function(err) {
-        d({t:'UPD_BRIDGE',u:{connected:false}});
-        d({t:'BRIDGE_LOG',logType:'error',text:'Connection failed: '+err.message});
+        d({t:A.UPD_BRIDGE,u:{connected:false}});
+        d({t:A.BRIDGE_LOG,logType:'error',text:'Connection failed: '+err.message});
         return false;
       });
   }
@@ -8411,7 +8445,7 @@ function startApp() {
     // Load saved config on first render
     useEffect(function() {
       var saved = _loadBridgeConfig();
-      if (saved && !bridge.provider) d({t:'UPD_BRIDGE',u:saved});
+      if (saved && !bridge.provider) d({t:A.UPD_BRIDGE,u:saved});
     }, []);
 
     var isDark = (s.prefs.theme||'dark')==='dark';
@@ -8424,12 +8458,12 @@ function startApp() {
 
     function updBridge(u) {
       var merged = Object.assign({}, bridge, u);
-      d({t:'UPD_BRIDGE',u:u});
+      d({t:A.UPD_BRIDGE,u:u});
       _saveBridgeConfig(merged);
     }
 
     useEffect(function(){
-      function onKey(e){if(e.key==='Escape')d({t:'REVIT_BRIDGE',v:false});}
+      function onKey(e){if(e.key==='Escape')d({t:A.REVIT_BRIDGE,v:false});}
       window.addEventListener('keydown',onKey);
       return function(){window.removeEventListener('keydown',onKey);};
     },[]);
@@ -8440,14 +8474,14 @@ function startApp() {
     var statusColor = bridge.connected ? '#22c55e' : hasConfig ? '#f59e0b' : '#64748b';
     var statusText = bridge.connected ? 'Connected' : hasConfig ? 'Not tested' : 'Not configured';
 
-    return html`<div style=${MS} role="dialog" aria-label="Revit Bridge" onClick=${function(e){if(e.target===e.currentTarget)d({t:'REVIT_BRIDGE',v:false});}}>
+    return html`<div style=${MS} role="dialog" aria-label="Revit Bridge" onClick=${function(e){if(e.target===e.currentTarget)d({t:A.REVIT_BRIDGE,v:false});}}>
       <div style=${MX}>
         <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'1rem 1.2rem',borderBottom:'1px solid var(--border)'}}>
           <div style=${{display:'flex',alignItems:'center',gap:'.5rem'}}>
             <span style=${{fontWeight:600,fontSize:'.9rem'}}>Revit Bridge</span>
             <span style=${{fontSize:'.55rem',padding:'2px 6px',borderRadius:99,background:statusColor+'22',color:statusColor,fontWeight:600}}>${statusText}</span>
           </div>
-          <button onClick=${function(){d({t:'REVIT_BRIDGE',v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.1rem',padding:0}} aria-label="Close">✕</button>
+          <button onClick=${function(){d({t:A.REVIT_BRIDGE,v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.1rem',padding:0}} aria-label="Close">✕</button>
         </div>
 
         <div style=${{padding:'.2rem 1.2rem 1rem 1.2rem'}}>
@@ -8521,7 +8555,7 @@ function startApp() {
           <!-- Activity Log -->
           <div style=${SEC}>
             Activity Log
-            ${bridge.log.length>0 && html`<button onClick=${function(){d({t:'CLEAR_BRIDGE_LOG'});}} style=${{...S_BTN,fontSize:'.5rem',padding:'1px 4px',background:'none',color:'var(--text-muted)',marginLeft:'.5rem',border:'1px solid var(--border)'}}>Clear</button>`}
+            ${bridge.log.length>0 && html`<button onClick=${function(){d({t:A.CLEAR_BRIDGE_LOG});}} style=${{...S_BTN,fontSize:'.5rem',padding:'1px 4px',background:'none',color:'var(--text-muted)',marginLeft:'.5rem',border:'1px solid var(--border)'}}>Clear</button>`}
           </div>
           <div style=${{background:logBg,borderRadius:8,border:'1px solid var(--border)',padding:'.4rem',maxHeight:180,overflowY:'auto',fontSize:'.62rem',fontFamily:'monospace',lineHeight:1.6}}>
             ${bridge.log.length === 0 && html`<div style=${{color:'var(--text-muted)',textAlign:'center',padding:'.5rem'}}>No activity yet. Configure your AI provider and push/pull to get started.</div>`}
@@ -9247,11 +9281,11 @@ function startApp() {
         if (typeof action.maxGap === 'number') upd.maxGap = action.maxGap;
         return {_clashSetup:true, rules:upd, nameA:mA?mA.name:'All models', nameB:mB?mB.name:'All models'};
       }
-      case 'set_max_gap': if (typeof action.value !== 'number') return null; d({t:'UPD_RULES', u:{maxGap:action.value}}); return 'Max gap set to '+action.value+'mm.';
-      case 'set_duplicates': d({t:'UPD_RULES', u:{duplicates:!!action.enabled}}); return action.enabled ? 'Duplicates included.' : 'Duplicates excluded.';
-      case 'filter_status': var sv = {open:'open',resolved:'resolved',all:'all'}[action.status]||'all'; d({t:'UPD_FILTERS', u:{status:sv}}); d({t:'TAB',v:'clashes'}); return sv==='all'?'Showing all.':'Filtered to '+sv+'.';
-      case 'reset_filters': d({t:'RESET_FILTERS'}); return 'Filters cleared.';
-      case 'group_by': var gv = {storey:'storey',floor:'storey',level:'storey',discipline:'discipline',status:'status',type:'type',none:'none'}[action.groupBy]||'none'; d({t:'CLASH_GROUP_BY',v:gv}); d({t:'TAB',v:'clashes'}); return 'Grouped by '+gv+'.';
+      case 'set_max_gap': if (typeof action.value !== 'number') return null; d({t:A.UPD_RULES, u:{maxGap:action.value}}); return 'Max gap set to '+action.value+'mm.';
+      case 'set_duplicates': d({t:A.UPD_RULES, u:{duplicates:!!action.enabled}}); return action.enabled ? 'Duplicates included.' : 'Duplicates excluded.';
+      case 'filter_status': var sv = {open:'open',resolved:'resolved',all:'all'}[action.status]||'all'; d({t:A.UPD_FILTERS, u:{status:sv}}); d({t:A.TAB,v:'clashes'}); return sv==='all'?'Showing all.':'Filtered to '+sv+'.';
+      case 'reset_filters': d({t:A.RESET_FILTERS}); return 'Filters cleared.';
+      case 'group_by': var gv = {storey:'storey',floor:'storey',level:'storey',discipline:'discipline',status:'status',type:'type',none:'none'}[action.groupBy]||'none'; d({t:A.CLASH_GROUP_BY,v:gv}); d({t:A.TAB,v:'clashes'}); return 'Grouped by '+gv+'.';
       case 'export_bcf': if (!s.issues.length&&!s.clashes.length) return 'Nothing to export.'; var items=s.issues.length?s.issues:s.clashes; exportBCF(items,'2.1',s.viewpoints); return 'Exported '+items.length+' items as BCF.';
       case 'query': return processNLCommand(action.query||'', s, d);
       case 'help': return processNLCommand('help', s, d);
@@ -9496,22 +9530,22 @@ function startApp() {
     if (gapSet) {
       var gv2 = gapSet[1]||gapSet[3], gu = gapSet[2]||gapSet[4];
       var gmm = gu==='cm' ? Math.round(parseFloat(gv2)*10) : Math.round(parseFloat(gv2));
-      d({t:'UPD_RULES', u:{maxGap:gmm}});
+      d({t:A.UPD_RULES, u:{maxGap:gmm}});
       return 'Max gap set to ' + gmm + 'mm. Re-run detection to apply.';
     }
-    if (/(?:include|enable)\s+duplicates?/.test(text)) { d({t:'UPD_RULES',u:{duplicates:true}}); return 'Duplicates included.'; }
-    if (/(?:exclude|ignore|no)\s+duplicates?/.test(text)) { d({t:'UPD_RULES',u:{duplicates:false}}); return 'Duplicates excluded.'; }
-    if (/cross[\s-]*(?:model\s+)?only|no\s+self[\s-]*clash|exclude\s+self|not?\s+with\s+itself/.test(text)) { d({t:'UPD_RULES',u:{excludeSelf:true}}); return 'Cross-model only — self-clashes excluded.'; }
-    if (/(?:include|enable|allow)\s+self[\s-]*clash|self[\s-]*clash.*on/.test(text)) { d({t:'UPD_RULES',u:{excludeSelf:false}}); return 'Self-clashes included.'; }
-    if (/(?:enable|turn\s+on|activate)\s+semantic[\s-]*filter/.test(text)) { d({t:'UPD_RULES',u:{useSemanticFilter:true}}); return 'Semantic filter enabled — intentional relationships (doors in walls, assembly parts) will suppress hard clashes.'; }
-    if (/(?:disable|turn\s+off|deactivate)\s+semantic[\s-]*filter/.test(text)) { d({t:'UPD_RULES',u:{useSemanticFilter:false}}); return 'Semantic filter disabled — all geometric intersections will be reported.'; }
+    if (/(?:include|enable)\s+duplicates?/.test(text)) { d({t:A.UPD_RULES,u:{duplicates:true}}); return 'Duplicates included.'; }
+    if (/(?:exclude|ignore|no)\s+duplicates?/.test(text)) { d({t:A.UPD_RULES,u:{duplicates:false}}); return 'Duplicates excluded.'; }
+    if (/cross[\s-]*(?:model\s+)?only|no\s+self[\s-]*clash|exclude\s+self|not?\s+with\s+itself/.test(text)) { d({t:A.UPD_RULES,u:{excludeSelf:true}}); return 'Cross-model only — self-clashes excluded.'; }
+    if (/(?:include|enable|allow)\s+self[\s-]*clash|self[\s-]*clash.*on/.test(text)) { d({t:A.UPD_RULES,u:{excludeSelf:false}}); return 'Self-clashes included.'; }
+    if (/(?:enable|turn\s+on|activate)\s+semantic[\s-]*filter/.test(text)) { d({t:A.UPD_RULES,u:{useSemanticFilter:true}}); return 'Semantic filter enabled — intentional relationships (doors in walls, assembly parts) will suppress hard clashes.'; }
+    if (/(?:disable|turn\s+off|deactivate)\s+semantic[\s-]*filter/.test(text)) { d({t:A.UPD_RULES,u:{useSemanticFilter:false}}); return 'Semantic filter disabled — all geometric intersections will be reported.'; }
 
     // ── Overlap volume threshold ──────────────────────────────────
     var ovMatch = text.match(/(?:min(?:imum)?\s+)?overlap\s+(?:volume?\s+)?(\d+(?:\.\d+)?)\s*(?:cm3|cm³)?/i);
     if (!ovMatch) ovMatch = text.match(/overlap\s+(?:volume?\s+)?(?:to\s+|=\s*)?(\d+(?:\.\d+)?)\s*(?:cm3|cm³)?/i);
     if (ovMatch) {
       var cm3 = parseFloat(ovMatch[1]);
-      d({t:'UPD_RULES', u:{minOverlapVolM3:cm3/1e6}});
+      d({t:A.UPD_RULES, u:{minOverlapVolM3:cm3/1e6}});
       return 'Minimum overlap volume set to ' + cm3 + ' cm³. Re-run detection to apply.';
     }
 
@@ -9530,7 +9564,7 @@ function startApp() {
         var key = ta < tb ? ta+':'+tb : tb+':'+ta;
         var tpObj = Object.assign({}, s.rules.toleranceByTypePair||{});
         tpObj[key] = +tpMatch[3];
-        d({t:'UPD_RULES', u:{toleranceByTypePair:tpObj}});
+        d({t:A.UPD_RULES, u:{toleranceByTypePair:tpObj}});
         return 'Set ' + ta.replace('Ifc','') + ' ↔ ' + tb.replace('Ifc','') + ' clearance to ' + tpMatch[3] + 'mm.';
       }
     }
@@ -9550,11 +9584,11 @@ function startApp() {
       var presets2 = _getClashPresets();
       var found = presets2.find(function(p){ return p.name.toLowerCase() === pHint || p.name.toLowerCase().indexOf(pHint) !== -1; });
       if (found) {
-        d({t:'UPD_RULES', u:found.rules});
+        d({t:A.UPD_RULES, u:found.rules});
         if (/run/.test(text) && s.models.length && !s.detecting) {
           var merged = Object.assign({}, s.rules, found.rules);
-          d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
-          setTimeout(function(){ d({t:'MERGE_CLASHES', v:detectClashes(s.models, merged)}); }, 20);
+          d({t:A.DETECTING}); d({t:A.TAB,v:'clashes'});
+          setTimeout(function(){ d({t:A.MERGE_CLASHES, v:detectClashes(s.models, merged)}); }, 20);
           return 'Running "' + found.name + '" preset…';
         }
         return 'Loaded preset "' + found.name + '". Say "run" to detect.';
@@ -9568,8 +9602,8 @@ function startApp() {
         /^(?:run|detect)\s+(?:it\s+)?again$/.test(text)) {
       if (!s.models.length) return 'No models loaded yet.';
       if (s.detecting) return 'Already running…';
-      d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
-      setTimeout(function(){ d({t:'MERGE_CLASHES', v:detectClashes(s.models,s.rules)}); }, 20);
+      d({t:A.DETECTING}); d({t:A.TAB,v:'clashes'});
+      setTimeout(function(){ d({t:A.MERGE_CLASHES, v:detectClashes(s.models,s.rules)}); }, 20);
       var r2 = s.rules;
       return 'Running clash detection' + (r2.maxGap ? ' with ' + r2.maxGap + 'mm max gap' : '') + '…';
     }
@@ -9579,18 +9613,18 @@ function startApp() {
     var swMatch = text.match(/\b(open|new|active|resolved|closed|all)\b/);
     if (swMatch && /show|display|filter|view|see|only|just|list|give|get|want|need|find|clashes?|issues?/.test(text)) {
       var sw = swMatch[1];
-      d({t:'UPD_FILTERS', u:{status:statusMap[sw]||'all'}}); d({t:'TAB',v:'clashes'});
+      d({t:A.UPD_FILTERS, u:{status:statusMap[sw]||'all'}}); d({t:A.TAB,v:'clashes'});
       return sw==='all' ? 'Showing all clashes.' : 'Filtered to ' + sw + ' clashes.';
     }
     if (/reset\s+filters?|clear\s+filters?|show\s+all|remove\s+filters?|no\s+filter/.test(text)) {
-      d({t:'RESET_FILTERS'});
+      d({t:A.RESET_FILTERS});
       return 'Filters cleared.';
     }
     var groupMatch = text.match(/(?:group|grouped|organize|organise|sort|arrange|categorize|categorise)\s+(?:\w+\s+)?by\s+(storey|floor|level|discipline|status|type|none)/);
     if (!groupMatch) groupMatch = text.match(/by\s+(storey|floor|level|discipline|status|type)\b/);
     if (groupMatch) {
       var gv = {storey:'storey',floor:'storey',level:'storey',discipline:'discipline',status:'status',type:'type',none:'none'}[groupMatch[1]];
-      d({t:'CLASH_GROUP_BY',v:gv}); d({t:'TAB',v:'clashes'});
+      d({t:A.CLASH_GROUP_BY,v:gv}); d({t:A.TAB,v:'clashes'});
       return 'Grouped by ' + groupMatch[1] + '.';
     }
 
@@ -9618,7 +9652,7 @@ function startApp() {
       var issueTargets = s.issues;
       if (assignFilter === 'open') issueTargets = issueTargets.filter(function(i){return i.status==='open';});
       else if (assignFilter === 'unassigned') issueTargets = issueTargets.filter(function(i){return !i.assignee;});
-      issueTargets.forEach(function(i){ d({t:'UPD_ISSUE', id:i.id, u:{assignee:assignee}}); });
+      issueTargets.forEach(function(i){ d({t:A.UPD_ISSUE, id:i.id, u:{assignee:assignee}}); });
       return 'Assigned ' + issueTargets.length + ' issues to ' + assignee + '.';
     }
 
@@ -9646,7 +9680,7 @@ function startApp() {
     // ── Theme ──────────────────────────────────────────────────────
     if (/(?:switch|change|toggle|set|go)\s+(?:to\s+)?(?:light|dark)\s*(?:mode|theme)?/.test(text) || /(?:light|dark)\s+(?:mode|theme)/.test(text)) {
       var wantLight = /light/.test(text);
-      d({t:'UPD_PREFS',u:{theme:wantLight?'light':'dark'}});
+      d({t:A.UPD_PREFS,u:{theme:wantLight?'light':'dark'}});
       return 'Switched to ' + (wantLight?'light':'dark') + ' mode.';
     }
 
@@ -9659,12 +9693,12 @@ function startApp() {
     // ── File Loading ─────────────────────────────────────────────
     if (/(?:load|open|import|add)\s+(?:an?\s+)?ifc|ifc\s+(?:file|model)/.test(text)) {
       if(window._ccOpenIFC) window._ccOpenIFC();
-      else { window._ccPendingOpen='ifc'; d({t:'TAB',v:'models'}); }
+      else { window._ccPendingOpen='ifc'; d({t:A.TAB,v:'models'}); }
       return 'Opening IFC file picker...';
     }
     if (/(?:load|open|import|add)\s+(?:an?\s+)?(?:2d|dxf|pdf|dwg|underlay|drawing)/.test(text)) {
       if(window._ccOpen2D) window._ccOpen2D();
-      else { window._ccPendingOpen='2d'; d({t:'TAB',v:'models'}); }
+      else { window._ccPendingOpen='2d'; d({t:A.TAB,v:'models'}); }
       return 'Opening 2D file picker...';
     }
     if (/(?:import|load|open)\s+(?:a\s+)?bcf/.test(text)) {
@@ -9673,25 +9707,25 @@ function startApp() {
     }
 
     // ── Tab Navigation ───────────────────────────────────────────
-    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?models?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:'TAB',v:'models'}); return 'Opened Models tab.'; }
-    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?clashes?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:'TAB',v:'clashes'}); return 'Opened Clashes tab.'; }
-    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?issues?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:'TAB',v:'issues'}); return 'Opened Issues tab.'; }
-    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?explorer?\s*(?:tab|panel)?/.test(text)) { d({t:'TAB',v:'explorer'}); return 'Opened Explorer tab.'; }
+    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?models?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:A.TAB,v:'models'}); return 'Opened Models tab.'; }
+    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?clashes?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:A.TAB,v:'clashes'}); return 'Opened Clashes tab.'; }
+    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?issues?\s*(?:tab|panel|sidebar)?/.test(text)) { d({t:A.TAB,v:'issues'}); return 'Opened Issues tab.'; }
+    if (/(?:show|open|go\s+to|switch\s+to)\s+(?:the\s+)?explorer?\s*(?:tab|panel)?/.test(text)) { d({t:A.TAB,v:'explorer'}); return 'Opened Explorer tab.'; }
 
     // ── Training Mode ─────────────────────────────────────────────
     if (/training\s*mode|(?:enable|start|activate|turn\s+on)\s+training|(?:open|show)\s+(?:the\s+)?training/.test(text)) {
-      if(!s.trainingMode) d({t:'TRAINING_MODE'});
+      if(!s.trainingMode) d({t:A.TRAINING_MODE});
       return s.trainingMode ? 'Training Mode is already active. Use thumbs up/down on clash rows to label data.' : 'Training Mode enabled. Use the thumbs up/down buttons on each clash to label true/false positives.';
     }
     if (/(?:disable|stop|deactivate|turn\s+off|exit)\s+training/.test(text)) {
-      if(s.trainingMode){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:'TRAINING_MODE'});}
+      if(s.trainingMode){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:A.TRAINING_MODE});}
       return s.trainingMode ? 'Check the warning popup to confirm.' : 'Training Mode is already off.';
     }
 
     // ── Settings & Modals ────────────────────────────────────────
-    if (/(?:open|show)\s+(?:the\s+)?settings?/.test(text)) { d({t:'SETTINGS',v:true}); return 'Opened settings.'; }
-    if (/(?:open|show)\s+(?:the\s+)?(?:revit\s+)?bridge/.test(text)) { d({t:'REVIT_BRIDGE',v:true}); return 'Opened Revit Bridge.'; }
-    if (/(?:new|create|add)\s+(?:an?\s+)?issue/.test(text)) { d({t:'MODAL',v:true}); return 'Opened new issue form.'; }
+    if (/(?:open|show)\s+(?:the\s+)?settings?/.test(text)) { d({t:A.SETTINGS,v:true}); return 'Opened settings.'; }
+    if (/(?:open|show)\s+(?:the\s+)?(?:revit\s+)?bridge/.test(text)) { d({t:A.REVIT_BRIDGE,v:true}); return 'Opened Revit Bridge.'; }
+    if (/(?:new|create|add)\s+(?:an?\s+)?issue/.test(text)) { d({t:A.MODAL,v:true}); return 'Opened new issue form.'; }
 
     // ── Viewer Controls ──────────────────────────────────────────
     if (/(?:reset|home|default)\s+(?:the\s+)?(?:view|camera)|(?:fit|zoom)\s+(?:to\s+)?all/.test(text)) {
@@ -9700,35 +9734,35 @@ function startApp() {
     }
 
     // Section planes
-    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?x|x\s+(?:section|cut)/.test(text)) { d({t:'SECTION',axis:'x'}); return 'Section plane set on X axis.'; }
-    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?y|y\s+(?:section|cut)/.test(text)) { d({t:'SECTION',axis:'y'}); return 'Section plane set on Y axis.'; }
-    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?z|z\s+(?:section|cut)/.test(text)) { d({t:'SECTION',axis:'z'}); return 'Section plane set on Z axis.'; }
-    if (/(?:remove|clear|off|disable|hide)\s+(?:the\s+)?(?:section|cut|slice|clipping)/.test(text)) { d({t:'SECTION',axis:null}); d({t:'SECTION_BOX',v:null}); return 'Section planes cleared.'; }
+    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?x|x\s+(?:section|cut)/.test(text)) { d({t:A.SECTION,axis:'x'}); return 'Section plane set on X axis.'; }
+    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?y|y\s+(?:section|cut)/.test(text)) { d({t:A.SECTION,axis:'y'}); return 'Section plane set on Y axis.'; }
+    if (/(?:section|cut|slice)\s+(?:plane\s+)?(?:on\s+)?z|z\s+(?:section|cut)/.test(text)) { d({t:A.SECTION,axis:'z'}); return 'Section plane set on Z axis.'; }
+    if (/(?:remove|clear|off|disable|hide)\s+(?:the\s+)?(?:section|cut|slice|clipping)/.test(text)) { d({t:A.SECTION,axis:null}); d({t:A.SECTION_BOX,v:null}); return 'Section planes cleared.'; }
 
     // Render style
     var renderMatch = text.match(/(?:switch|change|set)\s+(?:to\s+)?(?:render\s+)?(?:style\s+)?(?:to\s+)?(standard|shaded|rendered|wireframe)/);
     if (!renderMatch) renderMatch = text.match(/(standard|shaded|rendered|wireframe)\s+(?:mode|style|view|render)/);
-    if (renderMatch) { d({t:'UPD_PREFS',u:{renderStyle:renderMatch[1]}}); return 'Render style set to ' + renderMatch[1] + '.'; }
+    if (renderMatch) { d({t:A.UPD_PREFS,u:{renderStyle:renderMatch[1]}}); return 'Render style set to ' + renderMatch[1] + '.'; }
 
     // Clash markers
-    if (/(?:show|enable|turn\s+on|display)\s+markers?/.test(text)) { d({t:'UPD_PREFS',u:{showMarkers:true}}); return 'Markers enabled.'; }
-    if (/(?:hide|disable|turn\s+off|remove)\s+markers?/.test(text)) { d({t:'UPD_PREFS',u:{showMarkers:false}}); return 'Markers disabled.'; }
+    if (/(?:show|enable|turn\s+on|display)\s+markers?/.test(text)) { d({t:A.UPD_PREFS,u:{showMarkers:true}}); return 'Markers enabled.'; }
+    if (/(?:hide|disable|turn\s+off|remove)\s+markers?/.test(text)) { d({t:A.UPD_PREFS,u:{showMarkers:false}}); return 'Markers disabled.'; }
 
     // Grid & axes
-    if (/(?:show|enable|turn\s+on)\s+(?:the\s+)?grid/.test(text)) { d({t:'UPD_PREFS',u:{showGrid:true}}); return 'Grid enabled.'; }
-    if (/(?:hide|disable|turn\s+off|remove)\s+(?:the\s+)?grid/.test(text)) { d({t:'UPD_PREFS',u:{showGrid:false}}); return 'Grid hidden.'; }
-    if (/(?:show|enable|turn\s+on)\s+(?:the\s+)?axes?/.test(text)) { d({t:'UPD_PREFS',u:{showAxes:true}}); return 'Axes enabled.'; }
-    if (/(?:hide|disable|turn\s+off|remove)\s+(?:the\s+)?axes?/.test(text)) { d({t:'UPD_PREFS',u:{showAxes:false}}); return 'Axes hidden.'; }
+    if (/(?:show|enable|turn\s+on)\s+(?:the\s+)?grid/.test(text)) { d({t:A.UPD_PREFS,u:{showGrid:true}}); return 'Grid enabled.'; }
+    if (/(?:hide|disable|turn\s+off|remove)\s+(?:the\s+)?grid/.test(text)) { d({t:A.UPD_PREFS,u:{showGrid:false}}); return 'Grid hidden.'; }
+    if (/(?:show|enable|turn\s+on)\s+(?:the\s+)?axes?/.test(text)) { d({t:A.UPD_PREFS,u:{showAxes:true}}); return 'Axes enabled.'; }
+    if (/(?:hide|disable|turn\s+off|remove)\s+(?:the\s+)?axes?/.test(text)) { d({t:A.UPD_PREFS,u:{showAxes:false}}); return 'Axes hidden.'; }
 
     // Ghost / unghost
     if (/(?:unghost|unghostall|clear\s+ghost|show\s+all\s+elements?|restore\s+all)/.test(text)) { if(_unghostAll)_unghostAll(); return 'All elements restored.'; }
 
     // Measurements
-    if (/(?:measure|measurement)\s+(?:length|distance)/.test(text)) { d({t:'MEASURE_MODE',v:'length'}); return 'Length measurement mode activated. Click two points.'; }
-    if (/(?:measure|measurement)\s+angle/.test(text)) { d({t:'MEASURE_MODE',v:'angle'}); return 'Angle measurement mode activated.'; }
-    if (/(?:measure|measurement)\s+area/.test(text)) { d({t:'MEASURE_MODE',v:'area'}); return 'Area measurement mode activated.'; }
-    if (/(?:stop|exit|cancel|end)\s+measur/.test(text)) { d({t:'MEASURE_MODE',v:null}); return 'Measurement mode deactivated.'; }
-    if (/(?:clear|delete|remove)\s+(?:all\s+)?measurements?/.test(text)) { d({t:'CLEAR_MEASUREMENTS'}); return 'All measurements cleared.'; }
+    if (/(?:measure|measurement)\s+(?:length|distance)/.test(text)) { d({t:A.MEASURE_MODE,v:'length'}); return 'Length measurement mode activated. Click two points.'; }
+    if (/(?:measure|measurement)\s+angle/.test(text)) { d({t:A.MEASURE_MODE,v:'angle'}); return 'Angle measurement mode activated.'; }
+    if (/(?:measure|measurement)\s+area/.test(text)) { d({t:A.MEASURE_MODE,v:'area'}); return 'Area measurement mode activated.'; }
+    if (/(?:stop|exit|cancel|end)\s+measur/.test(text)) { d({t:A.MEASURE_MODE,v:null}); return 'Measurement mode deactivated.'; }
+    if (/(?:clear|delete|remove)\s+(?:all\s+)?measurements?/.test(text)) { d({t:A.CLEAR_MEASUREMENTS}); return 'All measurements cleared.'; }
 
     // Save viewpoint
     if (/(?:save|capture|store)\s+(?:this\s+)?(?:view|viewpoint|camera)/.test(text)) {
@@ -9740,20 +9774,20 @@ function startApp() {
     if (/(?:save|store)\s+(?:the\s+)?project/.test(text)) { if(typeof saveProject==='function') saveProject(s); return 'Project saved.'; }
 
     // Floor plan
-    if (/(?:exit|close|leave|cancel)\s+(?:the\s+)?(?:floor\s*plan|plan\s+view|2d\s+view)/.test(text)) { d({t:'FLOOR_PLAN',v:null}); return 'Exited floor plan view.'; }
+    if (/(?:exit|close|leave|cancel)\s+(?:the\s+)?(?:floor\s*plan|plan\s+view|2d\s+view)/.test(text)) { d({t:A.FLOOR_PLAN,v:null}); return 'Exited floor plan view.'; }
 
     // Classifications / color by
     if (/color\s+by\s+(type|storey|discipline|material)/.test(text)) {
       var cbMatch = text.match(/color\s+by\s+(type|storey|discipline|material)/);
       var cbView = 'by'+cbMatch[1].charAt(0).toUpperCase()+cbMatch[1].slice(1);
-      d({t:'COLOR_BY_CLASS',v:cbView});
+      d({t:A.COLOR_BY_CLASS,v:cbView});
       return 'Coloring by ' + cbMatch[1] + '.';
     }
-    if (/(?:remove|clear|reset)\s+color/.test(text)) { d({t:'COLOR_BY_CLASS',v:null}); return 'Color-by-class cleared.'; }
+    if (/(?:remove|clear|reset)\s+color/.test(text)) { d({t:A.COLOR_BY_CLASS,v:null}); return 'Color-by-class cleared.'; }
 
     // Model tree
-    if (/(?:show|open)\s+(?:the\s+)?(?:model\s+)?tree/.test(text)) { d({t:'TREE',v:true}); return 'Model tree opened.'; }
-    if (/(?:hide|close)\s+(?:the\s+)?(?:model\s+)?tree/.test(text)) { d({t:'TREE',v:false}); return 'Model tree closed.'; }
+    if (/(?:show|open)\s+(?:the\s+)?(?:model\s+)?tree/.test(text)) { d({t:A.TREE,v:true}); return 'Model tree opened.'; }
+    if (/(?:hide|close)\s+(?:the\s+)?(?:model\s+)?tree/.test(text)) { d({t:A.TREE,v:false}); return 'Model tree closed.'; }
 
     return null;
   }
@@ -9988,10 +10022,10 @@ function startApp() {
     }, [msgs]);
 
     function executeDetection(rules) {
-      d({t:'UPD_RULES', u:rules});
+      d({t:A.UPD_RULES, u:rules});
       if (s.detecting) return;
-      d({t:'DETECTING'}); d({t:'TAB',v:'clashes'});
-      setTimeout(function(){ d({t:'MERGE_CLASHES', v:detectClashes(s.models, Object.assign({},s.rules,rules))}); }, 20);
+      d({t:A.DETECTING}); d({t:A.TAB,v:'clashes'});
+      setTimeout(function(){ d({t:A.MERGE_CLASHES, v:detectClashes(s.models, Object.assign({},s.rules,rules))}); }, 20);
     }
 
     function send() {
@@ -10101,7 +10135,7 @@ function startApp() {
           <span style=${{width:'.4rem', height:'.4rem', borderRadius:'50%', background:backendColor, display:'inline-block'}}></span>
           ${backendLabel}
         </span>`}
-        <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:'TRAINING_MODE'});}} style=${{
+        <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:A.TRAINING_MODE});}} style=${{
           background:s.trainingMode?'rgba(124,58,237,.85)':'none', border:'1px solid '+(s.trainingMode?'#a78bfa':'var(--border)'),
           borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', gap:'.25rem',
           padding:'.15rem .45rem', color:s.trainingMode?'#e9d5ff':mutedCol, fontSize:'.6rem', whiteSpace:'nowrap',
@@ -10221,7 +10255,7 @@ function startApp() {
       idbDeleteProjectFiles(id); idbDeleteProjectData(id);
       var list=getProjects().filter(function(p){return p.id!==id;});
       if(!list.length) list=[{id:'default',name:'Default Project',createdAt:Date.now()}];
-      saveProjects(list); d({t:'SET_PROJECT_LIST',v:list});
+      saveProjects(list); d({t:A.SET_PROJECT_LIST,v:list});
       _switchProject(list[0].id,s,d);
       setConfirmDel(null);
     }
@@ -10282,7 +10316,7 @@ function startApp() {
               onKeyDown=${function(e){
                 if(e.key==='Enter'&&_lrName.trim()){
                   var id=uid();var list=getProjects().concat([{id:id,name:_lrName.trim(),createdAt:Date.now()}]);
-                  saveProjects(list);d({t:'SET_PROJECT_LIST',v:list});_switchProject(id,s,d);
+                  saveProjects(list);d({t:A.SET_PROJECT_LIST,v:list});_switchProject(id,s,d);
                   _setLrCreating(false);setProjOpen(false);
                 }
                 if(e.key==='Escape')_setLrCreating(false);
@@ -10291,7 +10325,7 @@ function startApp() {
             <button onClick=${function(){
               if(!_lrName.trim()){_setLrCreating(false);return;}
               var id=uid();var list=getProjects().concat([{id:id,name:_lrName.trim(),createdAt:Date.now()}]);
-              saveProjects(list);d({t:'SET_PROJECT_LIST',v:list});_switchProject(id,s,d);
+              saveProjects(list);d({t:A.SET_PROJECT_LIST,v:list});_switchProject(id,s,d);
               _setLrCreating(false);setProjOpen(false);
             }} disabled=${!_lrName.trim()}
               style=${{...S_BTN,fontSize:'.55rem',padding:'.15rem .35rem',background:'var(--accent)',color:'#fff',opacity:_lrName.trim()?1:0.4}}>Create</button>
@@ -10328,13 +10362,13 @@ function startApp() {
       <div style=${{flex:1}}></div>
       ${iconBtn(function(){
           if(window._ccOpenIFC){window._ccOpenIFC();}
-          else{window._ccPendingOpen='ifc';d({t:'TAB',v:'models'});}
+          else{window._ccPendingOpen='ifc';d({t:A.TAB,v:'models'});}
         },
         html`<span style=${{fontWeight:700,fontSize:'.7rem',letterSpacing:'.03em'}}>IFC</span>`,
         'Load IFC model')}
       ${iconBtn(function(){
           if(window._ccOpen2D){window._ccOpen2D();}
-          else{window._ccPendingOpen='2d';d({t:'TAB',v:'models'});}
+          else{window._ccPendingOpen='2d';d({t:A.TAB,v:'models'});}
         },
         html`<span style=${{fontWeight:700,fontSize:'.7rem',letterSpacing:'.03em'}}>2D</span>`,
         'Load DXF / PDF / DWG')}
@@ -10347,14 +10381,14 @@ function startApp() {
       ${iconBtn(function(){exportBCF(all,'2.1',s.viewpoints);},
         html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:SVG_EXPORT}}></svg>`,
         'Export BCF')}
-      ${iconBtn(function(){d({t:'UPD_PREFS',u:{theme:isDark?'light':'dark'}});},
+      ${iconBtn(function(){d({t:A.UPD_PREFS,u:{theme:isDark?'light':'dark'}});},
         isDark?'☀':'☾', isDark?'Light mode':'Dark mode')}
-      ${iconBtn(function(){d({t:'REVIT_BRIDGE',v:true});},
+      ${iconBtn(function(){d({t:A.REVIT_BRIDGE,v:true});},
         html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
         </svg>`,
         'Revit Bridge')}
-      ${iconBtn(function(){d({t:'SETTINGS',v:true});},
+      ${iconBtn(function(){d({t:A.SETTINGS,v:true});},
         html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:SVG_GEAR}}></svg>`,
         'Settings')}
       ${iconBtn(function(){if(window._ccToggleTutorial)window._ccToggleTutorial();},
@@ -10394,10 +10428,10 @@ function startApp() {
     // Global guard: warn before turning off if unsent data exists
     window._ccToggleTraining = function(){
       if(s.trainingMode && feedbackCount > 0){setShowWarn(true);return;}
-      d({t:'TRAINING_MODE'});
+      d({t:A.TRAINING_MODE});
     };
 
-    function doDelete() { d({t:'CLEAR_TRAINING_DATA'}); }
+    function doDelete() { d({t:A.CLEAR_TRAINING_DATA}); }
     var hasData = feedbackCount > 0;
 
     return html`<div style=${{position:'absolute',top:'2.6rem',left:'50%',transform:'translateX(-50%)',
@@ -10408,7 +10442,7 @@ function startApp() {
           border:'1px solid '+(s.trainingMode?'#a78bfa':'var(--border)'),
           boxShadow:s.trainingMode?'0 0 20px rgba(124,58,237,.3)':'var(--shadow-md)',
           overflow:'hidden'}}>
-        <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:'TRAINING_MODE'}); if(!s.trainingMode) setExpanded(false);}}
+        <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:A.TRAINING_MODE}); if(!s.trainingMode) setExpanded(false);}}
           style=${{display:'flex',alignItems:'center',gap:'.4rem',
             padding:'.45rem .7rem .45rem 1.1rem',background:'none',border:'none',
             color:s.trainingMode?'#e9d5ff':'var(--text-muted)',fontSize:'.74rem',cursor:'pointer',whiteSpace:'nowrap'}}>
@@ -10469,11 +10503,11 @@ function startApp() {
             You have <strong style=${{color:'#a78bfa'}}>${feedbackCount} labelled</strong> clash${feedbackCount!==1?'es':''}.${dataConsent?' Data will be shared automatically at end of session.':' Data sharing is off — labels are stored locally only.'}
           </p>
           <div style=${{display:'flex',gap:'.35rem',flexDirection:'column'}}>
-            <button onClick=${function(){setShowWarn(false);d({t:'TRAINING_MODE'});}}
+            <button onClick=${function(){setShowWarn(false);d({t:A.TRAINING_MODE});}}
               style=${{...S_BTN,padding:'.4rem',fontSize:'.7rem',fontWeight:600,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:6}}>Turn Off (keep data)</button>
             ${!showDelConfirm && html`<button onClick=${function(){setShowDelConfirm(true);}}
               style=${{...S_BTN,padding:'.4rem',fontSize:'.7rem',fontWeight:600,background:'none',color:'var(--text-muted)',border:'1px solid var(--border)',borderRadius:6}}>Delete Data & Turn Off</button>`}
-            ${showDelConfirm && html`<button onClick=${function(){setShowDelConfirm(false);setShowWarn(false);doDelete();d({t:'TRAINING_MODE'});}}
+            ${showDelConfirm && html`<button onClick=${function(){setShowDelConfirm(false);setShowWarn(false);doDelete();d({t:A.TRAINING_MODE});}}
               style=${{...S_BTN,padding:'.4rem',fontSize:'.7rem',fontWeight:700,background:'#ef4444',color:'#fff',border:'none',borderRadius:6}}>Are you sure? This cannot be undone.</button>`}
           </div>
         </div>
@@ -10576,7 +10610,7 @@ function startApp() {
 
     function tabBtn(id, svgPath, title, badge) {
       var active=s.tab===id;
-      return html`<button class="cc-tip cc-tip-left" data-tip=${title} onClick=${function(){d({t:'TAB',v:s.tab===id?null:id});}}
+      return html`<button class="cc-tip cc-tip-left" data-tip=${title} onClick=${function(){d({t:A.TAB,v:s.tab===id?null:id});}}
         style=${{width:'100%',height:44,background:active?'rgba(37,99,235,.12)':'none',border:'none',
           cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',
           borderRight:active?'3px solid #3b82f6':'3px solid transparent',
@@ -10640,7 +10674,7 @@ function startApp() {
         <span style=${{fontWeight:600,fontSize:'.82rem',flex:1,color:'var(--text-primary)'}}>${TITLES[tab]||''}</span>
         ${tab==='models' && html`<span style=${{fontSize:'.68rem',color:'var(--text-muted)',overflow:'hidden',
           textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:140}} title=${activeProj.name}>📁 ${activeProj.name}</span>`}
-        <button onClick=${function(){d({t:'TAB',v:null});}}
+        <button onClick=${function(){d({t:A.TAB,v:null});}}
           style=${{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',
             fontSize:'1.1rem',lineHeight:1,padding:'2px 4px',borderRadius:4}} title="Close panel">×</button>
       </div>
@@ -10808,7 +10842,7 @@ function startApp() {
             <button onClick=${function(){dismiss('denied');}} style=${{flex:1,border:'1px solid var(--border)',cursor:'pointer',fontFamily:'inherit',fontSize:'.7rem',borderRadius:8,padding:'.5rem 1rem',background:'none',color:'var(--text-secondary)',transition:'background .15s'}}>
               No thanks
             </button>
-            <button onClick=${function(){dismiss('granted',true);setTimeout(function(){if(window._ccDispatch)window._ccDispatch({t:'TRAINING_MODE',v:true});},300);}} style=${{flex:1,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'.75rem',borderRadius:8,padding:'.5rem 1.4rem',background:'#7c3aed',color:'#fff',fontWeight:600,boxShadow:'0 2px 8px rgba(124,58,237,.3)',transition:'background .15s'}}>
+            <button onClick=${function(){dismiss('granted',true);setTimeout(function(){if(window._ccDispatch)window._ccDispatch({t:A.TRAINING_MODE,v:true});},300);}} style=${{flex:1,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'.75rem',borderRadius:8,padding:'.5rem 1.4rem',background:'#7c3aed',color:'#fff',fontWeight:600,boxShadow:'0 2px 8px rgba(124,58,237,.3)',transition:'background .15s'}}>
               Enable Training Mode
             </button>
           </div>
@@ -10817,7 +10851,7 @@ function startApp() {
             <button onClick=${function(){dismiss();}} style=${{border:'1px solid var(--border)',cursor:'pointer',fontFamily:'inherit',fontSize:'.7rem',borderRadius:8,padding:'.5rem 1rem',background:'none',color:'var(--text-secondary)',transition:'background .15s'}}>
               Skip for now
             </button>
-            <button onClick=${function(){dismiss(null,true);setTimeout(function(){if(window._ccDispatch)window._ccDispatch({t:'TRAINING_MODE',v:true});},300);}} style=${{border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'.75rem',borderRadius:8,padding:'.5rem 1.4rem',background:'#7c3aed',color:'#fff',fontWeight:600,boxShadow:'0 2px 8px rgba(124,58,237,.3)',transition:'background .15s'}}>
+            <button onClick=${function(){dismiss(null,true);setTimeout(function(){if(window._ccDispatch)window._ccDispatch({t:A.TRAINING_MODE,v:true});},300);}} style=${{border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'.75rem',borderRadius:8,padding:'.5rem 1.4rem',background:'#7c3aed',color:'#fff',fontWeight:600,boxShadow:'0 2px 8px rgba(124,58,237,.3)',transition:'background .15s'}}>
               Enable Training Mode
             </button>
           </div>
@@ -10839,14 +10873,14 @@ function startApp() {
         <span style=${SEC}>Section / Clipping</span>
         <div style=${{display:'flex',gap:'.2rem',marginBottom:'.3rem'}}>
           ${[{axis:'x',label:'X'},{axis:'z',label:'Y'},{axis:'y',label:'Z'}].map(function(item){return html`<button key=${item.axis}
-            onClick=${function(){d({t:'SECTION_BOX',v:null});d({t:'SECTION',axis:s.sectionAxis===item.axis?null:item.axis});}}
+            onClick=${function(){d({t:A.SECTION_BOX,v:null});d({t:A.SECTION,axis:s.sectionAxis===item.axis?null:item.axis});}}
             style=${{...S_BTN,flex:1,padding:'.3rem',background:s.sectionAxis===item.axis?'#2563eb':'var(--bg-secondary)',color:s.sectionAxis===item.axis?'#fff':'var(--text-muted)'}}>${item.label}</button>`})}
-          <button onClick=${function(){d({t:'SECTION',axis:null});d({t:'SECTION_BOX',v:null});}}
+          <button onClick=${function(){d({t:A.SECTION,axis:null});d({t:A.SECTION_BOX,v:null});}}
             style=${{...S_BTN,flex:1,padding:'.3rem',background:!sectionActive?'#2563eb':'var(--bg-secondary)',color:!sectionActive?'#fff':'var(--text-muted)'}}>Off</button>
         </div>
         ${(s.sectionAxis||s.sectionCustom) && html`<div>
           <input type="range" min="0" max="1" step="0.005" value=${s.sectionPos}
-            onInput=${function(e){var pos=parseFloat(e.target.value);if(s.sectionAxis)d({t:'SECTION',axis:s.sectionAxis,pos:pos});else if(s.sectionCustom)d({t:'SECTION_CUSTOM',v:s.sectionCustom,pos:pos});}}
+            onInput=${function(e){var pos=parseFloat(e.target.value);if(s.sectionAxis)d({t:A.SECTION,axis:s.sectionAxis,pos:pos});else if(s.sectionCustom)d({t:A.SECTION_CUSTOM,v:s.sectionCustom,pos:pos});}}
             style=${{width:'100%',marginBottom:'.2rem'}} />
           <span style=${{fontSize:'.6rem',color:'var(--text-faint)'}}>${Math.round(s.sectionPos*100)}%</span>
         </div>`}
@@ -10857,7 +10891,7 @@ function startApp() {
       <div style=${{padding:'.75rem',borderBottom:'1px solid var(--border-subtle)'}}>
         <span style=${SEC}>Markers</span>
         <div style=${{display:'flex',flexDirection:'column',gap:'.3rem'}}>
-          <button onClick=${function(){d({t:'UPD_PREFS',u:{showMarkers:!s.prefs.showMarkers}})}}
+          <button onClick=${function(){d({t:A.UPD_PREFS,u:{showMarkers:!s.prefs.showMarkers}})}}
             style=${{...S_BTN,justifyContent:'space-between',padding:'.4rem .5rem',background:'var(--bg-secondary)',border:'1px solid var(--border)',color:'var(--text-primary)',fontSize:'.7rem'}}>
             Markers <span style=${{color:s.prefs.showMarkers?'#22c55e':'#ef4444',fontWeight:600}}>${s.prefs.showMarkers?'On':'Off'}</span>
           </button>
@@ -10872,7 +10906,7 @@ function startApp() {
         <span style=${SEC}>Render Style</span>
         <div style=${{display:'flex',gap:'.2rem',flexWrap:'wrap'}}>
           ${['standard','shaded','rendered','wireframe'].map(function(rs){return html`<button key=${rs}
-            onClick=${function(){d({t:'UPD_PREFS',u:{renderStyle:rs}});if(window._ccSetRenderStyle)window._ccSetRenderStyle(rs);}}
+            onClick=${function(){d({t:A.UPD_PREFS,u:{renderStyle:rs}});if(window._ccSetRenderStyle)window._ccSetRenderStyle(rs);}}
             style=${{...S_BTN,padding:'.25rem .5rem',fontSize:'.65rem',background:(s.prefs.renderStyle||'standard')===rs?'#2563eb':'var(--bg-secondary)',color:(s.prefs.renderStyle||'standard')===rs?'#fff':'var(--text-muted)'}}>${rs.charAt(0).toUpperCase()+rs.slice(1)}</button>`})}
         </div>
       </div>
@@ -10880,7 +10914,7 @@ function startApp() {
       <!-- Training Mode -->
       <div style=${{padding:'.75rem'}}>
         <span style=${SEC}>Training Data</span>
-        <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:'TRAINING_MODE'});}}
+        <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:A.TRAINING_MODE});}}
           style=${{...S_BTN,width:'100%',justifyContent:'space-between',padding:'.4rem .5rem',
             background:s.trainingMode?'rgba(124,58,237,.15)':'var(--bg-secondary)',
             border:'1px solid '+(s.trainingMode?'#a78bfa':'var(--border)'),
@@ -10899,7 +10933,7 @@ function startApp() {
     var issueN=s.issues.filter(function(i){var st=i.status||'open';return st!=='resolved'&&st!=='closed';}).length;
     function navBtn(id, svgPath, label, badge) {
       var active=s.tab===id;
-      return html`<button class=${active?'active':''} onClick=${function(){d({t:'TAB',v:s.tab===id?null:id});}}>
+      return html`<button class=${active?'active':''} onClick=${function(){d({t:A.TAB,v:s.tab===id?null:id});}}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:svgPath}}></svg>
         ${badge>0 && html`<span style=${{position:'absolute',top:2,right:2,background:'#ef4444',color:'#fff',
           fontSize:'.5rem',fontWeight:600,padding:'0 3px',borderRadius:99,lineHeight:1.4,minWidth:12,textAlign:'center'}}>${badge>99?'99+':badge}</span>`}
@@ -10924,22 +10958,22 @@ function startApp() {
       _rawD(a);
       // Write clash training labels to localStorage
       try {
-        if (a.t==='UPD_CLASH' && a.u && a.u.status) {
+        if (a.t===A.UPD_CLASH && a.u && a.u.status) {
           var c = s.clashes.find(function(c){return c.id===a.id;});
           if (c && c._trainFV && a.u.status !== c.status) {
             var labelMap = {confirmed:1.0, denied:0.0, in_progress:0.8, resolved:0.7, closed:0.2};
             if (labelMap[a.u.status] != null) _saveClashTrainRecord(c.id, c._trainFV, labelMap[a.u.status], a.u.status==='denied'?'explicit_feedback':'status_change', false);
           }
         }
-        if (a.t==='AI_FEEDBACK' && a.v) {
+        if (a.t===A.AI_FEEDBACK && a.v) {
           var c2 = s.clashes.find(function(c){return c.id===a.id;});
           if (c2 && c2._trainFV) _saveClashTrainRecord(c2.id, c2._trainFV, a.v==='up'?1.0:0.0, 'explicit_feedback', false);
         }
-        if (a.t==='ADD_ISSUE' && a.v && a.v.clashId) {
+        if (a.t===A.ADD_ISSUE && a.v && a.v.clashId) {
           var c3 = s.clashes.find(function(c){return c.id===a.v.clashId;});
           if (c3 && c3._trainFV) _saveClashTrainRecord(c3.id, c3._trainFV, 1.0, 'issue_created', false);
         }
-        if (a.t==='BATCH_UPD_CLASH' && a.u && a.u.status) {
+        if (a.t===A.BATCH_UPD_CLASH && a.u && a.u.status) {
           var labelMap2 = {confirmed:1.0, denied:0.0, in_progress:0.8, resolved:0.7, closed:0.2};
           if (labelMap2[a.u.status] != null) {
             s.clashes.forEach(function(c){
@@ -11014,7 +11048,7 @@ function startApp() {
             if(!saved||c.aiFeedback||c.clashTypeConfirmed) return c;
             return Object.assign({},c,{aiFeedback:saved.f,aiReasons:saved.r,aiResolution:saved.res,aiNote:saved.n,clashTypeConfirmed:saved.ct,aiSignals:saved.sig});
           });
-          d({t:'LOAD_PROJECT_STATE',data:{clashes:restored}});
+          d({t:A.LOAD_PROJECT_STATE,data:{clashes:restored}});
         }
       }catch(e){}
     },[s.clashes.length]);
@@ -11099,13 +11133,13 @@ function startApp() {
         // Ctrl+O — Open IFC file
         if(ctrl && e.key==='o'){ e.preventDefault(); if(window._ccOpenIFC)window._ccOpenIFC(); return; }
         // Ctrl+, — Open settings
-        if(ctrl && e.key===','){ e.preventDefault(); d({t:'SETTINGS',v:!s.showSettings}); return; }
+        if(ctrl && e.key===','){ e.preventDefault(); d({t:A.SETTINGS,v:!s.showSettings}); return; }
         // Ctrl+/ — AI assistant (handled by NLCommandPanel, but ensure it works)
         // Escape — Close modals/popups in priority order
         if(e.key==='Escape'){
-          if(s.showSettings){ d({t:'SETTINGS',v:false}); return; }
-          if(s.showModal){ d({t:'MODAL',v:false}); return; }
-          if(s.showRevitBridge){ d({t:'REVIT_BRIDGE',v:false}); return; }
+          if(s.showSettings){ d({t:A.SETTINGS,v:false}); return; }
+          if(s.showModal){ d({t:A.MODAL,v:false}); return; }
+          if(s.showRevitBridge){ d({t:A.REVIT_BRIDGE,v:false}); return; }
           // Let other Escape handlers (VirtualList, NLCommandPanel) handle the rest
         }
 
@@ -11150,18 +11184,18 @@ function startApp() {
           if(chord==='bx'){
             var eids=getActiveEids();
             if(eids&&_sboxAroundElements) _sboxAroundElements(eids);
-            else if(_getSectionBoxFromScene){var box=_getSectionBoxFromScene();if(box&&window._ccDispatch)window._ccDispatch({t:'SECTION_BOX',v:{enabled:true,min:[box.min.x,box.min.y,box.min.z],max:[box.max.x,box.max.y,box.max.z]}});}
+            else if(_getSectionBoxFromScene){var box=_getSectionBoxFromScene();if(box&&window._ccDispatch)window._ccDispatch({t:A.SECTION_BOX,v:{enabled:true,min:[box.min.x,box.min.y,box.min.z],max:[box.max.x,box.max.y,box.max.z]}});}
             return;
           }
           // SC — Cycle section plane (off → X → Y → Z → off)
           if(chord==='sc'){
             var next=s.sectionAxis===null?'x':s.sectionAxis==='x'?'y':s.sectionAxis==='y'?'z':null;
-            d({t:'SECTION',axis:next}); return;
+            d({t:A.SECTION,axis:next}); return;
           }
           // ZF — Zoom to fit (reset view)
-          if(chord==='zf'){ if(_resetView)_resetView(); if(s.floorPlan)d({t:'FLOOR_PLAN',v:null}); return; }
+          if(chord==='zf'){ if(_resetView)_resetView(); if(s.floorPlan)d({t:A.FLOOR_PLAN,v:null}); return; }
           // ZA — Zoom to fit all (same as ZF, Revit alias)
-          if(chord==='za'){ if(_resetView)_resetView(); if(s.floorPlan)d({t:'FLOOR_PLAN',v:null}); return; }
+          if(chord==='za'){ if(_resetView)_resetView(); if(s.floorPlan)d({t:A.FLOOR_PLAN,v:null}); return; }
           // VV — Restore last viewpoint
           if(chord==='vv'){
             if(s.viewpoints.length>0&&_restoreViewpoint) _restoreViewpoint(s.viewpoints[s.viewpoints.length-1]);
@@ -11169,17 +11203,17 @@ function startApp() {
           }
           // VP — Save viewpoint (alias)
           if(chord==='vp'){
-            if(_captureViewpoint){var vp=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:'ADD_VIEWPOINT',v:vp});}
+            if(_captureViewpoint){var vp=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:A.ADD_VIEWPOINT,v:vp});}
             return;
           }
           // DL — Toggle measure/distance length
-          if(chord==='dl'){ d({t:'MEASURE_MODE',v:s.measureMode==='length'?null:'length'}); return; }
+          if(chord==='dl'){ d({t:A.MEASURE_MODE,v:s.measureMode==='length'?null:'length'}); return; }
           // DA — Measure angle
-          if(chord==='da'){ d({t:'MEASURE_MODE',v:s.measureMode==='angle'?null:'angle'}); return; }
+          if(chord==='da'){ d({t:A.MEASURE_MODE,v:s.measureMode==='angle'?null:'angle'}); return; }
           // CS — Clear section planes + section box
-          if(chord==='cs'){ d({t:'SECTION',axis:null}); d({t:'SECTION_BOX',v:null}); return; }
+          if(chord==='cs'){ d({t:A.SECTION,axis:null}); d({t:A.SECTION_BOX,v:null}); return; }
           // WT — Toggle wireframe (render style)
-          if(chord==='wt'){ d({t:'PREF',k:'renderStyle',v:s.prefs.renderStyle==='wireframe'?'standard':'wireframe'}); return; }
+          if(chord==='wt'){ d({t:A.UPD_PREFS,u:{renderStyle:s.prefs.renderStyle==='wireframe'?'standard':'wireframe'}}); return; }
           // HH — Temporarily hide selected/active element(s)
           if(chord==='hh'){
             var hhIds=getActiveEids();
@@ -11213,38 +11247,38 @@ function startApp() {
           ch.timer=setTimeout(function(){
             // Chord timed out — execute single-key fallback
             var sk=ch.key; ch.key=null; ch.timer=null;
-            if(sk==='v'){ if(_captureViewpoint){var vp2=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:'ADD_VIEWPOINT',v:vp2});} }
+            if(sk==='v'){ if(_captureViewpoint){var vp2=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:A.ADD_VIEWPOINT,v:vp2});} }
           }, 500);
           return;
         }
 
         // ── Single-key shortcuts (non-chord keys) ──
         if(!ctrl && !e.altKey && !e.shiftKey){
-          if(e.key==='1'){ d({t:'TAB',v:'clashes'}); return; }
-          if(e.key==='2'){ d({t:'TAB',v:'issues'}); return; }
-          if(e.key==='3'){ d({t:'TAB',v:'explorer'}); return; }
+          if(e.key==='1'){ d({t:A.TAB,v:'clashes'}); return; }
+          if(e.key==='2'){ d({t:A.TAB,v:'issues'}); return; }
+          if(e.key==='3'){ d({t:A.TAB,v:'explorer'}); return; }
         }
 
         // M — Toggle measure mode
-        if(e.key==='m'&&!ctrl){ d({t:'MEASURE_MODE',v:s.measureMode?null:'length'}); return; }
+        if(e.key==='m'&&!ctrl){ d({t:A.MEASURE_MODE,v:s.measureMode?null:'length'}); return; }
         // L/A/R — Measure length/angle/area (only when measure mode is active)
         if(s.measureMode){
-          if(e.key==='l'){d({t:'MEASURE_MODE',v:'length'});return;}
-          if(e.key==='a'){d({t:'MEASURE_MODE',v:'angle'});return;}
-          if(e.key==='r'){d({t:'MEASURE_MODE',v:'area'});return;}
+          if(e.key==='l'){d({t:A.MEASURE_MODE,v:'length'});return;}
+          if(e.key==='a'){d({t:A.MEASURE_MODE,v:'angle'});return;}
+          if(e.key==='r'){d({t:A.MEASURE_MODE,v:'area'});return;}
         }
         // / — Open AI chat input
         if(e.key==='/'&&!ctrl){ e.preventDefault(); if(window._ccNLOpen) window._ccNLOpen(); return; }
         // F — Toggle finder search
         if(e.key==='f'&&!ctrl){ if(window._ccToggleFinder) window._ccToggleFinder(); return; }
         // X/Y/Z — Section planes (direct toggle)
-        if(e.key==='x'&&!ctrl){ d({t:'SECTION',axis:s.sectionAxis==='x'?null:'x'}); return; }
-        if(e.key==='y'&&!ctrl){ d({t:'SECTION',axis:s.sectionAxis==='y'?null:'y'}); return; }
+        if(e.key==='x'&&!ctrl){ d({t:A.SECTION,axis:s.sectionAxis==='x'?null:'x'}); return; }
+        if(e.key==='y'&&!ctrl){ d({t:A.SECTION,axis:s.sectionAxis==='y'?null:'y'}); return; }
         // G — Toggle grid
-        if(e.key==='g'&&!ctrl){ d({t:'PREF',k:'showGrid',v:!(s.prefs.showGrid!==false)}); return; }
+        if(e.key==='g'&&!ctrl){ d({t:A.UPD_PREFS,u:{showGrid:!(s.prefs.showGrid!==false)}}); return; }
         // Delete — Delete active measurement or viewpoint (when none selected in clash list)
         if(e.key==='Delete'&&!s.activeId){
-          if(s.measurements.length>0){d({t:'DEL_MEASUREMENT',id:s.measurements[s.measurements.length-1].id});return;}
+          if(s.measurements.length>0){d({t:A.DEL_MEASUREMENT,id:s.measurements[s.measurements.length-1].id});return;}
         }
       }
       window.addEventListener('keydown', gk);

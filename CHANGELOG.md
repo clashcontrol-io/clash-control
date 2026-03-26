@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.12.5 (2026-03-26)
+- Standardize expressID → expressId on mesh userData for consistency
+
 ## v2.12.4 (2026-03-26)
 - Extract clash object factory: deduplicate clash creation in detection engine
 
