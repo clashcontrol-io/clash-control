@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.12.7 (2026-03-26)
+- Increase font sizes in all side panel tabs by 15% for readability
+
 ## v2.12.6 (2026-03-26)
 - Replace action type strings with A.constants object
 

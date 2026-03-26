@@ -257,7 +257,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.12.6',hash:'2a33621',date:'2026-03-26T06:28:33Z'};
+  var CC_VERSION = {v:'2.12.7',hash:'d4c411b',date:'2026-03-26T06:30:14Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -329,7 +329,7 @@ function startApp() {
   };
   var INIT = {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:null,
-    rules:{ modelA:'all', modelB:'all', hard:true, maxGap:50, duplicates:false, changeAware:false, excludeSelf:true, excludeTypes:[], minOverlapVolM3:1e-5, toleranceByTypePair:{}, useSemanticFilter:true },
+    rules:{ modelA:'all', modelB:'all', hard:true, maxGap:50, duplicates:false, changeAware:false, excludeSelf:true, excludeTypes:[], excludeTypePairs:[], minOverlapVolM3:1e-5, toleranceByTypePair:{}, useSemanticFilter:true },
     detectionSettings:null, // Captured at detection run time: {clearance_mm, discipline_filters}
     trainingMode:(function(){try{return localStorage.getItem('cc_trainingMode')==='1';}catch(e){return false;}}()),
     clashGroupBy:_ccLoadPref('clashGroupBy','none'), clashSortBy:_ccLoadPref('clashSortBy','none'),
@@ -1952,6 +1952,12 @@ function startApp() {
       });
     }
 
+    // Pre-build type-pair exclusion set for O(1) lookup
+    var _exPairSet = {};
+    if (rules.excludeTypePairs && rules.excludeTypePairs.length) {
+      rules.excludeTypePairs.forEach(function(p) { _exPairSet[p] = true; });
+    }
+
     // ── L0: Sweep and Prune — O(n log n + k) candidate pairs ───────
     var candidates = _sweepAndPrune(grpA, grpB, rules, maxGapM);
 
@@ -1962,6 +1968,12 @@ function startApp() {
       if (rules.changeAware &&
           !changedElements[mA.id+':'+eA.expressId] &&
           !changedElements[mB.id+':'+eB.expressId]) return;
+
+      // Type-pair exclusion: skip specific type combinations (e.g. -beam vs pipe)
+      if (_exPairSet && eA.props && eB.props && eA.props.ifcType && eB.props.ifcType) {
+        var _epKey = eA.props.ifcType < eB.props.ifcType ? eA.props.ifcType+':'+eB.props.ifcType : eB.props.ifcType+':'+eA.props.ifcType;
+        if (_exPairSet[_epKey]) return;
+      }
 
       var bA=eA.box, bB=eB.box;
 
@@ -9407,32 +9419,66 @@ function startApp() {
       window:'IfcWindow',pipe:'IfcPipeSegment',duct:'IfcDuctSegment',cable:'IfcCableCarrierSegment',
       plate:'IfcPlate',member:'IfcMember',railing:'IfcRailing',stair:'IfcStair',
       covering:'IfcCovering',furniture:'IfcFurnishingElement',proxy:'IfcBuildingElementProxy',
-      curtainwall:'IfcCurtainWall',footing:'IfcFooting',roof:'IfcRoof',ramp:'IfcRamp'};
+      curtainwall:'IfcCurtainWall',footing:'IfcFooting',roof:'IfcRoof',ramp:'IfcRamp',
+      // Extra shorthands: plural forms, abbreviations, and common variations
+      walls:'IfcWall',slabs:'IfcSlab',beams:'IfcBeam',columns:'IfcColumn',doors:'IfcDoor',
+      windows:'IfcWindow',pipes:'IfcPipeSegment',ducts:'IfcDuctSegment',cables:'IfcCableCarrierSegment',
+      plates:'IfcPlate',members:'IfcMember',railings:'IfcRailing',stairs:'IfcStair',
+      footings:'IfcFooting',roofs:'IfcRoof',ramps:'IfcRamp',
+      pipesegment:'IfcPipeSegment',ductsegment:'IfcDuctSegment',cablesegment:'IfcCableCarrierSegment',
+      pipefitting:'IfcPipeFitting',ductfitting:'IfcDuctFitting',cablefitting:'IfcCableCarrierFitting',
+      fitting:'IfcPipeFitting',fittings:'IfcPipeFitting',
+      valve:'IfcValve',valves:'IfcValve',pump:'IfcPump',pumps:'IfcPump',fan:'IfcFan',fans:'IfcFan',
+      sensor:'IfcSensor',sensors:'IfcSensor',lamp:'IfcLamp',lamps:'IfcLamp',
+      sprinkler:'IfcFireSuppressionTerminal',outlet:'IfcOutlet',outlets:'IfcOutlet',
+      terminal:'IfcFlowTerminal',terminals:'IfcFlowTerminal'};
+    // Resolve a type name (shorthand, IFC, or mixed-case) to canonical IFC type
+    function _resolveIfcType(raw) {
+      if (!raw) return null;
+      var s = raw.trim();
+      // Try shorthand first (beam, pipe, wall, etc.)
+      var short = s.toLowerCase().replace(/^ifc/i,'');
+      if (_IFC_SHORT[short]) return _IFC_SHORT[short];
+      // Try full IFC name (case-insensitive normalization)
+      if (/^ifc/i.test(s)) {
+        var body = s.replace(/^ifc/i,'');
+        return 'Ifc' + body.charAt(0).toUpperCase() + body.slice(1);
+      }
+      // Try shorthand directly
+      if (_IFC_SHORT[s.toLowerCase()]) return _IFC_SHORT[s.toLowerCase()];
+      return null;
+    }
     function applyClashOpts(updRules) {
       var gap = parseMM(text); if (gap !== null) { updRules.maxGap = gap; updRules.hard = true; }
       if (/\bnear[\s-]*miss|\bproximity\b|\bwithin\b|\bnearby\b|\bclose\s+to\b|\bgap\b/.test(text)) { if (!gap) updRules.maxGap = updRules.maxGap || 50; updRules.hard = true; }
       if (/hard\s+only|no\s+gap|gap\s*(?:=\s*)?0/.test(text)) { updRules.hard=true; updRules.maxGap=0; }
       if (/\bduplicates?\b/.test(text) && !/no\s+dup|exclude\s+dup|ignore\s+dup/.test(text)) updRules.duplicates=true;
       if (/\bcross[\s-]*(?:model\s+)?only\b|\bno\s+self[\s-]*clash|\bexclude\s+self|\bnot?\s+with\s+itself|\b(?:against|vs)\s+(?:all\s+)?others?\b/.test(text)) updRules.excludeSelf=true;
+      // Parse type-pair exclusions: -beam vs pipe, -IfcBeam x IfcPipe, -wall vs duct, etc.
+      var pairExcludes = (updRules.excludeTypePairs||[]).slice();
+      var pairMatches = text.match(/-\s*(\w+)\s*(?:vs\.?|versus|against|x|×)\s*(\w+)/gi);
+      if (pairMatches) {
+        pairMatches.forEach(function(m) {
+          var parts = m.replace(/^-\s*/,'').split(/\s*(?:vs\.?|versus|against|x|×)\s*/i);
+          if (parts.length === 2) {
+            var tA = _resolveIfcType(parts[0]), tB = _resolveIfcType(parts[1]);
+            if (tA && tB) {
+              var canonical = tA < tB ? tA+':'+tB : tB+':'+tA;
+              if (pairExcludes.indexOf(canonical) === -1) pairExcludes.push(canonical);
+            }
+          }
+        });
+      }
+      if (pairExcludes.length) updRules.excludeTypePairs = pairExcludes;
       // Parse -type exclusions: -beam, -IfcBeam, -wall, -IfcWall etc.
-      var exMatches = text.match(/-(\w+)/g);
+      // (only matches standalone types NOT followed by vs/x/against)
+      var exMatches = text.match(/-(\w+)(?!\s*(?:vs\.?|versus|against|x|×)\s*\w)/g);
       if(exMatches){
         var excludes = (updRules.excludeTypes||[]).slice();
         exMatches.forEach(function(m){
-          var raw = m.slice(1); // remove leading -
-          // Try exact IFC match first (case-insensitive)
-          var exact = raw.match(/^ifc/i) ? raw.charAt(0).toUpperCase()+raw.slice(1).replace(/^FC/,'fc') : null;
-          if(exact){
-            // Normalize: IfcBeam, Ifcbeam → IfcBeam
-            var norm = 'Ifc'+exact.slice(3).charAt(0).toUpperCase()+exact.slice(4);
-            if(excludes.indexOf(norm)===-1) excludes.push(norm);
-          } else {
-            // Try shorthand lookup
-            var short = raw.toLowerCase();
-            if(_IFC_SHORT[short]){
-              if(excludes.indexOf(_IFC_SHORT[short])===-1) excludes.push(_IFC_SHORT[short]);
-            }
-          }
+          var raw = m.slice(1);
+          var resolved = _resolveIfcType(raw);
+          if (resolved && excludes.indexOf(resolved) === -1) excludes.push(resolved);
         });
         if(excludes.length) updRules.excludeTypes = excludes;
       }
