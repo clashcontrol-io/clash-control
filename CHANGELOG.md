@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.1.30 (2026-03-26)
+- Fix training data re-send + align training pill with NL button
+
+## v3.1.29 (2026-03-26)
+- Only count Confirm/Deny as verdicts, not workflow status changes
+
 ## v3.1.28 (2026-03-26)
 - Exclude thumbs feedback from clash verdict counter
 

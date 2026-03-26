@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.28',hash:'483ca51',date:'2026-03-26T12:51:33Z'};
+  var CC_VERSION = {v:'3.1.30',hash:'e1f40e7',date:'2026-03-26T13:06:01Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -10778,7 +10778,7 @@ function startApp() {
         onClick=${function(){ setOpen(true); }}
         title=${isDetecting ? 'Clash detection running…' : modelLoading ? 'Model is loading… click to set up clashes' : 'ClashControl — describe tasks in plain English ( / )'}
         style=${{
-          position:'fixed', bottom:'1.5rem', left:'50%', transform:'translateX(-50%)',
+          position:'absolute', bottom:'1.5rem', left:'50%', transform:'translateX(-50%)',
           zIndex:1200, display:'flex', alignItems:'center', gap:'.5rem',
           padding:'.55rem 2rem', borderRadius:999, minWidth:280,justifyContent:'center',
           background:panelBg, border:closedBorder,
@@ -10800,8 +10800,8 @@ function startApp() {
     var backendLabel = backend === 'ollama' ? 'Ollama (' + _ollamaModel + ')' : backend === 'browser' ? 'In-browser (0.5B)' : null;
     var backendColor = backend === 'ollama' ? '#22c55e' : backend === 'browser' ? '#f59e0b' : mutedCol;
     return html`<div class="cc-nlpanel" style=${{
-      position:'fixed', bottom:'1rem', left:'50%', transform:'translateX(-50%)',
-      zIndex:1200, width:'min('+panelW+'px, calc(100vw - 2rem))',
+      position:'absolute', bottom:'1rem', left:'50%', transform:'translateX(-50%)',
+      zIndex:1200, width:'min('+panelW+'px, calc(100% - 2rem))',
       background:panelBg, border:'1px solid '+panelBorderCol,
       borderRadius:12, boxShadow:'var(--shadow-lg)',
       display:'flex', flexDirection:'column', overflow:'hidden',
@@ -11240,15 +11240,15 @@ function startApp() {
     var payload = _buildAITrainingPayload(unsent, detectionSettings, models, defaultTolerances, []);
     if(!payload) return;
     var json = JSON.stringify(payload);
+    _clearClashTrainStore();
+    unsent.forEach(function(c){ _beaconSentIds[c.id]=true; });
     var fd = new FormData();
     fd.append('entry.1450623071', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSdSMbfjcApszFebuvQXHKiWhH-zQJhk','_38m1vvMQ-_bMP_6eA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
-      _clearClashTrainStore();
       window.dispatchEvent(new Event('cc-training-sent'));
     }).catch(function(){});
-    unsent.forEach(function(c){ _beaconSentIds[c.id]=true; });
   }
 
   function _beaconSendNLTrainingData(models) {
@@ -11256,29 +11256,29 @@ function startApp() {
       if(localStorage.getItem('cc_data_consent')!=='granted') return;
     } catch(e){ return; }
     var store = _getNLTrainStore();
-    if(store.length <= _beaconNLSentIdx) return;
-    var unsent = store.slice(_beaconNLSentIdx);
-    if(!unsent.length) return;
-    var records = unsent.map(function(r){
+    if(!store.length) return;
+    var records = store.map(function(r){
       return {
         input: _sanitizeNLInput(r.input||'', models),
         matched: !!(r.output!=null),
+        action: r.meta&&r.meta.action||null,
         path: r.meta&&r.meta.path||'unknown',
+        user_intent: r.meta&&r.meta.user_intent||null,
         v: r.meta&&r.meta.v||'',
         ts: r.meta&&r.meta.ts||0
       };
     });
     var payload = {type:'nl_training', version:'1.0', app_version:CC_VERSION.v, count:records.length, records:records};
     var json = JSON.stringify(payload);
+    // Clear BEFORE sending — ensures no re-sends even if fetch fails silently
+    _clearNLTrainStore();
     var fd = new FormData();
     fd.append('entry.908589612', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSdSMbfjcApszFebuvQXHKiWhH-zQJhk','_38m1vvMQ-_bMP_6eA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
-      _clearNLTrainStore();
       window.dispatchEvent(new Event('cc-training-sent'));
     }).catch(function(){});
-    _beaconNLSentIdx = store.length;
   }
 
   function _beaconSendDetectionRuns() {
@@ -11290,13 +11290,13 @@ function startApp() {
     if (!runs.length) return;
     var payload = {type:'detection_runs', version:'1.0', app_version:CC_VERSION.v, count:runs.length, runs:runs};
     var json = JSON.stringify(payload);
+    try { localStorage.removeItem('cc_detection_runs'); } catch(e){}
+    window.dispatchEvent(new Event('cc-training-data-change'));
     var fd = new FormData();
     fd.append('entry.39972213', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSdSMbfjcApszFebuvQXHKiWhH-zQJhk','_38m1vvMQ-_bMP_6eA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
-      try { localStorage.removeItem('cc_detection_runs'); } catch(e){}
-      window.dispatchEvent(new Event('cc-training-data-change'));
       window.dispatchEvent(new Event('cc-training-sent'));
     }).catch(function(){});
   }
@@ -12158,13 +12158,13 @@ function startApp() {
         <${Header} s=${s} d=${d} />
         ${is2D ? html`<${View2D} s=${s} d=${d} />` : html`<${Viewer} s=${s} d=${d} />`}
         ${is2D && html`<${ExportBar} s=${s} d=${d} />`}
+        <${NLCommandPanel} s=${s} d=${d} />
       </div>
       <${SidePanel} s=${s} d=${d} />
       <${RightRail} s=${s} d=${d} />
       ${s.showModal && html`<${NewIssueModal} d=${d} el=${s.modalElement} prefs=${s.prefs} clashes=${s.clashes} activeId=${s.activeId} />`}
       ${s.showSettings && html`<${SettingsModal} d=${d} prefs=${s.prefs} models=${s.models} rules=${s.rules} />`}
       ${s.showRevitBridge && html`<${RevitBridgePanel} s=${s} d=${d} />`}
-      <${NLCommandPanel} s=${s} d=${d} />
       <${MobileNav} s=${s} d=${d} />
       <${WelcomePopup} d=${d} />
       <${TrainingModePopup} d=${d} active=${s.trainingMode} />
