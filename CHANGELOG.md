@@ -1,5 +1,56 @@
 # Changelog
 
+## v2.12.18 (2026-03-26)
+- Unify training pill: show clash + NL stats, auto-share both via Google Form
+
+## v2.12.17 (2026-03-26)
+- Separate NL data submission from clash data using different form fields
+
+## v2.12.16 (2026-03-26)
+- Add conversational clash setup + fuzzy confirmation for low-confidence matches
+
+## v2.12.15 (2026-03-26)
+- Add fuzzy intent fallback to NL command parser
+
+## v2.12.14 (2026-03-26)
+- Increase font size 15% across entire app (outside already-bumped panels)
+
+## v2.12.13 (2026-03-26)
+- Replace hardcoded _IFC_SHORT map with dynamic fuzzy IFC type resolver
+
+## v2.12.12 (2026-03-26)
+- Replace hardcoded model/discipline matching with fuzzy resolver
+
+## v2.12.11 (2026-03-26)
+- Expand _IFC_SHORT to cover all IFC types from IFC_TYPE_NAMES map
+
+## v2.12.10 (2026-03-26)
+- Add self-clash NL commands: self:discipline, intra, within same discipline
+
+## v2.12.9 (2026-03-26)
+- Add multi-model clash grouping, custom tags, and NL group syntax
+
+## v2.12.8 (2026-03-26)
+- Add type-pair exclusion in NL commands + 15% font size increase in panels
+
+## v2.12.7 (2026-03-26)
+- Increase font sizes in all side panel tabs by 15% for readability
+
+## v2.12.6 (2026-03-26)
+- Replace action type strings with A.constants object
+
+## v2.12.5 (2026-03-26)
+- Standardize expressID → expressId on mesh userData for consistency
+
+## v2.12.4 (2026-03-26)
+- Extract clash object factory: deduplicate clash creation in detection engine
+
+## v2.12.3 (2026-03-26)
+- Code review cleanup: fix reload loop, texture leak, dead code, stale closures
+
+## v2.12.2 (2026-03-25)
+- Fix React error #300: move useState for details toggle before early return
+
 ## v2.12.1 (2026-03-25)
 - Fix training mode toggle-off bug + add expandable GDPR data details to popup
 
