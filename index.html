@@ -250,7 +250,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.10',hash:'a8f9c08',date:'2026-03-26T17:33:37Z'};
+  var CC_VERSION = {v:'3.2.11',hash:'3ff4316',date:'2026-03-26T17:35:09Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -11940,6 +11940,7 @@ function startApp() {
     var SVG_CLASHES = '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>';
     var SVG_ISSUES  = '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>';
     var SVG_EXPLORE = '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>';
+    var SVG_STANDARDS = '<path d="M4 7h16M4 12h10M4 17h13"/><path d="M20 12l-3-3v6z"/>';
 
     return html`<div class="cc-right-rail" style=${{
       width:48,flexShrink:0,background:'var(--bg-primary)',
@@ -11951,6 +11952,7 @@ function startApp() {
       ${tabBtn('clashes', SVG_CLASHES, 'Clashes',  clashN)}
       ${tabBtn('issues',  SVG_ISSUES,  'Issues',   issueN)}
       ${tabBtn('explorer',SVG_EXPLORE, 'Explorer', 0)}
+      ${tabBtn('standards',SVG_STANDARDS,'Standards',0)}
     </div>`;
   }
 
@@ -11997,6 +11999,7 @@ function startApp() {
       ${tab==='clashes'  && html`<${IssuePanel} key="clashes" s=${s} d=${d} hideTabBar=${true} />`}
       ${tab==='issues'   && html`<${IssuePanel} key="issues" s=${s} d=${d} hideTabBar=${true} />`}
       ${tab==='explorer' && html`<${IssuePanel} key="explorer" s=${s} d=${d} hideTabBar=${true} />`}
+      ${tab==='standards' && html`<${StandardsPanel} />`}
       ${tab==='tools'    && html`<${ToolsPanel} s=${s} d=${d} />`}
     </div>`;
   }
