@@ -1,5 +1,20 @@
 # Changelog
 
+## v3.0.13 (2026-03-26)
+- Set orbit target to clash point when marker is shown
+
+## v3.0.12 (2026-03-26)
+- Make training pill data counts reactive — update every 3 seconds
+
+## v3.0.11 (2026-03-26)
+- Improve text contrast on dark theme for readability
+
+## v3.0.10 (2026-03-26)
+- Move Zoom A/B toggle to ClashProps where buttons actually live
+
+## v3.0.9 (2026-03-26)
+- Fix zoomedTo crash + add NL training feedback + resolved action in records
+
 ## v3.0.8 (2026-03-26)
 - Clean up training pill: show only data records, move clash stats to tab
 

@@ -103,7 +103,7 @@
     :root{
       --bg-primary:#0f172a;--bg-secondary:#1e293b;--bg-tertiary:#0f172a;
       --border:#334155;--border-subtle:#1e293b;
-      --text-primary:#e2e8f0;--text-secondary:#94a3b8;--text-muted:#64748b;--text-faint:#475569;
+      --text-primary:#e2e8f0;--text-secondary:#b0bec5;--text-muted:#8b9db5;--text-faint:#6b7f99;
       --accent:#2563eb;--accent-hover:#3b82f6;
       --accent-subtle:#93c5fd;--accent-bg:#1e3a5f;--accent-bg-deep:#172554;
       --scene-bg:#0f172a;--grid-line:#1e3a5f;--grid-center:#172554;
@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.0.8',hash:'5a8c145',date:'2026-03-26T08:56:59Z'};
+  var CC_VERSION = {v:'3.0.13',hash:'aac4834',date:'2026-03-26T09:06:48Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -2546,10 +2546,12 @@ function startApp() {
         while(keys.length > _CLASH_TRAIN_CAP) { delete store[keys.shift()]; }
       }
       localStorage.setItem('cc_clash_training_data', JSON.stringify(store));
+      window.dispatchEvent(new Event('cc-training-data-change'));
     } catch(e) {}
   }
   function _clearClashTrainStore() {
     try { localStorage.removeItem('cc_clash_training_data'); } catch(e) {}
+    window.dispatchEvent(new Event('cc-training-data-change'));
   }
   function _getClashTrainCount() {
     try { var s = localStorage.getItem('cc_clash_training_data'); return s ? Object.keys(JSON.parse(s)).length : 0; } catch(e) { return 0; }
@@ -2567,6 +2569,7 @@ function startApp() {
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSdSMbfjcApszFebuvQXHKiWhH-zQJhk','_38m1vvMQ-_bMP_6eA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
+      _clearClashTrainStore();
       onStatus('ok',null);
     }).catch(function(){
       try{
@@ -2594,10 +2597,12 @@ function startApp() {
       store.push({input:input, output:output, meta:meta});
       while (store.length > _NL_TRAIN_CAP) store.shift();
       localStorage.setItem('cc_nl_training_data', JSON.stringify(store));
+      window.dispatchEvent(new Event('cc-training-data-change'));
     } catch(e) {}
   }
   function _clearNLTrainStore() {
     try { localStorage.removeItem('cc_nl_training_data'); } catch(e) {}
+    window.dispatchEvent(new Event('cc-training-data-change'));
   }
   function _getNLTrainCount() {
     try { var s = localStorage.getItem('cc_nl_training_data'); return s ? JSON.parse(s).length : 0; } catch(e) { return 0; }
@@ -2705,8 +2710,8 @@ function startApp() {
     fd.append('entry.908589612', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSdSMbfjcApszFebuvQXHKiWhH-zQJhk','_38m1vvMQ-_bMP_6eA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
-    var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
+      _clearNLTrainStore();
       onStatus('ok',null);
     }).catch(function(){
       try{
@@ -3428,6 +3433,8 @@ function startApp() {
         grp.add(ring3);
         scene.add(grp);
         _activeClashMarker = grp;
+        // Set orbit target to clash point so scroll-zoom centers on the clash
+        S.orbit.target.set(point[0], point[1], point[2]);
         invalidate();
       };
       window._ccRemoveActiveClashMarker = function() {
@@ -7203,6 +7210,26 @@ function startApp() {
   function ClashProps(props) {
     var it=props.item, models=props.models, isClash=props.isClash!==false;
     var dp=useState(false), detailOpen=dp[0], setDetailOpen=dp[1];
+    var stZoomed=useState(null), zoomedTo=stZoomed[0], setZoomedTo=stZoomed[1];
+    function _zoomToggle(elemId, label) {
+      if (zoomedTo === label) {
+        // Second click — fly to both elements
+        setZoomedTo(null);
+        var reIds = [];
+        if (it.elemA) reIds.push(it.elemA);
+        if (it.elemB) reIds.push(it.elemB);
+        if (it._groupedElems) it._groupedElems.forEach(function(eid){reIds.push(eid);});
+        if (reIds.length && _ghostOthers) _ghostOthers(reIds);
+        if (it.elemA && _highlightById) _highlightById(it.elemA, false);
+        if (it.point && window._ccShowActiveClashMarker) window._ccShowActiveClashMarker(it.point);
+        if (_flyToElements && reIds.length) _flyToElements(reIds, it.point);
+        else if (it.point && _flyTo) _flyTo(it.point);
+      } else {
+        setZoomedTo(label);
+        if (_fitToElement && elemId) _fitToElement(elemId);
+        if (_highlightById && elemId) _highlightById(elemId);
+      }
+    }
     // For issues: single element via elementId; for clashes: elemA + elemB
     var hasA = !!it.elemA, hasB = !!it.elemB, hasEl = !!it.elementId;
     var isSingle = !hasA && !hasB && hasEl;
@@ -7218,10 +7245,10 @@ function startApp() {
           <button onClick=${function(){if(_fitToElement&&it.elementId)_fitToElement(it.elementId);if(_highlightById)_highlightById(it.elementId,false);_sboxAroundElements&&_sboxAroundElements([it.elementId]);}}
             style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#3b0764',color:'#c084fc',flex:1}} title="Section box around element">Box</button>
         ` : html`
-          <button onClick=${function(){if(_fitToElement&&it.elemA)_fitToElement(it.elemA);if(_highlightById&&it.elemA)_highlightById(it.elemA);}}
-            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#0f3a5f',color:'#93c5fd',flex:1}}>Zoom A</button>
-          <button onClick=${function(){if(_fitToElement&&it.elemB)_fitToElement(it.elemB);if(_highlightById&&it.elemB)_highlightById(it.elemB);}}
-            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#0f3a5f',color:'#93c5fd',flex:1}}>Zoom B</button>
+          <button onClick=${function(){_zoomToggle(it.elemA,'A');}}
+            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:zoomedTo==='A'?'#1e40af':'#0f3a5f',color:'#93c5fd',flex:1}}>${zoomedTo==='A'?'Zoom Both':'Zoom A'}</button>
+          <button onClick=${function(){_zoomToggle(it.elemB,'B');}}
+            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:zoomedTo==='B'?'#1e40af':'#0f3a5f',color:'#93c5fd',flex:1}}>${zoomedTo==='B'?'Zoom Both':'Zoom B'}</button>
           <button onClick=${function(){if(_fitToElement&&it.elemA)_fitToElement(it.elemA);if(_highlightById)_highlightById(it.elemA,false);_sboxAroundElements&&_sboxAroundElements([it.elemA,it.elemB]);}}
             style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#3b0764',color:'#c084fc',flex:1}} title="Section box around both elements">Box</button>
         `}
@@ -7522,27 +7549,6 @@ function startApp() {
       if(a===b) return a;
       return [a,b].filter(Boolean).join(' / ');
     })();
-    var stZoomed = useState(null), zoomedTo = stZoomed[0], setZoomedTo = stZoomed[1];
-    function _zoomToggle(elemId, label) {
-      if (zoomedTo === label) {
-        // Second click — fly to clash point (same as clicking title)
-        setZoomedTo(null);
-        var reIds = [];
-        if (it.elemA) reIds.push(it.elemA);
-        if (it.elemB) reIds.push(it.elemB);
-        if (it._groupedElems) it._groupedElems.forEach(function(eid){reIds.push(eid);});
-        if (reIds.length && _ghostOthers) _ghostOthers(reIds);
-        if (it.elemA && _highlightById) _highlightById(it.elemA, false);
-        if (it.point && window._ccShowActiveClashMarker) window._ccShowActiveClashMarker(it.point);
-        if (_flyToElements && reIds.length) _flyToElements(reIds, it.point);
-        else if (it.point && _flyTo) _flyTo(it.point);
-      } else {
-        // First click — zoom to individual element
-        setZoomedTo(label);
-        if (_fitToElement && elemId) _fitToElement(elemId);
-        if (_highlightById && elemId) _highlightById(elemId);
-      }
-    }
     return html`<div onClick=${function(){
         var wasActive=active;
         if(wasActive){
@@ -10902,6 +10908,14 @@ function startApp() {
 
     function doDelete() { d({t:A.CLEAR_TRAINING_DATA}); }
     var hasData = feedbackCount > 0;
+    // Reactive data counts — update when training data changes
+    var stNlN = useState(function(){return _getNLTrainCount();}), nlN=stNlN[0], setNlN=stNlN[1];
+    var stClN = useState(function(){return _getClashTrainCount();}), clashN=stClN[0], setClashN=stClN[1];
+    useEffect(function(){
+      function sync(){ setNlN(_getNLTrainCount()); setClashN(_getClashTrainCount()); }
+      window.addEventListener('cc-training-data-change', sync);
+      return function(){ window.removeEventListener('cc-training-data-change', sync); };
+    },[]);
 
     return html`<div style=${{position:'absolute',top:'2.6rem',left:'50%',transform:'translateX(-50%)',
       zIndex:20,pointerEvents:'auto',display:'flex',flexDirection:'column',alignItems:'center'}}>
@@ -10927,8 +10941,6 @@ function startApp() {
         </button>`}
       </div>
       ${s.trainingMode && isExpanded && function(){
-        var nlN = _getNLTrainCount();
-        var clashN = _getClashTrainCount();
         var anyData = hasData || nlN > 0 || clashN > 0;
         return html`<div style=${{marginTop:'.35rem',
           background:'var(--overlay-bg-strong)',border:'1px solid rgba(124,58,237,.4)',borderRadius:10,
@@ -10954,7 +10966,7 @@ function startApp() {
           <div style=${{display:'flex',gap:'.25rem',flexWrap:'wrap'}}>
             ${!showDelConfirm && html`<button onClick=${function(){if(anyData)setShowDelConfirm(true);}} disabled=${!anyData}
               style=${{...S_BTN,fontSize:'0.63rem',padding:'.2rem .4rem',background:'var(--bg-secondary)',color:anyData?'var(--text-secondary)':'var(--text-faint)',border:'1px solid var(--border)',flex:1}}>Delete all</button>`}
-            ${showDelConfirm && html`<button onClick=${function(){doDelete();_clearClashTrainStore();_clearNLTrainStore();setShowDelConfirm(false);}}
+            ${showDelConfirm && html`<button onClick=${function(){doDelete();_clearClashTrainStore();_clearNLTrainStore();setNlN(0);setClashN(0);setShowDelConfirm(false);}}
               style=${{...S_BTN,fontSize:'0.63rem',padding:'.2rem .4rem',background:'#ef4444',color:'#fff',border:'none',flex:1}}>Confirm delete all?</button>`}
           </div>
         </div>`;
@@ -11005,7 +11017,9 @@ function startApp() {
     fd.append('entry.1450623071', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSdSMbfjcApszFebuvQXHKiWhH-zQJhk','_38m1vvMQ-_bMP_6eA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
-    fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).catch(function(){});
+    fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
+      _clearClashTrainStore();
+    }).catch(function(){});
     unsent.forEach(function(c){ _beaconSentIds[c.id]=true; });
   }
 
@@ -11032,7 +11046,9 @@ function startApp() {
     fd.append('entry.908589612', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSdSMbfjcApszFebuvQXHKiWhH-zQJhk','_38m1vvMQ-_bMP_6eA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
-    fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).catch(function(){});
+    fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
+      _clearNLTrainStore();
+    }).catch(function(){});
     _beaconNLSentIdx = store.length;
   }
 
