@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.17 (2026-03-26)
+- Raise fuzzy intent confidence threshold from 40% to 70%
+
 ## v3.1.16 (2026-03-26)
 - Wireframe section plane + highlight on right-click without ghost
 

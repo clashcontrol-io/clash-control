@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.16',hash:'be5e6f4',date:'2026-03-26T12:11:30Z'};
+  var CC_VERSION = {v:'3.1.17',hash:'ead0a39',date:'2026-03-26T12:14:51Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -3924,6 +3924,7 @@ function startApp() {
       var downPos = {x:0,y:0};
       renderer.domElement.addEventListener('mousedown', function(e){if(!_sboxDragging){downPos.x=e.clientX;downPos.y=e.clientY;}setCtxMenu(null);});
       renderer.domElement.addEventListener('mouseup', function(e){
+        if(e.button !== 0) return; // only left-click picks elements
         // Don't pick if we were dragging section box handles
         if(_sboxDragging) return;
         // Only pick if the mouse didn't move (not a drag)
@@ -4475,7 +4476,14 @@ function startApp() {
       // Helper: create wireframe rectangle + invisible drag surface
       function _makeSectionVis(halfW, halfH, position, quaternion) {
         var grp = new THREE.Group();
-        // Wireframe border (visible)
+        // Semi-transparent fill (very subtle)
+        var fillGeo = new THREE.PlaneGeometry(halfW*2, halfH*2);
+        var fillMat = new THREE.MeshBasicMaterial({color:0x3b82f6, transparent:true, opacity:0.04, side:THREE.DoubleSide, depthWrite:false});
+        fillMat.clippingPlanes = [];
+        var fill = new THREE.Mesh(fillGeo, fillMat);
+        fill.userData._sectionPlane = true;
+        grp.add(fill);
+        // Wireframe border (visible blue outline)
         var pts = [new THREE.Vector3(-halfW,-halfH,0), new THREE.Vector3(halfW,-halfH,0),
           new THREE.Vector3(halfW,halfH,0), new THREE.Vector3(-halfW,halfH,0)];
         var lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
@@ -4483,13 +4491,27 @@ function startApp() {
         lineMat.clippingPlanes = [];
         var border = new THREE.LineLoop(lineGeo, lineMat);
         grp.add(border);
-        // Invisible fill for raycasting / drag detection
-        var fillGeo = new THREE.PlaneGeometry(halfW*2, halfH*2);
-        var fillMat = new THREE.MeshBasicMaterial({visible:false, side:THREE.DoubleSide});
-        fillMat.clippingPlanes = [];
-        var fill = new THREE.Mesh(fillGeo, fillMat);
-        fill.userData._sectionPlane = true;
-        grp.add(fill);
+        // Drag arrow handle (cone pointing along normal)
+        var arrowLen = Math.min(halfW, halfH) * 0.25;
+        var coneGeo = new THREE.ConeGeometry(arrowLen*0.4, arrowLen, 8);
+        var coneMat = new THREE.MeshBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.8});
+        coneMat.clippingPlanes = [];
+        var cone = new THREE.Mesh(coneGeo, coneMat);
+        cone.position.set(0, 0, arrowLen*0.7);
+        cone.rotation.x = Math.PI/2;
+        cone.userData._sectionHandle = true;
+        grp.add(cone);
+        // Opposite direction cone
+        var cone2 = new THREE.Mesh(coneGeo.clone(), coneMat.clone());
+        cone2.position.set(0, 0, -arrowLen*0.7);
+        cone2.rotation.x = -Math.PI/2;
+        cone2.userData._sectionHandle = true;
+        grp.add(cone2);
+        // Stem line between cones
+        var stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-arrowLen*0.5), new THREE.Vector3(0,0,arrowLen*0.5)]);
+        var stemMat = new THREE.LineBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.6});
+        stemMat.clippingPlanes = [];
+        grp.add(new THREE.Line(stemGeo, stemMat));
         grp.position.copy(position);
         if (quaternion) grp.quaternion.copy(quaternion);
         grp.renderOrder = 999;
@@ -11912,6 +11934,7 @@ function startApp() {
           if(s.showSettings){ d({t:A.SETTINGS,v:false}); return; }
           if(s.showModal){ d({t:A.MODAL,v:false}); return; }
           if(s.showRevitBridge){ d({t:A.REVIT_BRIDGE,v:false}); return; }
+          if(s.sectionAxis||s.sectionCustom){ d({t:A.SECTION,axis:null}); d({t:A.SECTION_BOX,v:null}); return; }
           // Let other Escape handlers (VirtualList, NLCommandPanel) handle the rest
         }
 
