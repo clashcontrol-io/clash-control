@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.2.30 (2026-03-26)
+- Geometry dedup via geometryExpressID + USE_FAST_BOOLS
+
 ## v3.2.29 (2026-03-26)
 - Add Web Worker for IFC parsing + USE_FAST_BOOLS
 

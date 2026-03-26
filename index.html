@@ -250,7 +250,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.29',hash:'7f70a70',date:'2026-03-26T21:29:50Z'};
+  var CC_VERSION = {v:'3.2.30',hash:'5fcb1c3',date:'2026-03-26T21:41:47Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -1480,7 +1480,20 @@ function startApp() {
           elProps.material = matMap[expressID] || '';
           var pm = propMap[expressID];
           if (pm) { elProps.quantities = pm.quantities; elProps.psets = pm.psets; }
-          rawElements.push({expressId:expressID, meshes:elMeshes, box:elBox.clone(), props:elProps});
+          // Create LOD box proxy (shared geometry, hidden by default, shown by culling for distant elements)
+          var _proxy = null;
+          if (_lodBoxGeo) {
+            var _bc = new THREE.Vector3(), _bsz = new THREE.Vector3();
+            elBox.getCenter(_bc); elBox.getSize(_bsz);
+            _proxy = new THREE.Mesh(_lodBoxGeo, _lodProxyMat);
+            _proxy.position.copy(_bc); _proxy.scale.copy(_bsz);
+            _proxy.visible = false;
+            _proxy.frustumCulled = false;
+            _proxy.userData._isLodProxy = true;
+            _proxy.userData.expressId = expressID;
+            elMeshes.forEach(function(m) { m.userData._lodProxy = _proxy; });
+          }
+          rawElements.push({expressId:expressID, meshes:elMeshes, box:elBox.clone(), props:elProps, _lodProxy:_proxy});
         }
       });
 
@@ -1498,7 +1511,7 @@ function startApp() {
           var end = Math.min(startIdx + CHUNK, rawElements.length);
           for (var idx = startIdx; idx < end; idx++) {
             var raw = rawElements[idx];
-            elements.push({expressId:raw.expressId, meshes:raw.meshes, box:raw.box, props:raw.props});
+            elements.push({expressId:raw.expressId, meshes:raw.meshes, box:raw.box, props:raw.props, _lodProxy:raw._lodProxy});
           }
           if (end < rawElements.length) {
             if(onProgress) onProgress('Processing elements ' + end + '/' + rawElements.length + '…');
@@ -1714,7 +1727,20 @@ function startApp() {
               elMeshes.push(mesh); meshes.push(mesh);
             }
             if (elMeshes.length > 0) {
-              elements.push({expressId:raw.expressId, meshes:elMeshes, box:elBox, props:raw.props});
+              // Create LOD box proxy
+              var _proxy = null;
+              if (_lodBoxGeo) {
+                var _bc = new THREE.Vector3(), _bsz = new THREE.Vector3();
+                elBox.getCenter(_bc); elBox.getSize(_bsz);
+                _proxy = new THREE.Mesh(_lodBoxGeo, _lodProxyMat);
+                _proxy.position.copy(_bc); _proxy.scale.copy(_bsz);
+                _proxy.visible = false;
+                _proxy.frustumCulled = false;
+                _proxy.userData._isLodProxy = true;
+                _proxy.userData.expressId = raw.expressId;
+                elMeshes.forEach(function(m) { m.userData._lodProxy = _proxy; });
+              }
+              elements.push({expressId:raw.expressId, meshes:elMeshes, box:elBox, props:raw.props, _lodProxy:_proxy});
             }
           }
 
@@ -3846,7 +3872,7 @@ function startApp() {
         var idSet = {};
         targetExpressIds.forEach(function(id){idSet[id]=true;});
         S.mg.traverse(function(obj){
-          if(!obj.isMesh||!obj.material) return;
+          if(!obj.isMesh||!obj.material||obj.userData._isLodProxy) return;
           var eid = obj.userData.expressId;
           if(eid!=null && !idSet[eid]){
             _ghostedMeshes.push({mesh:obj, origMaterial:obj.material});
@@ -4432,6 +4458,7 @@ function startApp() {
         if(!S.mg) return;
         // Filter out ghosted meshes and meshes from hidden (unchecked) model groups
         var hits = raycaster.intersectObjects(S.mg.children, true).filter(function(h){
+          if(h.object.userData._isLodProxy) return false;
           if(h.object.material === _ghostMat) return false;
           if(h.object.parent && h.object.parent.userData.modelId && !h.object.parent.visible) return false;
           return true;
@@ -4647,6 +4674,7 @@ function startApp() {
         mouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
         raycaster.setFromCamera(mouse, S.camera);
         var hits = raycaster.intersectObjects(S.mg.children, true).filter(function(h){
+          if(h.object.userData._isLodProxy) return false;
           if(h.object.material === _ghostMat) return false;
           if(h.object.parent && h.object.parent.userData.modelId && !h.object.parent.visible) return false;
           return true;
@@ -4825,15 +4853,21 @@ function startApp() {
 
       // FPS tracking
       S.perf = {fps:0, frameCount:0, lastTime:performance.now(), tris:0, meshCount:0, drawCalls:0};
-      // ── Frustum culling + distance-based LOD ──
+      // ── Frustum culling + screen-ratio LOD ──
       var frustum = new THREE.Frustum();
       var projScreenMatrix = new THREE.Matrix4();
       var tmpBox = new THREE.Box3();
       var tmpSphere = new THREE.Sphere();
       var cullEvery = 4; // re-evaluate culling every N frames
       var cullFrame = 0;
-      var lodDistSq = 2500; // 50m squared — beyond this, skip small objects
-      var lodSmallThreshold = 0.5; // objects smaller than 0.5m bounding sphere radius
+      // Screen-ratio LOD: uses (radius/distance)² as unified metric for all object sizes.
+      // Objects whose apparent screen area falls below threshold get culled.
+      // screenRatio = r²/d² ≈ proportional to fraction of screen height the object covers.
+      var LOD_HIDE_RATIO  = 0.0000005; // hide entirely — covers < ~0.07% screen (~1px at 1080p)
+      var LOD_PROXY_RATIO = 0.00005;   // show box proxy — covers < ~0.7% screen (~8px at 1080p)
+      // Shared LOD box proxy resources
+      var _lodBoxGeo = new THREE.BoxBufferGeometry(1, 1, 1);
+      var _lodProxyMat = new THREE.MeshBasicMaterial({color:0x667788, transparent:true, opacity:0.25, depthWrite:false});
 
       function updateCulling(){
         projScreenMatrix.multiplyMatrices(S.camera.projectionMatrix, S.camera.matrixWorldInverse);
@@ -4843,10 +4877,12 @@ function startApp() {
           // Skip meshes in hidden model groups (unchecked models)
           if(obj.isMesh && obj.parent && obj.parent.userData.modelId && !obj.parent.visible) { obj.visible = false; return; }
           if(!obj.isMesh) return;
+          // LOD proxies are managed by their linked meshes, not independently
+          if(obj.userData._isLodProxy) return;
           // Skip non-IFC meshes (helpers etc)
           if(obj.userData.expressId==null) return;
           // Don't override storey/user visibility (marked by _storeyHidden)
-          if(obj.userData._storeyHidden) return;
+          if(obj.userData._storeyHidden) { if(obj.userData._lodProxy) obj.userData._lodProxy.visible = false; return; }
           // Compute bounding sphere if not cached
           if(!obj.geometry.boundingSphere) obj.geometry.computeBoundingSphere();
           var bs = obj.geometry.boundingSphere;
@@ -4855,17 +4891,30 @@ function startApp() {
           if(!frustum.intersectsSphere(tmpSphere)){
             obj.visible = false;
             obj.userData._frustumCulled = true;
+            if(obj.userData._lodProxy) obj.userData._lodProxy.visible = false;
             return;
           }
-          // Distance-based LOD: hide very small objects that are far away
+          // Screen-ratio LOD: r²/d² gives apparent screen coverage
           var distSq = camPos.distanceToSquared(tmpSphere.center);
-          if(tmpSphere.radius < lodSmallThreshold && distSq > lodDistSq){
+          var r = tmpSphere.radius;
+          var screenRatio = distSq > 0 ? (r * r) / distSq : 1;
+
+          if(screenRatio < LOD_HIDE_RATIO){
+            // Tier 3: too small to see — hide entirely
             obj.visible = false;
             obj.userData._frustumCulled = true;
-            return;
+            if(obj.userData._lodProxy) obj.userData._lodProxy.visible = false;
+          } else if(screenRatio < LOD_PROXY_RATIO && obj.userData._lodProxy){
+            // Tier 2: small on screen — show box proxy instead of full geometry
+            obj.visible = false;
+            obj.userData._frustumCulled = true;
+            obj.userData._lodProxy.visible = true;
+          } else {
+            // Tier 1: large enough — show full detail
+            obj.userData._frustumCulled = false;
+            obj.visible = true;
+            if(obj.userData._lodProxy) obj.userData._lodProxy.visible = false;
           }
-          obj.userData._frustumCulled = false;
-          obj.visible = true;
         });
       }
 
@@ -4943,7 +4992,7 @@ function startApp() {
           var needsSwap = existingGrp && model.meshes[0] && existingGrp.children[0] !== model.meshes[0];
           if (needsSwap) {
             // Remove old meshes from scene
-            existingGrp.traverse(function(obj){if(obj.isMesh){obj.geometry&&obj.geometry.dispose();obj.material&&obj.material.dispose();}});
+            existingGrp.traverse(function(obj){if(obj.isMesh && !obj.userData._isLodProxy){obj.geometry&&obj.geometry.dispose();obj.material&&obj.material.dispose();}});
             S.mg.remove(existingGrp); delete S.map[model.id];
             if(S._elMapCache) delete S._elMapCache[model.id];
             if(S._hsCache) delete S._hsCache[model.id];
@@ -4953,6 +5002,8 @@ function startApp() {
             var grp = new THREE.Group();
             grp.userData.modelId = model.id;
             model.meshes.forEach(function(m){grp.add(m)});
+            // Add LOD box proxies to scene group
+            (model.elements||[]).forEach(function(el){ if(el._lodProxy) grp.add(el._lodProxy); });
             S.mg.add(grp); S.map[model.id] = grp;
             // Auto-fit view when first model loads
             if(Object.keys(S.map).length===1 && _resetView) _resetView();
