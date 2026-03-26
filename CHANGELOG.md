@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.0.3 (2026-03-26)
+- Add inline SVG favicon with CC logo
+
 ## v3.0.2 (2026-03-26)
 - Auto-enable data sharing when training mode is turned on
 
