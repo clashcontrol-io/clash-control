@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.18',hash:'6cf3f21',date:'2026-03-26T12:27:25Z'};
+  var CC_VERSION = {v:'3.1.19',hash:'8860508',date:'2026-03-26T12:37:33Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -4491,21 +4491,21 @@ function startApp() {
         lineMat.clippingPlanes = [];
         var border = new THREE.LineLoop(lineGeo, lineMat);
         grp.add(border);
-        // Small drag arrow handle (cone pointing away from cut direction)
-        var arrowLen = Math.min(halfW, halfH) * 0.08;
-        var coneGeo = new THREE.ConeGeometry(arrowLen*0.5, arrowLen, 6);
-        var coneMat = new THREE.MeshBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.8});
-        coneMat.clippingPlanes = [];
-        var cone = new THREE.Mesh(coneGeo, coneMat);
-        cone.position.set(0, 0, arrowLen*0.8);
-        cone.rotation.x = -Math.PI/2;
-        cone.userData._sectionHandle = true;
-        grp.add(cone);
-        var cone2 = new THREE.Mesh(coneGeo.clone(), coneMat.clone());
-        cone2.position.set(0, 0, -arrowLen*0.8);
-        cone2.rotation.x = Math.PI/2;
-        cone2.userData._sectionHandle = true;
-        grp.add(cone2);
+        // Small arrow-on-line handle pointing along normal (both directions)
+        var stemLen = Math.min(halfW, halfH) * 0.18;
+        var tipLen = stemLen * 0.3;
+        var tipW = tipLen * 0.5;
+        var arrowMat = new THREE.LineBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.8});
+        arrowMat.clippingPlanes = [];
+        // Stem line
+        var sPts = [new THREE.Vector3(0,0,-stemLen), new THREE.Vector3(0,0,stemLen)];
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sPts), arrowMat));
+        // Arrowhead + (forward)
+        var a1 = [new THREE.Vector3(-tipW,0,stemLen-tipLen), new THREE.Vector3(0,0,stemLen), new THREE.Vector3(tipW,0,stemLen-tipLen)];
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(a1), arrowMat));
+        // Arrowhead - (backward)
+        var a2 = [new THREE.Vector3(-tipW,0,-stemLen+tipLen), new THREE.Vector3(0,0,-stemLen), new THREE.Vector3(tipW,0,-stemLen+tipLen)];
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(a2), arrowMat));
         grp.position.copy(position);
         if (quaternion) grp.quaternion.copy(quaternion);
         grp.renderOrder = 999;
@@ -4520,9 +4520,9 @@ function startApp() {
         var size = box.getSize(new THREE.Vector3());
         var center = box.getCenter(new THREE.Vector3());
         var hw, hh, pos = new THREE.Vector3(), q = new THREE.Quaternion();
-        if(s.sectionAxis==='x'){ hw=Math.max(size.y,size.z)*0.45; hh=hw; pos.set(cut,center.y,center.z); q.setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI/2); }
-        else if(s.sectionAxis==='y'){ hw=Math.max(size.x,size.z)*0.45; hh=hw; pos.set(center.x,cut,center.z); q.setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2); }
-        else { hw=Math.max(size.x,size.y)*0.45; hh=hw; pos.set(center.x,center.y,cut); }
+        if(s.sectionAxis==='x'){ hw=size.z*0.55; hh=size.y*0.55; pos.set(cut,center.y,center.z); q.setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI/2); }
+        else if(s.sectionAxis==='y'){ hw=size.x*0.55; hh=size.z*0.55; pos.set(center.x,cut,center.z); q.setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2); }
+        else { hw=size.x*0.55; hh=size.y*0.55; pos.set(center.x,center.y,cut); }
         var vis = _makeSectionVis(hw, hh, pos, q);
         S.scene.add(vis);
         S._sectionPlaneVis = vis;

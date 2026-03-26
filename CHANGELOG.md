@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.19 (2026-03-26)
+- Tune section plane: smaller size, reversed drag, smaller flipped arrows
+
 ## v3.1.18 (2026-03-26)
 - Fix right-click ghosting + add section plane handles + ESC to cancel
 
