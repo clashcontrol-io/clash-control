@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.27 (2026-03-26)
+- Clear section plane when switching tabs or selecting a clash/issue
+
 ## v3.1.26 (2026-03-26)
 - Flash training pill green when data is sent
 
