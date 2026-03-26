@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.10 (2026-03-26)
+- Collect detection run summaries as training data
+
 ## v3.1.9 (2026-03-26)
 - Don't store incomplete clash training records at all
 

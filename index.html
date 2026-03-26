@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.9',hash:'660e4d5',date:'2026-03-26T09:45:15Z'};
+  var CC_VERSION = {v:'3.1.10',hash:'7b82164',date:'2026-03-26T09:46:11Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -9409,7 +9409,7 @@ function startApp() {
 
     // 1. Try regex (instant, no LLM needed)
     var regexResult = processNLCommand(raw, s, d);
-    if (regexResult !== null) return Promise.resolve(_captureNL(regexResult, 'regex'));
+    if (regexResult !== null) return Promise.resolve(_captureNL(regexResult, 'matched'));
 
     // 2. Build prompt context
     var modelList = s.models.length ? s.models.map(function(m){ return m.name; }).join(', ') : 'none';
@@ -9429,7 +9429,7 @@ function startApp() {
     }
 
     // 4. Fall back to in-browser LLM
-    if (_nlModelStatus !== 'ready' || !_nlPipeline) return Promise.resolve(_captureNL(null, 'no-llm'));
+    if (_nlModelStatus !== 'ready' || !_nlPipeline) return Promise.resolve(_captureNL(null, 'unmatched'));
     _resetIdleTimer();
     return _nlPipeline(
       [{role:'system', content:prompt}, {role:'user', content:raw}],
