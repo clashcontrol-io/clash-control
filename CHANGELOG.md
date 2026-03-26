@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.2 (2026-03-26)
+- Add roadmap, bug report & feature request links to Quick Start Guide
+
 ## v3.1.1 (2026-03-26)
 - Fix Quick Start Guide not showing on desktop + NL counter not resetting
 
