@@ -250,7 +250,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.15',hash:'b228d2a',date:'2026-03-26T17:43:26Z'};
+  var CC_VERSION = {v:'3.2.18',hash:'b9b75b7',date:'2026-03-26T17:49:12Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -5282,7 +5282,7 @@ function startApp() {
           ${s.prefs.showMarkers?'Markers On':'Markers Off'}
         </button>
       </div>`}
-      ${html`<${TrainingPill} s=${s} d=${d} />`}
+      ${html`<${TrainingPill} s=${s} d=${d} topOffset=${s.clashes.length>0} />`}
       ${s.models.length>0 && html`<div style=${{position:'absolute',top:'.75rem',right:'50%',transform:'translateX(50%)',marginRight:'-45%',pointerEvents:'auto'}}>
         <div style=${{display:'flex',alignItems:'center',gap:'.2rem'}}>
           <button onClick=${function(){setFinderOpen(!finderOpen);if(finderOpen){doFind('');setFindQuery('');}}}
@@ -11160,7 +11160,8 @@ function startApp() {
             setMsgs(function(m){ return m.concat([{role:'assistant', text:'Running: **' + rNameA + '** vs **' + rNameB + '**'
               + (rRules.hard?' | hard':'') + (rRules.maxGap?' | max gap '+rRules.maxGap+'mm':'')
               + (rRules.duplicates?' | duplicates':'') + (rRules.excludeSelf?' | cross-model only':'') + '…'}]); });
-            executeDetection(rRules);
+            // Delay detection start so React can paint the "Running..." message first
+            setTimeout(function(){ executeDetection(rRules); }, 80);
           } else {
             setMsgs(function(m){ return m.concat([{role:'assistant', setup:ctxResult}]); });
           }
@@ -11593,8 +11594,9 @@ function startApp() {
       return function(){ window.removeEventListener('cc-training-data-change', sync); window.removeEventListener('cc-training-sent', flash); };
     },[]);
 
-    return html`<div style=${{position:'absolute',top:'3.5rem',left:'50%',transform:'translateX(-50%)',
-      zIndex:20,pointerEvents:'auto',display:'flex',flexDirection:'column',alignItems:'center'}}>
+    var _pillTop = props.topOffset ? '3.5rem' : '.75rem';
+    return html`<div style=${{position:'absolute',top:_pillTop,left:'50%',transform:'translateX(-50%)',
+      zIndex:20,pointerEvents:'auto',display:'flex',flexDirection:'column',alignItems:'center',transition:'top .2s'}}>
       <div class="cc-training-btn-3d" style=${{display:'flex',alignItems:'center',
           borderRadius:999,
           background:sentFlash?'rgba(34,197,94,.85)':s.trainingMode?'rgba(124,58,237,.85)':'var(--overlay-bg)',

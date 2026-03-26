@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.2.18 (2026-03-26)
+- Move training pill up when clash overlay buttons aren't visible
+
+## v3.2.17 (2026-03-26)
+- Show Markers toggle when models are loaded, not just after detection
+
+## v3.2.16 (2026-03-26)
+- Clear NL chat messages when switching projects
+
 ## v3.2.15 (2026-03-26)
 - Use atomic REPLACE_MODEL for model versioning, fix Three.js mesh swap
 
