@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.2.25 (2026-03-26)
+- Scale detection messages to speed — fewer messages when it's fast
+
 ## v3.2.24 (2026-03-26)
 - Add 'stop' command to cancel any pending NL chat conversation
 
