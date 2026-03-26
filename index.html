@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.17',hash:'ead0a39',date:'2026-03-26T12:14:51Z'};
+  var CC_VERSION = {v:'3.1.18',hash:'6cf3f21',date:'2026-03-26T12:27:25Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -4202,7 +4202,7 @@ function startApp() {
       }, true);
       window.addEventListener('mousemove', function(e) {
         if (!_secDrag) return;
-        var dy = _secDrag.startY - e.clientY;
+        var dy = e.clientY - _secDrag.startY;
         if (Math.abs(dy) < 3 && !_secDrag.didDrag) return;
         _secDrag.didDrag = true;
         var sensitivity = 0.003;
@@ -4491,27 +4491,21 @@ function startApp() {
         lineMat.clippingPlanes = [];
         var border = new THREE.LineLoop(lineGeo, lineMat);
         grp.add(border);
-        // Drag arrow handle (cone pointing along normal)
-        var arrowLen = Math.min(halfW, halfH) * 0.25;
-        var coneGeo = new THREE.ConeGeometry(arrowLen*0.4, arrowLen, 8);
+        // Small drag arrow handle (cone pointing away from cut direction)
+        var arrowLen = Math.min(halfW, halfH) * 0.08;
+        var coneGeo = new THREE.ConeGeometry(arrowLen*0.5, arrowLen, 6);
         var coneMat = new THREE.MeshBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.8});
         coneMat.clippingPlanes = [];
         var cone = new THREE.Mesh(coneGeo, coneMat);
-        cone.position.set(0, 0, arrowLen*0.7);
-        cone.rotation.x = Math.PI/2;
+        cone.position.set(0, 0, arrowLen*0.8);
+        cone.rotation.x = -Math.PI/2;
         cone.userData._sectionHandle = true;
         grp.add(cone);
-        // Opposite direction cone
         var cone2 = new THREE.Mesh(coneGeo.clone(), coneMat.clone());
-        cone2.position.set(0, 0, -arrowLen*0.7);
-        cone2.rotation.x = -Math.PI/2;
+        cone2.position.set(0, 0, -arrowLen*0.8);
+        cone2.rotation.x = Math.PI/2;
         cone2.userData._sectionHandle = true;
         grp.add(cone2);
-        // Stem line between cones
-        var stemGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-arrowLen*0.5), new THREE.Vector3(0,0,arrowLen*0.5)]);
-        var stemMat = new THREE.LineBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.6});
-        stemMat.clippingPlanes = [];
-        grp.add(new THREE.Line(stemGeo, stemMat));
         grp.position.copy(position);
         if (quaternion) grp.quaternion.copy(quaternion);
         grp.renderOrder = 999;
@@ -4526,9 +4520,9 @@ function startApp() {
         var size = box.getSize(new THREE.Vector3());
         var center = box.getCenter(new THREE.Vector3());
         var hw, hh, pos = new THREE.Vector3(), q = new THREE.Quaternion();
-        if(s.sectionAxis==='x'){ hw=Math.max(size.y,size.z)*0.7; hh=hw; pos.set(cut,center.y,center.z); q.setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI/2); }
-        else if(s.sectionAxis==='y'){ hw=Math.max(size.x,size.z)*0.7; hh=hw; pos.set(center.x,cut,center.z); q.setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2); }
-        else { hw=Math.max(size.x,size.y)*0.7; hh=hw; pos.set(center.x,center.y,cut); }
+        if(s.sectionAxis==='x'){ hw=Math.max(size.y,size.z)*0.45; hh=hw; pos.set(cut,center.y,center.z); q.setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI/2); }
+        else if(s.sectionAxis==='y'){ hw=Math.max(size.x,size.z)*0.45; hh=hw; pos.set(center.x,cut,center.z); q.setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2); }
+        else { hw=Math.max(size.x,size.y)*0.45; hh=hw; pos.set(center.x,center.y,cut); }
         var vis = _makeSectionVis(hw, hh, pos, q);
         S.scene.add(vis);
         S._sectionPlaneVis = vis;
@@ -4542,7 +4536,7 @@ function startApp() {
         var shiftedPt=pt.clone().addScaledVector(normal,offset);
         var plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normal.negate(),shiftedPt);
         planes.push(plane);
-        var halfDim = diag * 0.35;
+        var halfDim = diag * 0.22;
         var vis2 = _makeSectionVis(halfDim, halfDim, shiftedPt, null);
         vis2.lookAt(shiftedPt.clone().add(normal));
         S.scene.add(vis2);

@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.18 (2026-03-26)
+- Fix right-click ghosting + add section plane handles + ESC to cancel
+
 ## v3.1.17 (2026-03-26)
 - Raise fuzzy intent confidence threshold from 40% to 70%
 
