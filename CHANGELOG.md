@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.0.9 (2026-03-26)
+- Fix zoomedTo crash + add NL training feedback + resolved action in records
+
 ## v3.0.8 (2026-03-26)
 - Clean up training pill: show only data records, move clash stats to tab
 

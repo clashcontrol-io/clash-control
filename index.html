@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.0.8',hash:'5a8c145',date:'2026-03-26T08:56:59Z'};
+  var CC_VERSION = {v:'3.0.9',hash:'e7bb4da',date:'2026-03-26T09:01:44Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -7203,6 +7203,26 @@ function startApp() {
   function ClashProps(props) {
     var it=props.item, models=props.models, isClash=props.isClash!==false;
     var dp=useState(false), detailOpen=dp[0], setDetailOpen=dp[1];
+    var stZoomed=useState(null), zoomedTo=stZoomed[0], setZoomedTo=stZoomed[1];
+    function _zoomToggle(elemId, label) {
+      if (zoomedTo === label) {
+        // Second click — fly to both elements
+        setZoomedTo(null);
+        var reIds = [];
+        if (it.elemA) reIds.push(it.elemA);
+        if (it.elemB) reIds.push(it.elemB);
+        if (it._groupedElems) it._groupedElems.forEach(function(eid){reIds.push(eid);});
+        if (reIds.length && _ghostOthers) _ghostOthers(reIds);
+        if (it.elemA && _highlightById) _highlightById(it.elemA, false);
+        if (it.point && window._ccShowActiveClashMarker) window._ccShowActiveClashMarker(it.point);
+        if (_flyToElements && reIds.length) _flyToElements(reIds, it.point);
+        else if (it.point && _flyTo) _flyTo(it.point);
+      } else {
+        setZoomedTo(label);
+        if (_fitToElement && elemId) _fitToElement(elemId);
+        if (_highlightById && elemId) _highlightById(elemId);
+      }
+    }
     // For issues: single element via elementId; for clashes: elemA + elemB
     var hasA = !!it.elemA, hasB = !!it.elemB, hasEl = !!it.elementId;
     var isSingle = !hasA && !hasB && hasEl;
@@ -7218,10 +7238,10 @@ function startApp() {
           <button onClick=${function(){if(_fitToElement&&it.elementId)_fitToElement(it.elementId);if(_highlightById)_highlightById(it.elementId,false);_sboxAroundElements&&_sboxAroundElements([it.elementId]);}}
             style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#3b0764',color:'#c084fc',flex:1}} title="Section box around element">Box</button>
         ` : html`
-          <button onClick=${function(){if(_fitToElement&&it.elemA)_fitToElement(it.elemA);if(_highlightById&&it.elemA)_highlightById(it.elemA);}}
-            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#0f3a5f',color:'#93c5fd',flex:1}}>Zoom A</button>
-          <button onClick=${function(){if(_fitToElement&&it.elemB)_fitToElement(it.elemB);if(_highlightById&&it.elemB)_highlightById(it.elemB);}}
-            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#0f3a5f',color:'#93c5fd',flex:1}}>Zoom B</button>
+          <button onClick=${function(){_zoomToggle(it.elemA,'A');}}
+            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:zoomedTo==='A'?'#1e40af':'#0f3a5f',color:'#93c5fd',flex:1}}>${zoomedTo==='A'?'Zoom Both':'Zoom A'}</button>
+          <button onClick=${function(){_zoomToggle(it.elemB,'B');}}
+            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:zoomedTo==='B'?'#1e40af':'#0f3a5f',color:'#93c5fd',flex:1}}>${zoomedTo==='B'?'Zoom Both':'Zoom B'}</button>
           <button onClick=${function(){if(_fitToElement&&it.elemA)_fitToElement(it.elemA);if(_highlightById)_highlightById(it.elemA,false);_sboxAroundElements&&_sboxAroundElements([it.elemA,it.elemB]);}}
             style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#3b0764',color:'#c084fc',flex:1}} title="Section box around both elements">Box</button>
         `}
@@ -7522,27 +7542,6 @@ function startApp() {
       if(a===b) return a;
       return [a,b].filter(Boolean).join(' / ');
     })();
-    var stZoomed = useState(null), zoomedTo = stZoomed[0], setZoomedTo = stZoomed[1];
-    function _zoomToggle(elemId, label) {
-      if (zoomedTo === label) {
-        // Second click — fly to clash point (same as clicking title)
-        setZoomedTo(null);
-        var reIds = [];
-        if (it.elemA) reIds.push(it.elemA);
-        if (it.elemB) reIds.push(it.elemB);
-        if (it._groupedElems) it._groupedElems.forEach(function(eid){reIds.push(eid);});
-        if (reIds.length && _ghostOthers) _ghostOthers(reIds);
-        if (it.elemA && _highlightById) _highlightById(it.elemA, false);
-        if (it.point && window._ccShowActiveClashMarker) window._ccShowActiveClashMarker(it.point);
-        if (_flyToElements && reIds.length) _flyToElements(reIds, it.point);
-        else if (it.point && _flyTo) _flyTo(it.point);
-      } else {
-        // First click — zoom to individual element
-        setZoomedTo(label);
-        if (_fitToElement && elemId) _fitToElement(elemId);
-        if (_highlightById && elemId) _highlightById(elemId);
-      }
-    }
     return html`<div onClick=${function(){
         var wasActive=active;
         if(wasActive){
