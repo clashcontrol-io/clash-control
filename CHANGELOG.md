@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.26 (2026-03-26)
+- Flash training pill green when data is sent
+
 ## v3.1.25 (2026-03-26)
 - Ask for feedback after user rejects fuzzy suggestion
 
