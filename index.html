@@ -250,7 +250,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.31',hash:'6227a7a',date:'2026-03-26T16:19:19Z'};
+  var CC_VERSION = {v:'3.2.0',hash:'bb1c258',date:'2026-03-26T16:23:40Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -293,6 +293,7 @@ function startApp() {
     resolved:      { label:'Resolved',      bg:'#22c55e' },
     auto_resolved: { label:'Auto-resolved', bg:'#475569' },
     closed:      { label:'Closed',      bg:'#64748b' },
+    accepted_needs_check: { label:'Accepted · Check', bg:'#0ea5e9' },
   };
   var EDITABLE_STATUSES = Object.keys(STAT).filter(function(k){return k!=='auto_resolved'&&k!=='denied';});
 
@@ -311,6 +312,51 @@ function startApp() {
     priority:'all', category:'all', assignee:'all', issueElementType:'all', issueStorey:'all'
   };
   var _ccLoadPref = function(key,fallback){try{var v=localStorage.getItem('cc_'+key);return v!==null?JSON.parse(v):fallback;}catch(e){return fallback;}};
+
+  // ── Standards localStorage helpers ──────────────────────────────
+  function _getStandardDefaultClearance(){try{var v=localStorage.getItem('cc_standard_default_clearance');return v!==null?Number(v):null;}catch(e){return null;}}
+  function _setStandardDefaultClearance(v){try{if(v===null||v===''||v===undefined)localStorage.removeItem('cc_standard_default_clearance');else localStorage.setItem('cc_standard_default_clearance',String(Number(v)));}catch(e){}}
+  function _getStandardPairRules(){try{var v=localStorage.getItem('cc_standard_pair_rules');return v?JSON.parse(v):[];}catch(e){return [];}}
+  function _setStandardPairRules(rules){try{localStorage.setItem('cc_standard_pair_rules',JSON.stringify(rules));}catch(e){}}
+  function _lookupPairRule(discA,discB){
+    var rules=_getStandardPairRules();
+    if(!discA||!discB)return null;
+    var a=discA.toLowerCase(),b=discB.toLowerCase();
+    for(var i=0;i<rules.length;i++){
+      var r=rules[i];
+      if((r.discipline_a===a&&r.discipline_b===b)||(r.discipline_a===b&&r.discipline_b===a))return r;
+    }
+    return null;
+  }
+  // IFC type pair rules
+  function _getStandardTypePairRules(){try{var v=localStorage.getItem('cc_standard_type_pair_rules');return v?JSON.parse(v):[];}catch(e){return [];}}
+  function _setStandardTypePairRules(rules){try{localStorage.setItem('cc_standard_type_pair_rules',JSON.stringify(rules));}catch(e){}}
+  function _lookupTypePairRule(typeA,typeB){
+    var rules=_getStandardTypePairRules();
+    if(!typeA||!typeB)return null;
+    for(var i=0;i<rules.length;i++){
+      var r=rules[i];
+      if((r.ifc_type_a===typeA&&r.ifc_type_b===typeB)||(r.ifc_type_a===typeB&&r.ifc_type_b===typeA))return r;
+    }
+    return null;
+  }
+  // Tolerance lookup priority: IFC type pair → discipline pair → global default → null
+  function _getToleranceForClash(clash){
+    if(!clash)return _getStandardDefaultClearance();
+    // 1. Check IFC type pair rule
+    if(clash.elemAType&&clash.elemBType){
+      var typeRule=_lookupTypePairRule(clash.elemAType,clash.elemBType);
+      if(typeRule&&typeRule.clearance_mm!=null&&typeRule.clearance_mm!=='')return typeRule.clearance_mm;
+    }
+    // 2. Check discipline pair rule
+    if(clash.disciplines&&clash.disciplines.length>=2){
+      var discRule=_lookupPairRule(clash.disciplines[0],clash.disciplines[1]);
+      if(discRule&&discRule.clearance_mm!=null&&discRule.clearance_mm!=='')return discRule.clearance_mm;
+    }
+    // 3. Global default
+    return _getStandardDefaultClearance();
+  }
+
   var INIT_PREFS = {
     autoFlyTo:_ccLoadPref('autoFlyTo',true), autoHighlight:_ccLoadPref('autoHighlight',true), showGrid:_ccLoadPref('showGrid',true), showAxes:_ccLoadPref('showAxes',true),
     showMarkers:_ccLoadPref('showMarkers',false), hoverHighlight:_ccLoadPref('hoverHighlight',true), outlineSelected:_ccLoadPref('outlineSelected',true),
@@ -515,6 +561,8 @@ function startApp() {
               bboxA:cClash.bboxA, bboxB:cClash.bboxB,
               disciplines:cClash.disciplines,
               objectTypeA:cClash.objectTypeA, objectTypeB:cClash.objectTypeB,
+              userToleranceMm:cClash.userToleranceMm||null,
+              expectedClash:cClash.expectedClash||false,
               created:Date.now()
             };
             // Find next clash in remaining list, respecting current sort order
@@ -2873,6 +2921,18 @@ function startApp() {
           return tols[k1]!==undefined?tols[k1]:null;
         }(),
         note: _sanitizeNote(c.aiNote || ''),
+        user_tolerance_mm: c.userToleranceMm != null ? c.userToleranceMm : null,
+        vs_standard_mm: function(){
+          if(c.userToleranceMm==null) return null;
+          if(c.type==='hard'){
+            var pen=c.distance!=null&&c.distance<0?Math.abs(c.distance):0;
+            return 0-pen; // always negative for hard clashes
+          }
+          var actual=c.clearanceMm!=null?c.clearanceMm:(c.distance!=null?c.distance:null);
+          if(actual==null) return null;
+          return Math.round((actual-c.userToleranceMm)*100)/100;
+        }(),
+        expected_clash: !!c.expectedClash,
         app_version: CC_VERSION.v
       };
     });
@@ -7059,6 +7119,7 @@ function startApp() {
     var fo=useState(false), filtersOpen=fo[0], setFiltersOpen=fo[1];
     var isClashTab = s.tab==='clashes';
     var isExplorerTab = s.tab==='explorer';
+    var isStandardsTab = s.tab==='standards';
     var rawItems = isClashTab ? s.clashes.filter(function(c){return c.status!=='denied';}) : s.issues;
 
     // Build set of visible model IDs for filtering
@@ -7178,18 +7239,19 @@ function startApp() {
 
     return html`<div style=${{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',minHeight:0}}>
       ${!hideTabBar && html`<div style=${{display:'flex',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}} role="tablist">
-        ${[{id:'clashes',label:'Clashes',n:oC,bg:'#ef4444'},{id:'issues',label:'Issues',n:oI,bg:'#f59e0b'},{id:'explorer',label:'Explorer',n:0,bg:'#34d399'}].map(function(t){return html`
+        ${[{id:'clashes',label:'Clashes',n:oC,bg:'#ef4444'},{id:'issues',label:'Issues',n:oI,bg:'#f59e0b'},{id:'explorer',label:'Explorer',n:0,bg:'#34d399'},{id:'standards',label:'Standards',n:0,bg:'#0ea5e9'}].map(function(t){return html`
           <button key=${t.id} onClick=${function(){d({t:A.TAB,v:t.id})}} role="tab" aria-selected=${s.tab===t.id}
             style=${{...S_BTN,flex:1,background:'none',borderRadius:0,padding:'.6rem',color:s.tab===t.id?'var(--text-primary)':'var(--text-faint)',borderBottom:s.tab===t.id?'2px solid #3b82f6':'2px solid transparent'}}>
             ${t.label}${t.n>0?html`<span style=${{marginLeft:'.3rem',background:t.bg,color:'#fff',fontSize:'0.69rem',padding:'.05rem .35rem',borderRadius:99}}>${t.n}</span>`:''}
           </button>`})}
       </div>`}
 
-      ${!isExplorerTab && rawItems.length > 0 && html`<${ClashStatsBar} items=${rawItems} isClash=${isClashTab} delta=${isClashTab ? s.lastDeltaSummary : null} />`}
+      ${!isExplorerTab && !isStandardsTab && rawItems.length > 0 && html`<${ClashStatsBar} items=${rawItems} isClash=${isClashTab} delta=${isClashTab ? s.lastDeltaSummary : null} />`}
       ${isClashTab && html`<${ClashRulesPanel} s=${s} d=${d} />`}
 
       ${s.tab==='explorer' && html`<${ExplorerPanel} s=${s} d=${d} />`}
-      ${s.tab!=='explorer' && html`<div style=${{padding:'.4rem .4rem .35rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
+      ${isStandardsTab && html`<${StandardsPanel} />`}
+      ${!isExplorerTab && !isStandardsTab && html`<div style=${{padding:'.4rem .4rem .35rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
         <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
           <div style=${{flex:1,position:'relative',display:'flex',alignItems:'center'}}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style=${{position:'absolute',left:'.45rem',pointerEvents:'none',flexShrink:0}}>
@@ -7207,7 +7269,7 @@ function startApp() {
           </button>
         </div>
       </div>`}
-      ${!isExplorerTab && filtersOpen && html`<div style=${{padding:'.5rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,display:'flex',flexDirection:'column',gap:'.4rem',background:'var(--bg-tertiary)'}}>
+      ${!isExplorerTab && !isStandardsTab && filtersOpen && html`<div style=${{padding:'.5rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,display:'flex',flexDirection:'column',gap:'.4rem',background:'var(--bg-tertiary)'}}>
         <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <span style=${{fontSize:'0.75rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Filters</span>
           <button onClick=${function(){d({t:A.RESET_FILTERS})}} style=${{...S_BTN,fontSize:'0.63rem',padding:'.1rem .3rem',background:'none',color:'var(--text-faint)',textDecoration:'underline'}}>Clear all</button>
@@ -7353,7 +7415,7 @@ function startApp() {
       ${s.tab==='issues' && html`<div style=${{padding:'.4rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,display:'flex',gap:'.3rem'}}>
         <button onClick=${function(){d({t:A.MODAL,v:true,el:window._ccSelectedEl||undefined})}} style=${{...S_BTN,flex:1,background:'#2563eb',color:'#fff'}}>+ New Issue</button>
       </div>`}
-      ${!isExplorerTab && items.length>0 && function(){
+      ${!isExplorerTab && !isStandardsTab && items.length>0 && function(){
         var grpAction = isClashTab ? 'CLASH_GROUP_BY' : 'ISSUE_GROUP_BY';
         var sortAction = isClashTab ? 'CLASH_SORT_BY' : 'ISSUE_SORT_BY';
         var curGrp = isClashTab ? s.clashGroupBy : s.issueGroupBy;
@@ -7378,9 +7440,154 @@ function startApp() {
           </div>
         </div>`;
       }()}
-      ${!isExplorerTab && items.length>0 && html`<${BulkActionBar} s=${s} d=${d} items=${items} isClash=${isClashTab} />`}
+      ${!isExplorerTab && !isStandardsTab && items.length>0 && html`<${BulkActionBar} s=${s} d=${d} items=${items} isClash=${isClashTab} />`}
 
-      ${!isExplorerTab && html`<${VirtualList} items=${items} activeId=${s.activeId} d=${d} isClash=${isClashTab} prefs=${s.prefs} models=${s.models} groupBy=${isClashTab?s.clashGroupBy:s.issueGroupBy} sortBy=${isClashTab?s.clashSortBy:s.issueSortBy} selectMode=${s.selectMode} selected=${s.selected} trainingMode=${s.trainingMode} />`}
+      ${!isExplorerTab && !isStandardsTab && html`<${VirtualList} items=${items} activeId=${s.activeId} d=${d} isClash=${isClashTab} prefs=${s.prefs} models=${s.models} groupBy=${isClashTab?s.clashGroupBy:s.issueGroupBy} sortBy=${isClashTab?s.clashSortBy:s.issueSortBy} selectMode=${s.selectMode} selected=${s.selected} trainingMode=${s.trainingMode} />`}
+    </div>`;
+  }
+
+  // ── Standards Panel ──────────────────────────────────────────────
+  var STANDARD_DISCIPLINES = ['mechanical','electrical','structural','architectural','civil','mep','other'];
+  function StandardsPanel() {
+    var st=useState(function(){return {defaultClearance:_getStandardDefaultClearance(),rules:_getStandardPairRules(),typeRules:_getStandardTypePairRules()};}),
+      data=st[0],setData=st[1];
+    function updateDefault(val){
+      var v=val===''?null:Number(val);
+      _setStandardDefaultClearance(v);
+      setData(function(p){return Object.assign({},p,{defaultClearance:v});});
+    }
+    // Discipline pair rules
+    function updateRules(newRules){
+      _setStandardPairRules(newRules);
+      setData(function(p){return Object.assign({},p,{rules:newRules});});
+    }
+    function addRow(){updateRules(data.rules.concat([{discipline_a:'',discipline_b:'',clearance_mm:'',hard_always_flagged:true}]));}
+    function delRow(i){var r=data.rules.slice();r.splice(i,1);updateRules(r);}
+    function updRow(i,field,val){var r=data.rules.slice();r[i]=Object.assign({},r[i]);r[i][field]=val;updateRules(r);}
+    function isDuplicate(idx){
+      var r=data.rules[idx];if(!r||!r.discipline_a||!r.discipline_b)return false;
+      var a=r.discipline_a,b=r.discipline_b;
+      for(var i=0;i<data.rules.length;i++){
+        if(i===idx)continue;var o=data.rules[i];
+        if((o.discipline_a===a&&o.discipline_b===b)||(o.discipline_a===b&&o.discipline_b===a))return true;
+      }
+      return false;
+    }
+    // IFC type pair rules
+    function updateTypeRules(newRules){
+      _setStandardTypePairRules(newRules);
+      setData(function(p){return Object.assign({},p,{typeRules:newRules});});
+    }
+    function addTypeRow(){updateTypeRules(data.typeRules.concat([{ifc_type_a:'',ifc_type_b:'',clearance_mm:'',hard_always_flagged:true}]));}
+    function delTypeRow(i){var r=data.typeRules.slice();r.splice(i,1);updateTypeRules(r);}
+    function updTypeRow(i,field,val){var r=data.typeRules.slice();r[i]=Object.assign({},r[i]);r[i][field]=val;updateTypeRules(r);}
+    function isTypeDuplicate(idx){
+      var r=data.typeRules[idx];if(!r||!r.ifc_type_a||!r.ifc_type_b)return false;
+      var a=r.ifc_type_a,b=r.ifc_type_b;
+      for(var i=0;i<data.typeRules.length;i++){
+        if(i===idx)continue;var o=data.typeRules[i];
+        if((o.ifc_type_a===a&&o.ifc_type_b===b)||(o.ifc_type_a===b&&o.ifc_type_b===a))return true;
+      }
+      return false;
+    }
+    var LS={fontSize:'0.69rem',color:'var(--text-muted)',display:'block',marginBottom:'.15rem'};
+    var selStyle={fontSize:'0.69rem',padding:'.2rem .25rem',borderRadius:4,background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border)',flex:1};
+    var rowInputStyle={fontSize:'0.69rem',padding:'.2rem .3rem',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:4,color:'var(--text-primary)',width:'100%',boxSizing:'border-box'};
+    return html`<div style=${{flex:1,overflowY:'auto',padding:'.6rem'}}>
+      <div style=${{marginBottom:'.8rem'}}>
+        <span style=${LS}>Default minimum clearance (mm)</span>
+        <input type="number" min="0" step="1" placeholder="e.g. 50"
+          value=${data.defaultClearance!=null?data.defaultClearance:''}
+          onInput=${function(e){updateDefault(e.target.value);}}
+          style=${{fontSize:'0.8rem',padding:'.3rem .4rem',background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:4,color:'var(--text-primary)',width:'100%',boxSizing:'border-box'}} />
+        <span style=${{fontSize:'0.63rem',color:'var(--text-faint)',marginTop:'.15rem',display:'block'}}>Used for any pair not listed below</span>
+      </div>
+
+      <div style=${{fontSize:'0.75rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'.35rem'}}>IFC type-pair rules</div>
+      <span style=${{fontSize:'0.63rem',color:'var(--text-faint)',display:'block',marginBottom:'.35rem'}}>Highest priority — matched by IFC element type (e.g. IfcPipe vs IfcWall)</span>
+
+      ${data.typeRules.length===0 && html`<div style=${{padding:'.6rem',background:'var(--bg-secondary)',borderRadius:6,fontSize:'0.69rem',color:'var(--text-faint)',textAlign:'center',marginBottom:'.5rem'}}>
+        No IFC type rules yet. These take priority over discipline rules.
+      </div>`}
+
+      ${data.typeRules.map(function(r,i){
+        var dup=isTypeDuplicate(i);
+        return html`<div key=${'t'+i} style=${{padding:'.4rem',background:dup?'rgba(239,68,68,.08)':'var(--bg-secondary)',borderRadius:6,marginBottom:'.35rem',border:dup?'1px solid #ef444466':'1px solid var(--border-subtle)'}}>
+          ${dup && html`<div style=${{fontSize:'0.57rem',color:'#fca5a5',marginBottom:'.2rem',fontWeight:600}}>⚠ Duplicate pair — overridden by earlier rule</div>`}
+          <div style=${{display:'flex',gap:'.3rem',alignItems:'center',marginBottom:'.25rem'}}>
+            <input type="text" placeholder="IFC Type A (e.g. IfcPipe)" value=${r.ifc_type_a||''}
+              onInput=${function(e){updTypeRow(i,'ifc_type_a',e.target.value);}}
+              style=${Object.assign({},rowInputStyle,{flex:1})} />
+            <span style=${{fontSize:'0.69rem',color:'var(--text-faint)'}}>vs</span>
+            <input type="text" placeholder="IFC Type B (e.g. IfcWall)" value=${r.ifc_type_b||''}
+              onInput=${function(e){updTypeRow(i,'ifc_type_b',e.target.value);}}
+              style=${Object.assign({},rowInputStyle,{flex:1})} />
+            <button onClick=${function(){delTypeRow(i);}} title="Remove rule"
+              style=${{background:'none',border:'none',color:'#f87171',cursor:'pointer',fontSize:'0.86rem',padding:'0 .2rem',lineHeight:1}}>×</button>
+          </div>
+          <div style=${{display:'flex',gap:'.4rem',alignItems:'center'}}>
+            <div style=${{flex:1}}>
+              <span style=${{fontSize:'0.57rem',color:'var(--text-faint)'}}>Min clearance (mm)</span>
+              <input type="number" min="0" step="1" value=${r.clearance_mm!=null&&r.clearance_mm!==''?r.clearance_mm:''}
+                onInput=${function(e){updTypeRow(i,'clearance_mm',e.target.value===''?'':Number(e.target.value));}}
+                style=${rowInputStyle} />
+            </div>
+            <label style=${{display:'flex',alignItems:'center',gap:'.2rem',fontSize:'0.57rem',color:'var(--text-muted)',cursor:'pointer',whiteSpace:'nowrap'}}>
+              <input type="checkbox" checked=${r.hard_always_flagged!==false}
+                onChange=${function(e){updTypeRow(i,'hard_always_flagged',e.target.checked);}}
+                style=${{accentColor:'var(--accent)'}} />
+              Hard always flagged
+            </label>
+          </div>
+        </div>`})}
+
+      <button onClick=${addTypeRow}
+        style=${{fontSize:'0.69rem',padding:'.3rem .6rem',background:'var(--bg-secondary)',color:'#60a5fa',border:'1px solid #3b82f644',borderRadius:4,cursor:'pointer',fontWeight:600,width:'100%',marginBottom:'1rem'}}>+ Add IFC type rule</button>
+
+      <div style=${{fontSize:'0.75rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'.35rem'}}>Discipline-pair rules</div>
+      <span style=${{fontSize:'0.63rem',color:'var(--text-faint)',display:'block',marginBottom:'.35rem'}}>Fallback when no IFC type rule matches</span>
+
+      ${data.rules.length===0 && html`<div style=${{padding:'.6rem',background:'var(--bg-secondary)',borderRadius:6,fontSize:'0.69rem',color:'var(--text-faint)',textAlign:'center',marginBottom:'.5rem'}}>
+        No discipline-pair rules configured yet. Rules you set here will pre-fill clash cards automatically.
+      </div>`}
+
+      ${data.rules.map(function(r,i){
+        var dup=isDuplicate(i);
+        return html`<div key=${'d'+i} style=${{padding:'.4rem',background:dup?'rgba(239,68,68,.08)':'var(--bg-secondary)',borderRadius:6,marginBottom:'.35rem',border:dup?'1px solid #ef444466':'1px solid var(--border-subtle)'}}>
+          ${dup && html`<div style=${{fontSize:'0.57rem',color:'#fca5a5',marginBottom:'.2rem',fontWeight:600}}>⚠ Duplicate pair — overridden by earlier rule</div>`}
+          <div style=${{display:'flex',gap:'.3rem',alignItems:'center',marginBottom:'.25rem'}}>
+            <select value=${r.discipline_a} onChange=${function(e){updRow(i,'discipline_a',e.target.value);}}
+              style=${selStyle}>
+              <option value="">Discipline A</option>
+              ${STANDARD_DISCIPLINES.map(function(dd){return html`<option key=${dd} value=${dd}>${dd.charAt(0).toUpperCase()+dd.slice(1)}</option>`})}
+            </select>
+            <span style=${{fontSize:'0.69rem',color:'var(--text-faint)'}}>vs</span>
+            <select value=${r.discipline_b} onChange=${function(e){updRow(i,'discipline_b',e.target.value);}}
+              style=${selStyle}>
+              <option value="">Discipline B</option>
+              ${STANDARD_DISCIPLINES.map(function(dd){return html`<option key=${dd} value=${dd}>${dd.charAt(0).toUpperCase()+dd.slice(1)}</option>`})}
+            </select>
+            <button onClick=${function(){delRow(i);}} title="Remove rule"
+              style=${{background:'none',border:'none',color:'#f87171',cursor:'pointer',fontSize:'0.86rem',padding:'0 .2rem',lineHeight:1}}>×</button>
+          </div>
+          <div style=${{display:'flex',gap:'.4rem',alignItems:'center'}}>
+            <div style=${{flex:1}}>
+              <span style=${{fontSize:'0.57rem',color:'var(--text-faint)'}}>Min clearance (mm)</span>
+              <input type="number" min="0" step="1" value=${r.clearance_mm!=null&&r.clearance_mm!==''?r.clearance_mm:''}
+                onInput=${function(e){updRow(i,'clearance_mm',e.target.value===''?'':Number(e.target.value));}}
+                style=${rowInputStyle} />
+            </div>
+            <label style=${{display:'flex',alignItems:'center',gap:'.2rem',fontSize:'0.57rem',color:'var(--text-muted)',cursor:'pointer',whiteSpace:'nowrap'}}>
+              <input type="checkbox" checked=${r.hard_always_flagged!==false}
+                onChange=${function(e){updRow(i,'hard_always_flagged',e.target.checked);}}
+                style=${{accentColor:'var(--accent)'}} />
+              Hard always flagged
+            </label>
+          </div>
+        </div>`})}
+
+      <button onClick=${addRow}
+        style=${{fontSize:'0.69rem',padding:'.3rem .6rem',background:'var(--bg-secondary)',color:'#60a5fa',border:'1px solid #3b82f644',borderRadius:4,cursor:'pointer',fontWeight:600,width:'100%'}}>+ Add discipline rule</button>
     </div>`;
   }
 
@@ -7838,6 +8045,8 @@ function startApp() {
             </span>`}
             ${storeyLabel && html`<span style=${{fontSize:'0.69rem',color:'var(--text-secondary)',background:'var(--bg-secondary)',padding:'.05rem .3rem',borderRadius:3}}>🏢 ${storeyLabel}</span>`}
             ${it.selfClash && html`<span style=${{fontSize:'0.63rem',color:'#a78bfa',background:'#2e1065',padding:'.05rem .25rem',borderRadius:3}}>self</span>`}
+            ${it.expectedClash && html`<span style=${{fontSize:'0.63rem',color:'#fcd34d',background:'#78350f',padding:'.05rem .25rem',borderRadius:3}}>expected</span>`}
+            ${it.status==='accepted_needs_check' && html`<span style=${{fontSize:'0.63rem',color:'#7dd3fc',background:'#0c4a6e',padding:'.05rem .25rem',borderRadius:3}}>needs check</span>`}
           </div>`}
           ${!isClash && it.elementType && html`<div style=${{display:'flex',gap:'.2rem',marginTop:'.15rem',flexWrap:'wrap'}}>
             <span style=${{fontSize:'0.57rem',background:'#1e3a5f',color:'#93c5fd',padding:'.05rem .25rem',borderRadius:3}}>${it.elementType}</span>
@@ -7860,6 +8069,13 @@ function startApp() {
               setTimeout(function(){d({t:A.UPD_CLASH,id:it.id,u:{status:'denied'}});},600);
             }}
             style=${{...S_BTN,fontSize:'0.69rem',padding:'.15rem .5rem',background:'var(--bg-secondary)',color:'#f87171',border:'1px solid #ef444444',fontWeight:600,transition:'all .2s'}}>Deny</button>`}
+          ${isClash && it.status!=='confirmed' && html`<button onClick=${function(e){
+              e.stopPropagation();
+              var btn=e.target;btn.style.color='#7dd3fc';btn.style.background='#0c4a6e';btn.style.borderColor='#0ea5e966';btn.textContent='Accepted ✓';
+              setTimeout(function(){d({t:A.UPD_CLASH,id:it.id,u:{status:'accepted_needs_check'}});},600);
+            }}
+            title="Accept but flag for later verification"
+            style=${{...S_BTN,fontSize:'0.69rem',padding:'.15rem .5rem',background:'var(--bg-secondary)',color:'#38bdf8',border:'1px solid #0ea5e944',fontWeight:600,transition:'all .2s'}}>Accept · Check</button>`}
           ${!isClash && EDITABLE_STATUSES.map(function(k){return html`<button key=${k}
             onClick=${function(e){e.stopPropagation();d({t:A.UPD_ISSUE,id:it.id,u:{status:k}})}}
             style=${{...S_BTN,fontSize:'0.69rem',padding:'.15rem .35rem',background:it.status===k?STAT[k].bg:'var(--bg-secondary)',color:it.status===k?'#fff':'var(--text-faint)'}}>${STAT[k].label}</button>`})}
@@ -7874,6 +8090,63 @@ function startApp() {
             onInput=${function(e){d({t:isClash?'UPD_CLASH':'UPD_ISSUE',id:it.id,u:{assignee:e.target.value}});}}
             style=${{...S_INPUT,fontSize:'0.63rem',padding:'.15rem .3rem',flex:1}} />
         </div>
+        ${isClash && function(){
+          var _tolSt=useState(function(){
+            var prefill=_getToleranceForClash(it);
+            return {val:it.userToleranceMm!=null?it.userToleranceMm:(prefill!=null?prefill:''),edited:it.userToleranceMm!=null,promptAction:null};
+          });
+          var tolState=_tolSt[0],setTolState=_tolSt[1];
+          var discA=(it.disciplines||[])[0]||'?',discB=(it.disciplines||[])[1]||'?';
+          var typeA=it.elemAType||'',typeB=it.elemBType||'';
+          // Determine which standard value to compare against
+          var standardVal=_getToleranceForClash(it);
+          var curVal=tolState.val;
+          var changed=curVal!==''&&curVal!=null&&Number(curVal)!==standardVal;
+          // Check if this is an expected clash (tagged)
+          var isExpected=!!it.expectedClash;
+          return html`<div style=${{marginTop:'.3rem',paddingTop:'.3rem',borderTop:'1px solid var(--border-subtle)'}}>
+            <div style=${{display:'flex',gap:'.3rem',alignItems:'center',marginBottom:'.2rem'}}>
+              <span style=${{fontSize:'0.63rem',color:'var(--text-muted)',flexShrink:0}}>Acceptable min. clearance (mm)</span>
+              <input type="number" min="0" step="1" placeholder="Not set"
+                value=${curVal!=null&&curVal!==''?curVal:''}
+                onClick=${function(e){e.stopPropagation();}}
+                onInput=${function(e){
+                  var v=e.target.value===''?'':Number(e.target.value);
+                  setTolState(function(p){return Object.assign({},p,{val:v,edited:true,promptAction:null});});
+                  d({t:A.UPD_CLASH,id:it.id,u:{userToleranceMm:v===''?null:v}});
+                }}
+                style=${{fontSize:'0.63rem',padding:'.15rem .3rem',background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:3,color:'var(--text-primary)',width:'5rem'}} />
+              <label style=${{display:'flex',alignItems:'center',gap:'.15rem',fontSize:'0.57rem',color:isExpected?'#f59e0b':'var(--text-faint)',cursor:'pointer',whiteSpace:'nowrap',marginLeft:'.2rem'}}>
+                <input type="checkbox" checked=${isExpected}
+                  onClick=${function(e){e.stopPropagation();}}
+                  onChange=${function(e){d({t:A.UPD_CLASH,id:it.id,u:{expectedClash:e.target.checked}});}}
+                  style=${{accentColor:'#f59e0b'}} />
+                Expected clash
+              </label>
+            </div>
+            ${changed && tolState.promptAction!=='dismissed' && html`<div style=${{fontSize:'0.57rem',color:'#93c5fd',background:'#0f172a',padding:'.25rem .4rem',borderRadius:4,marginBottom:'.2rem',display:'flex',alignItems:'center',gap:'.3rem',flexWrap:'wrap'}}>
+              <span>${standardVal!=null?'Update':'Add'} standard for ${typeA&&typeB?typeA+' vs '+typeB:discA+' vs '+discB} to ${curVal}mm?</span>
+              <button onClick=${function(e){e.stopPropagation();
+                if(typeA&&typeB){
+                  var tRules=_getStandardTypePairRules();var found=false;
+                  for(var i=0;i<tRules.length;i++){if((tRules[i].ifc_type_a===typeA&&tRules[i].ifc_type_b===typeB)||(tRules[i].ifc_type_a===typeB&&tRules[i].ifc_type_b===typeA)){tRules[i]=Object.assign({},tRules[i],{clearance_mm:Number(curVal)});found=true;break;}}
+                  if(!found)tRules.push({ifc_type_a:typeA,ifc_type_b:typeB,clearance_mm:Number(curVal),hard_always_flagged:true});
+                  _setStandardTypePairRules(tRules);
+                } else if(discA!=='?'&&discB!=='?'){
+                  var dRules=_getStandardPairRules();var found2=false;
+                  for(var j=0;j<dRules.length;j++){if((dRules[j].discipline_a===discA&&dRules[j].discipline_b===discB)||(dRules[j].discipline_a===discB&&dRules[j].discipline_b===discA)){dRules[j]=Object.assign({},dRules[j],{clearance_mm:Number(curVal)});found2=true;break;}}
+                  if(!found2)dRules.push({discipline_a:discA,discipline_b:discB,clearance_mm:Number(curVal),hard_always_flagged:true});
+                  _setStandardPairRules(dRules);
+                }
+                setTolState(function(p){return Object.assign({},p,{promptAction:'updated'});});
+              }}
+                style=${{fontSize:'0.57rem',padding:'.1rem .3rem',background:'#1e3a5f',color:'#60a5fa',border:'1px solid #3b82f644',borderRadius:3,cursor:'pointer',fontWeight:600}}>Update</button>
+              <button onClick=${function(e){e.stopPropagation();setTolState(function(p){return Object.assign({},p,{promptAction:'dismissed'});});}}
+                style=${{fontSize:'0.57rem',padding:'.1rem .3rem',background:'var(--bg-secondary)',color:'var(--text-faint)',border:'1px solid var(--border)',borderRadius:3,cursor:'pointer'}}>Keep local</button>
+            </div>`}
+            ${tolState.promptAction==='updated' && html`<div style=${{fontSize:'0.57rem',color:'#4ade80',marginBottom:'.2rem'}}>Standard updated.</div>`}
+          </div>`;
+        }()}
         ${isClash && trainingMode && function(){
           var CTYPES=[{k:'hard',l:'Hard'},{k:'soft',l:'Soft'},{k:'duplicate',l:'Duplicate'},{k:'no_clash',l:'None'}];
           var REASONS=['Design error','Within tolerance','Needs more tolerance','Already resolved','Modelling error','Missing opening','Shared space allowed','Duplicate geometry','Not relevant'];
@@ -11452,7 +11725,7 @@ function startApp() {
               <div style=${{fontWeight:600,color:'var(--text-primary)',marginBottom:'.25rem'}}>Keyboard shortcuts</div>
               <div style=${{display:'grid',gridTemplateColumns:'auto 1fr',gap:'.2rem .6rem',fontSize:'0.83rem',color:'var(--text-muted)'}}>
                 <kbd style=${{background:'var(--bg-secondary)',padding:'0 .3rem',borderRadius:3,fontFamily:'inherit',fontSize:'0.78rem'}}>/</kbd><span>Open AI chat</span>
-                <kbd style=${{background:'var(--bg-secondary)',padding:'0 .3rem',borderRadius:3,fontFamily:'inherit',fontSize:'0.78rem'}}>1 2 3</kbd><span>Switch tabs</span>
+                <kbd style=${{background:'var(--bg-secondary)',padding:'0 .3rem',borderRadius:3,fontFamily:'inherit',fontSize:'0.78rem'}}>1 2 3 4</kbd><span>Switch tabs</span>
                 <kbd style=${{background:'var(--bg-secondary)',padding:'0 .3rem',borderRadius:3,fontFamily:'inherit',fontSize:'0.78rem'}}>M</kbd><span>Measure tool</span>
                 <kbd style=${{background:'var(--bg-secondary)',padding:'0 .3rem',borderRadius:3,fontFamily:'inherit',fontSize:'0.78rem'}}>F</kbd><span>Find elements</span>
                 <kbd style=${{background:'var(--bg-secondary)',padding:'0 .3rem',borderRadius:3,fontFamily:'inherit',fontSize:'0.78rem'}}>X Y</kbd><span>Section planes</span>
@@ -12192,6 +12465,7 @@ function startApp() {
           if(e.key==='1'){ d({t:A.TAB,v:'clashes'}); return; }
           if(e.key==='2'){ d({t:A.TAB,v:'issues'}); return; }
           if(e.key==='3'){ d({t:A.TAB,v:'explorer'}); return; }
+          if(e.key==='4'){ d({t:A.TAB,v:'standards'}); return; }
         }
 
         // M — Toggle measure mode
