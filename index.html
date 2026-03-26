@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.23',hash:'2e484ea',date:'2026-03-26T12:42:15Z'};
+  var CC_VERSION = {v:'3.1.24',hash:'1a05ce4',date:'2026-03-26T12:43:31Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -9626,8 +9626,31 @@ function startApp() {
     if (window._ccFuzzyPending) {
       var pending = window._ccFuzzyPending;
       window._ccFuzzyPending = null;
-      if (/^(?:yes|yeah|yep|sure|ok|y|correct|right|do it)\b/i.test(text)) return pending();
-      if (/^(?:no|nah|nope|n|wrong|cancel)\b/i.test(text)) return 'OK, cancelled. Try rephrasing your command.';
+      if (/^(?:yes|yeah|yep|sure|ok|y|correct|right|do it)\b/i.test(text)) return pending.action();
+      if (/^(?:no|nah|nope|n|wrong|cancel)\b/i.test(text)) {
+        // Store the original input for feedback collection
+        window._ccFuzzyFeedbackInput = pending.input;
+        return 'I didn\'t understand that. Could you describe what you wanted to happen? This helps me learn and serve you better next time.';
+      }
+    }
+    // Handle fuzzy feedback response
+    if (window._ccFuzzyFeedbackInput) {
+      var origInput = window._ccFuzzyFeedbackInput;
+      window._ccFuzzyFeedbackInput = null;
+      try {
+        var store = _getNLTrainStore();
+        for (var i = store.length - 1; i >= 0; i--) {
+          if (store[i].input === origInput) {
+            store[i].meta = store[i].meta || {};
+            store[i].meta.user_intent = text;
+            store[i].meta.feedback = true;
+            break;
+          }
+        }
+        localStorage.setItem('cc_nl_training_data', JSON.stringify(store));
+        window.dispatchEvent(new Event('cc-training-data-change'));
+      } catch(e) {}
+      return 'Thanks! I\'ll learn from this. Your feedback has been saved.';
     }
 
     // ── Help ───────────────────────────────────────────────────────
@@ -10296,7 +10319,7 @@ function startApp() {
       // Low confidence → ask for confirmation
       var _pendingAction = bestIntent[1];
       // Store pending action for yes/no response via _fuzzyPending
-      window._ccFuzzyPending = _pendingAction;
+      window._ccFuzzyPending = {action:_pendingAction, input:text};
       var guess = bestIntent[0].slice(0, 3).join(' ');
       return 'Did you mean **' + guess + '**? *(yes/no)*';
     }

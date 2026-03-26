@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.24 (2026-03-26)
+- UI spacing: training pill lower, NL button bigger/wider/higher
+
 ## v3.1.23 (2026-03-26)
 - Remove section percentage label + move nav cube down
 
