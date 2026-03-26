@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.2.1 (2026-03-26)
+- Add Standards tab with discipline/IFC-type tolerance rules, tolerance input on clash cards, expected-clash tag, and accepted-needs-check status
+
 ## v3.1.31 (2026-03-26)
 - Move NL panel inside viewport div so it aligns with training pill
 

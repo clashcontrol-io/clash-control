@@ -250,7 +250,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.0',hash:'bb1c258',date:'2026-03-26T16:23:40Z'};
+  var CC_VERSION = {v:'3.2.1',hash:'a887129',date:'2026-03-26T16:38:21Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -7447,7 +7447,7 @@ function startApp() {
   }
 
   // ── Standards Panel ──────────────────────────────────────────────
-  var STANDARD_DISCIPLINES = ['mechanical','electrical','structural','architectural','civil','mep','other'];
+  var STANDARD_DISCIPLINES = ['mechanical','electrical','structural','architectural','civil','other'];
   function StandardsPanel() {
     var st=useState(function(){return {defaultClearance:_getStandardDefaultClearance(),rules:_getStandardPairRules(),typeRules:_getStandardTypePairRules()};}),
       data=st[0],setData=st[1];
