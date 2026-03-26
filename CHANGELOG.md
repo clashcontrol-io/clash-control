@@ -1,5 +1,35 @@
 # Changelog
 
+## v3.1.28 (2026-03-26)
+- Exclude thumbs feedback from clash verdict counter
+
+## v3.1.27 (2026-03-26)
+- Clear section plane when switching tabs or selecting a clash/issue
+
+## v3.1.26 (2026-03-26)
+- Flash training pill green when data is sent
+
+## v3.1.25 (2026-03-26)
+- Ask for feedback after user rejects fuzzy suggestion
+
+## v3.1.24 (2026-03-26)
+- UI spacing: training pill lower, NL button bigger/wider/higher
+
+## v3.1.23 (2026-03-26)
+- Remove section percentage label + move nav cube down
+
+## v3.1.22 (2026-03-26)
+- Add half-circle rotation indicator on section plane arrow handle
+
+## v3.1.21 (2026-03-26)
+- Add section plane rotation: Shift+drag rotates around vertical Y axis
+
+## v3.1.20 (2026-03-26)
+- Fix section plane alignment + line-arrow handles
+
+## v3.1.19 (2026-03-26)
+- Tune section plane: smaller size, reversed drag, smaller flipped arrows
+
 ## v3.1.18 (2026-03-26)
 - Fix right-click ghosting + add section plane handles + ESC to cancel
 

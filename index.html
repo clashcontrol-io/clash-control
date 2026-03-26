@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.18',hash:'6cf3f21',date:'2026-03-26T12:27:25Z'};
+  var CC_VERSION = {v:'3.1.28',hash:'483ca51',date:'2026-03-26T12:51:33Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -542,14 +542,14 @@ function startApp() {
         }
         return upd;
       })});
-      case A.ACTIVE:      return Object.assign({},s,{activeId:a.id});
+      case A.ACTIVE:      return Object.assign({},s,{activeId:a.id,sectionAxis:null,sectionCustom:null});
       case A.MODAL:       return Object.assign({},s,{showModal:a.v, modalElement:a.el||null});
       case A.UPD_RULES:   return Object.assign({},s,{rules:Object.assign({},s.rules,a.u)});
       case A.UPD_FILTERS: return Object.assign({},s,{filters:Object.assign({},s.filters,a.u)});
       case A.RESET_FILTERS: return Object.assign({},s,{filters:Object.assign({},INIT_FILTERS)});
       case A.SECTION:     return Object.assign({},s,{sectionAxis:a.axis, sectionPos:a.pos!=null?a.pos:s.sectionPos, sectionCustom:null});
       case A.SECTION_CUSTOM: return Object.assign({},s,{sectionAxis:null, sectionCustom:a.v, sectionPos:a.pos!=null?a.pos:0.5});
-      case A.TAB:         var tabUpd={tab:a.v}; if(a.v!==s.tab&&(a.v==='clashes'||a.v==='issues'||s.tab==='clashes'||s.tab==='issues'))tabUpd.activeId=null; return Object.assign({},s,tabUpd);
+      case A.TAB:         var tabUpd={tab:a.v,sectionAxis:null,sectionCustom:null}; if(a.v!==s.tab&&(a.v==='clashes'||a.v==='issues'||s.tab==='clashes'||s.tab==='issues'))tabUpd.activeId=null; return Object.assign({},s,tabUpd);
       case A.SETTINGS:    return Object.assign({},s,{showSettings:a.v});
       case A.TRAINING_MODE: var tm=a.v!=null?!!a.v:!s.trainingMode;try{localStorage.setItem('cc_trainingMode',tm?'1':'0');}catch(e){}return Object.assign({},s,{trainingMode:tm});
       case A.UPD_PREFS:
@@ -2611,7 +2611,13 @@ function startApp() {
     window.dispatchEvent(new Event('cc-training-data-change'));
   }
   function _getClashTrainCount() {
-    try { var s = localStorage.getItem('cc_clash_training_data'); return s ? Object.keys(JSON.parse(s)).length : 0; } catch(e) { return 0; }
+    try {
+      var s = localStorage.getItem('cc_clash_training_data');
+      if (!s) return 0;
+      var store = JSON.parse(s), count = 0;
+      Object.keys(store).forEach(function(k){ if(store[k].label_source==='verdict') count++; });
+      return count;
+    } catch(e) { return 0; }
   }
   function _shareClashTrainStore(onStatus) {
     var store = _getClashTrainStore();
@@ -4177,15 +4183,27 @@ function startApp() {
       });
 
       // ── Right-click drag to move section plane ──
-      var _secDrag = null; // {startY, startPos, didDrag, button}
+      var _secDrag = null;
+      function _getSecNormalAndPoint(cs) {
+        var S2 = state3d.current;
+        if (cs.custom) return {normal:cs.custom.normal.slice(), point:cs.custom.point.slice()};
+        if (cs.axis && S2.mg) {
+          var nm = {x:[1,0,0], y:[0,1,0], z:[0,0,1]};
+          var box = new THREE.Box3().setFromObject(S2.mg);
+          var cut = box.min[cs.axis]+(box.max[cs.axis]-box.min[cs.axis])*cs.pos;
+          var ctr = box.getCenter(new THREE.Vector3());
+          var pt = [ctr.x, ctr.y, ctr.z];
+          pt[{x:0,y:1,z:2}[cs.axis]] = cut;
+          return {normal:nm[cs.axis], point:pt};
+        }
+        return null;
+      }
       renderer.domElement.addEventListener('mousedown', function(e) {
         var cs = window._ccCurrentSection;
         if (!cs) return;
         if (e.button === 2) {
-          // Right-click drag anywhere when section is active
-          _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false, button: 2};
+          _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false, button: 2, mode:'move'};
         } else if (e.button === 0) {
-          // Left-click: check if user clicked on the section plane visual
           var S2 = state3d.current;
           if (!S2._sectionPlaneVis) return;
           var rect = renderer.domElement.getBoundingClientRect();
@@ -4195,34 +4213,43 @@ function startApp() {
           var hits = raycaster.intersectObjects(S2._sectionPlaneVis.children, true);
           if (hits.length > 0) {
             e.preventDefault(); e.stopPropagation();
-            _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false, button: 0};
-            S2.orbit.enabled = false; // disable orbit while dragging plane
+            S2.orbit.enabled = false;
+            if (e.shiftKey) {
+              var np = _getSecNormalAndPoint(cs);
+              if (np) _secDrag = {startX: e.clientX, startPos: cs.pos, didDrag: false, button: 0, mode:'rotate', startNormal: np.normal, startPoint: np.point};
+            } else {
+              _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false, button: 0, mode:'move'};
+            }
           }
         }
       }, true);
       window.addEventListener('mousemove', function(e) {
         if (!_secDrag) return;
-        var dy = e.clientY - _secDrag.startY;
-        if (Math.abs(dy) < 3 && !_secDrag.didDrag) return;
-        _secDrag.didDrag = true;
-        var sensitivity = 0.003;
-        var newPos = Math.max(0, Math.min(1, _secDrag.startPos + dy * sensitivity));
-        var cs = window._ccCurrentSection;
-        if (cs && cs.axis && window._ccDispatch) {
-          window._ccDispatch({t:A.SECTION, axis:cs.axis, pos:newPos});
-        } else if (cs && cs.custom && window._ccDispatch) {
-          window._ccDispatch({t:A.SECTION_CUSTOM, v:cs.custom, pos:newPos});
+        if (_secDrag.mode === 'rotate') {
+          var dx = e.clientX - _secDrag.startX;
+          if (Math.abs(dx) < 3 && !_secDrag.didDrag) return;
+          _secDrag.didDrag = true;
+          var angle = dx * 0.005;
+          var nx = _secDrag.startNormal[0], nz = _secDrag.startNormal[2];
+          var cosA = Math.cos(angle), sinA = Math.sin(angle);
+          var rn = [nx*cosA - nz*sinA, _secDrag.startNormal[1], nx*sinA + nz*cosA];
+          if (window._ccDispatch) window._ccDispatch({t:A.SECTION_CUSTOM, v:{normal:rn, point:_secDrag.startPoint}, pos:_secDrag.startPos});
+          renderer.domElement.style.cursor = 'ew-resize';
+        } else {
+          var dy = e.clientY - _secDrag.startY;
+          if (Math.abs(dy) < 3 && !_secDrag.didDrag) return;
+          _secDrag.didDrag = true;
+          var newPos = Math.max(0, Math.min(1, _secDrag.startPos + dy * 0.003));
+          var cs = window._ccCurrentSection;
+          if (cs && cs.axis && window._ccDispatch) window._ccDispatch({t:A.SECTION, axis:cs.axis, pos:newPos});
+          else if (cs && cs.custom && window._ccDispatch) window._ccDispatch({t:A.SECTION_CUSTOM, v:cs.custom, pos:newPos});
+          renderer.domElement.style.cursor = 'ns-resize';
         }
-        // Change cursor while dragging
-        renderer.domElement.style.cursor = 'ns-resize';
       });
       window.addEventListener('mouseup', function(e) {
         if (!_secDrag) return;
         if (e.button !== _secDrag.button) return;
-        if (_secDrag.button === 0) {
-          var S2 = state3d.current;
-          if (S2.orbit) S2.orbit.enabled = true;
-        }
+        if (_secDrag.button === 0) { var S2 = state3d.current; if (S2.orbit) S2.orbit.enabled = true; }
         _secDrag = null;
         renderer.domElement.style.cursor = '';
       });
@@ -4491,21 +4518,39 @@ function startApp() {
         lineMat.clippingPlanes = [];
         var border = new THREE.LineLoop(lineGeo, lineMat);
         grp.add(border);
-        // Small drag arrow handle (cone pointing away from cut direction)
-        var arrowLen = Math.min(halfW, halfH) * 0.08;
-        var coneGeo = new THREE.ConeGeometry(arrowLen*0.5, arrowLen, 6);
-        var coneMat = new THREE.MeshBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.8});
-        coneMat.clippingPlanes = [];
-        var cone = new THREE.Mesh(coneGeo, coneMat);
-        cone.position.set(0, 0, arrowLen*0.8);
-        cone.rotation.x = -Math.PI/2;
-        cone.userData._sectionHandle = true;
-        grp.add(cone);
-        var cone2 = new THREE.Mesh(coneGeo.clone(), coneMat.clone());
-        cone2.position.set(0, 0, -arrowLen*0.8);
-        cone2.rotation.x = Math.PI/2;
-        cone2.userData._sectionHandle = true;
-        grp.add(cone2);
+        // Small arrow-on-line handle pointing along normal (both directions)
+        var stemLen = Math.min(halfW, halfH) * 0.18;
+        var tipLen = stemLen * 0.3;
+        var tipW = tipLen * 0.5;
+        var arrowMat = new THREE.LineBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.8});
+        arrowMat.clippingPlanes = [];
+        // Stem line
+        var sPts = [new THREE.Vector3(0,0,-stemLen), new THREE.Vector3(0,0,stemLen)];
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(sPts), arrowMat));
+        // Arrowhead + (forward)
+        var a1 = [new THREE.Vector3(-tipW,0,stemLen-tipLen), new THREE.Vector3(0,0,stemLen), new THREE.Vector3(tipW,0,stemLen-tipLen)];
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(a1), arrowMat));
+        // Arrowhead - (backward)
+        var a2 = [new THREE.Vector3(-tipW,0,-stemLen+tipLen), new THREE.Vector3(0,0,-stemLen), new THREE.Vector3(tipW,0,-stemLen+tipLen)];
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(a2), arrowMat));
+        // Half-circle rotation indicator around the arrow
+        var arcR = stemLen * 0.6;
+        var arcPts = [];
+        for (var ai = 0; ai <= 16; ai++) {
+          var ang = (ai / 16) * Math.PI; // 0 to PI = half circle
+          arcPts.push(new THREE.Vector3(Math.cos(ang) * arcR, 0, Math.sin(ang) * arcR));
+        }
+        var arcMat = new THREE.LineBasicMaterial({color:0xfbbf24, transparent:true, opacity:0.5});
+        arcMat.clippingPlanes = [];
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPts), arcMat));
+        // Small arrowhead at arc end to indicate rotation direction
+        var arcEnd = arcPts[arcPts.length-1];
+        var arcPrev = arcPts[arcPts.length-2];
+        var arcDir = arcEnd.clone().sub(arcPrev).normalize();
+        var arcPerp = new THREE.Vector3(-arcDir.z, 0, arcDir.x);
+        var at1 = arcEnd.clone().sub(arcDir.clone().multiplyScalar(tipLen)).add(arcPerp.clone().multiplyScalar(tipW*0.5));
+        var at2 = arcEnd.clone().sub(arcDir.clone().multiplyScalar(tipLen)).sub(arcPerp.clone().multiplyScalar(tipW*0.5));
+        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([at1, arcEnd, at2]), arcMat));
         grp.position.copy(position);
         if (quaternion) grp.quaternion.copy(quaternion);
         grp.renderOrder = 999;
@@ -4520,9 +4565,9 @@ function startApp() {
         var size = box.getSize(new THREE.Vector3());
         var center = box.getCenter(new THREE.Vector3());
         var hw, hh, pos = new THREE.Vector3(), q = new THREE.Quaternion();
-        if(s.sectionAxis==='x'){ hw=Math.max(size.y,size.z)*0.45; hh=hw; pos.set(cut,center.y,center.z); q.setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI/2); }
-        else if(s.sectionAxis==='y'){ hw=Math.max(size.x,size.z)*0.45; hh=hw; pos.set(center.x,cut,center.z); q.setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2); }
-        else { hw=Math.max(size.x,size.y)*0.45; hh=hw; pos.set(center.x,center.y,cut); }
+        if(s.sectionAxis==='x'){ hw=size.z*0.55; hh=size.y*0.55; pos.set(cut,center.y,center.z); q.setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI/2); }
+        else if(s.sectionAxis==='y'){ hw=size.x*0.55; hh=size.z*0.55; pos.set(center.x,cut,center.z); q.setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2); }
+        else { hw=size.x*0.55; hh=size.y*0.55; pos.set(center.x,center.y,cut); }
         var vis = _makeSectionVis(hw, hh, pos, q);
         S.scene.add(vis);
         S._sectionPlaneVis = vis;
@@ -5096,7 +5141,7 @@ function startApp() {
       ${html`<${ViewCube} state3d=${state3d} theme=${s.prefs.theme||'dark'} />`}
       ${(s.sectionAxis||s.sectionCustom) && html`<div style=${{...P,top:'7.5rem',right:'.75rem',background:'rgba(30,58,138,.9)',color:'#93c5fd',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'.4rem'}}
         onClick=${function(){d({t:A.SECTION,axis:null})}}>
-        <span>Section ${s.sectionAxis?(s.sectionAxis==='y'?'Z':s.sectionAxis==='z'?'Y':s.sectionAxis.toUpperCase()):'Surface'} · ${Math.round(s.sectionPos*100)}%</span>
+        <span>Section ${s.sectionAxis?(s.sectionAxis==='y'?'Z':s.sectionAxis==='z'?'Y':s.sectionAxis.toUpperCase()):'Surface'}</span>
         <span style=${{fontSize:'0.69rem',opacity:.7}} title="Clear section" aria-label="Clear section view">✕</span>
       </div>`}
       ${s.floorPlan && html`<div style=${{...P,top:'7.5rem',right:'.75rem',background:'rgba(91,33,182,.9)',color:'#c084fc',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'.4rem'}}
@@ -5582,7 +5627,7 @@ function startApp() {
       if(vc.edgeLines) vc.edgeLines.material.color.setHex(light ? 0x64748b : 0x94a3b8);
     }, [theme]);
 
-    return html`<div class="cc-viewcube-wrap" style=${{position:'absolute',top:'.5rem',right:'.5rem',pointerEvents:'auto',width:140,height:140}}>
+    return html`<div class="cc-viewcube-wrap" style=${{position:'absolute',top:'3rem',right:'.5rem',pointerEvents:'auto',width:140,height:140}}>
       <canvas ref=${canvasRef} width="120" height="120" style=${{cursor:'pointer',position:'absolute',top:10,left:10,width:120,height:120}} />
     </div>`;
   }
@@ -9587,8 +9632,31 @@ function startApp() {
     if (window._ccFuzzyPending) {
       var pending = window._ccFuzzyPending;
       window._ccFuzzyPending = null;
-      if (/^(?:yes|yeah|yep|sure|ok|y|correct|right|do it)\b/i.test(text)) return pending();
-      if (/^(?:no|nah|nope|n|wrong|cancel)\b/i.test(text)) return 'OK, cancelled. Try rephrasing your command.';
+      if (/^(?:yes|yeah|yep|sure|ok|y|correct|right|do it)\b/i.test(text)) return pending.action();
+      if (/^(?:no|nah|nope|n|wrong|cancel)\b/i.test(text)) {
+        // Store the original input for feedback collection
+        window._ccFuzzyFeedbackInput = pending.input;
+        return 'I didn\'t understand that. Could you describe what you wanted to happen? This helps me learn and serve you better next time.';
+      }
+    }
+    // Handle fuzzy feedback response
+    if (window._ccFuzzyFeedbackInput) {
+      var origInput = window._ccFuzzyFeedbackInput;
+      window._ccFuzzyFeedbackInput = null;
+      try {
+        var store = _getNLTrainStore();
+        for (var i = store.length - 1; i >= 0; i--) {
+          if (store[i].input === origInput) {
+            store[i].meta = store[i].meta || {};
+            store[i].meta.user_intent = text;
+            store[i].meta.feedback = true;
+            break;
+          }
+        }
+        localStorage.setItem('cc_nl_training_data', JSON.stringify(store));
+        window.dispatchEvent(new Event('cc-training-data-change'));
+      } catch(e) {}
+      return 'Thanks! I\'ll learn from this. Your feedback has been saved.';
     }
 
     // ── Help ───────────────────────────────────────────────────────
@@ -10257,7 +10325,7 @@ function startApp() {
       // Low confidence → ask for confirmation
       var _pendingAction = bestIntent[1];
       // Store pending action for yes/no response via _fuzzyPending
-      window._ccFuzzyPending = _pendingAction;
+      window._ccFuzzyPending = {action:_pendingAction, input:text};
       var guess = bestIntent[0].slice(0, 3).join(' ');
       return 'Did you mean **' + guess + '**? *(yes/no)*';
     }
@@ -10710,11 +10778,11 @@ function startApp() {
         onClick=${function(){ setOpen(true); }}
         title=${isDetecting ? 'Clash detection running…' : modelLoading ? 'Model is loading… click to set up clashes' : 'ClashControl — describe tasks in plain English ( / )'}
         style=${{
-          position:'fixed', bottom:'1rem', left:'50%', transform:'translateX(-50%)',
-          zIndex:1200, display:'flex', alignItems:'center', gap:'.4rem',
-          padding:'.45rem 1.1rem', borderRadius:999,
+          position:'fixed', bottom:'1.5rem', left:'50%', transform:'translateX(-50%)',
+          zIndex:1200, display:'flex', alignItems:'center', gap:'.5rem',
+          padding:'.55rem 2rem', borderRadius:999, minWidth:280,justifyContent:'center',
           background:panelBg, border:closedBorder,
-          color:closedGlow ? 'var(--accent-subtle)' : mutedCol, fontSize:'0.85rem', cursor:'pointer',
+          color:closedGlow ? 'var(--accent-subtle)' : mutedCol, fontSize:'0.95rem', cursor:'pointer',
           boxShadow: closedGlow ? 'var(--shadow-md), 0 0 20px rgba(37,99,235,.3)' : 'var(--shadow-md)',
           whiteSpace:'nowrap', animation:closedAnim
         }}>
@@ -11060,19 +11128,23 @@ function startApp() {
     var stNlN = useState(function(){return _getNLTrainCount();}), nlN=stNlN[0], setNlN=stNlN[1];
     var stClN = useState(function(){return _getClashTrainCount();}), clashN=stClN[0], setClashN=stClN[1];
     var stRunN = useState(function(){try{return JSON.parse(localStorage.getItem('cc_detection_runs')||'[]').length;}catch(e){return 0;}}), runN=stRunN[0], setRunN=stRunN[1];
+    var stFlash = useState(false), sentFlash=stFlash[0], setSentFlash=stFlash[1];
     useEffect(function(){
       function sync(){ setNlN(_getNLTrainCount()); setClashN(_getClashTrainCount()); try{setRunN(JSON.parse(localStorage.getItem('cc_detection_runs')||'[]').length);}catch(e){setRunN(0);} }
+      function flash(){ setSentFlash(true); setTimeout(function(){setSentFlash(false);},2000); }
       window.addEventListener('cc-training-data-change', sync);
-      return function(){ window.removeEventListener('cc-training-data-change', sync); };
+      window.addEventListener('cc-training-sent', flash);
+      return function(){ window.removeEventListener('cc-training-data-change', sync); window.removeEventListener('cc-training-sent', flash); };
     },[]);
 
-    return html`<div style=${{position:'absolute',top:'2.6rem',left:'50%',transform:'translateX(-50%)',
+    return html`<div style=${{position:'absolute',top:'3.5rem',left:'50%',transform:'translateX(-50%)',
       zIndex:20,pointerEvents:'auto',display:'flex',flexDirection:'column',alignItems:'center'}}>
       <div class="cc-training-btn-3d" style=${{display:'flex',alignItems:'center',
           borderRadius:999,
-          background:s.trainingMode?'rgba(124,58,237,.85)':'var(--overlay-bg)',
-          border:'1px solid '+(s.trainingMode?'#a78bfa':'var(--border)'),
-          boxShadow:s.trainingMode?'0 0 20px rgba(124,58,237,.3)':'var(--shadow-md)',
+          background:sentFlash?'rgba(34,197,94,.85)':s.trainingMode?'rgba(124,58,237,.85)':'var(--overlay-bg)',
+          border:'1px solid '+(sentFlash?'#22c55e':s.trainingMode?'#a78bfa':'var(--border)'),
+          boxShadow:sentFlash?'0 0 24px rgba(34,197,94,.5)':s.trainingMode?'0 0 20px rgba(124,58,237,.3)':'var(--shadow-md)',
+          transition:'background .3s, border-color .3s, box-shadow .3s',
           overflow:'hidden'}}>
         <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:A.TRAINING_MODE}); if(!s.trainingMode) setExpanded(false);}}
           style=${{display:'flex',alignItems:'center',gap:'.4rem',
@@ -11174,6 +11246,7 @@ function startApp() {
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
       _clearClashTrainStore();
+      window.dispatchEvent(new Event('cc-training-sent'));
     }).catch(function(){});
     unsent.forEach(function(c){ _beaconSentIds[c.id]=true; });
   }
@@ -11203,6 +11276,7 @@ function startApp() {
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
       _clearNLTrainStore();
+      window.dispatchEvent(new Event('cc-training-sent'));
     }).catch(function(){});
     _beaconNLSentIdx = store.length;
   }
@@ -11223,6 +11297,7 @@ function startApp() {
     fetch(baseUrl+'/formResponse',{method:'POST',mode:'no-cors',body:fd}).then(function(){
       try { localStorage.removeItem('cc_detection_runs'); } catch(e){}
       window.dispatchEvent(new Event('cc-training-data-change'));
+      window.dispatchEvent(new Event('cc-training-sent'));
     }).catch(function(){});
   }
 
@@ -11749,12 +11824,13 @@ function startApp() {
           var c = s.clashes.find(function(c){return c.id===a.id;});
           if (c && c._trainFV && a.u.status !== c.status) {
             var labelMap = {confirmed:1.0, denied:0.0, in_progress:0.8, resolved:0.7, closed:0.2};
-            if (labelMap[a.u.status] != null) _saveClashTrainRecord(c.id, c._trainFV, labelMap[a.u.status], a.u.status==='denied'?'explicit_feedback':'status_change', false);
+            var isVerdict = a.u.status==='confirmed'||a.u.status==='denied';
+            if (labelMap[a.u.status] != null) _saveClashTrainRecord(c.id, c._trainFV, labelMap[a.u.status], isVerdict?'verdict':'status_change', false);
           }
         }
         if (a.t===A.AI_FEEDBACK && a.v) {
           var c2 = s.clashes.find(function(c){return c.id===a.id;});
-          if (c2 && c2._trainFV) _saveClashTrainRecord(c2.id, c2._trainFV, a.v==='up'?1.0:0.0, 'explicit_feedback', false);
+          if (c2 && c2._trainFV) _saveClashTrainRecord(c2.id, c2._trainFV, a.v==='up'?1.0:0.0, 'thumbs_feedback', false);
         }
         if (a.t===A.ADD_ISSUE && a.v && a.v.clashId) {
           var c3 = s.clashes.find(function(c){return c.id===a.v.clashId;});
@@ -11764,7 +11840,8 @@ function startApp() {
           var labelMap2 = {confirmed:1.0, denied:0.0, in_progress:0.8, resolved:0.7, closed:0.2};
           if (labelMap2[a.u.status] != null) {
             s.clashes.forEach(function(c){
-              if (s.selected[c.id] && c._trainFV && c.status !== a.u.status) _saveClashTrainRecord(c.id, c._trainFV, labelMap2[a.u.status], a.u.status==='denied'?'explicit_feedback':'status_change', false);
+              var isV2 = a.u.status==='confirmed'||a.u.status==='denied';
+              if (s.selected[c.id] && c._trainFV && c.status !== a.u.status) _saveClashTrainRecord(c.id, c._trainFV, labelMap2[a.u.status], isV2?'verdict':'status_change', false);
             });
           }
         }
