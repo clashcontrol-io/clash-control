@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.23 (2026-03-26)
+- Remove section percentage label + move nav cube down
+
 ## v3.1.22 (2026-03-26)
 - Add half-circle rotation indicator on section plane arrow handle
 

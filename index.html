@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.22',hash:'044553a',date:'2026-03-26T12:40:56Z'};
+  var CC_VERSION = {v:'3.1.23',hash:'2e484ea',date:'2026-03-26T12:42:15Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -10749,11 +10749,11 @@ function startApp() {
         onClick=${function(){ setOpen(true); }}
         title=${isDetecting ? 'Clash detection running…' : modelLoading ? 'Model is loading… click to set up clashes' : 'ClashControl — describe tasks in plain English ( / )'}
         style=${{
-          position:'fixed', bottom:'1rem', left:'50%', transform:'translateX(-50%)',
-          zIndex:1200, display:'flex', alignItems:'center', gap:'.4rem',
-          padding:'.45rem 1.1rem', borderRadius:999,
+          position:'fixed', bottom:'1.5rem', left:'50%', transform:'translateX(-50%)',
+          zIndex:1200, display:'flex', alignItems:'center', gap:'.5rem',
+          padding:'.55rem 2rem', borderRadius:999, minWidth:280,justifyContent:'center',
           background:panelBg, border:closedBorder,
-          color:closedGlow ? 'var(--accent-subtle)' : mutedCol, fontSize:'0.85rem', cursor:'pointer',
+          color:closedGlow ? 'var(--accent-subtle)' : mutedCol, fontSize:'0.95rem', cursor:'pointer',
           boxShadow: closedGlow ? 'var(--shadow-md), 0 0 20px rgba(37,99,235,.3)' : 'var(--shadow-md)',
           whiteSpace:'nowrap', animation:closedAnim
         }}>
@@ -11105,7 +11105,7 @@ function startApp() {
       return function(){ window.removeEventListener('cc-training-data-change', sync); };
     },[]);
 
-    return html`<div style=${{position:'absolute',top:'2.6rem',left:'50%',transform:'translateX(-50%)',
+    return html`<div style=${{position:'absolute',top:'3.5rem',left:'50%',transform:'translateX(-50%)',
       zIndex:20,pointerEvents:'auto',display:'flex',flexDirection:'column',alignItems:'center'}}>
       <div class="cc-training-btn-3d" style=${{display:'flex',alignItems:'center',
           borderRadius:999,
