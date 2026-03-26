@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.0.12 (2026-03-26)
+- Make training pill data counts reactive — update every 3 seconds
+
 ## v3.0.11 (2026-03-26)
 - Improve text contrast on dark theme for readability
 

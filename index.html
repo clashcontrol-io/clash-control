@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.0.11',hash:'c21fac6',date:'2026-03-26T09:03:25Z'};
+  var CC_VERSION = {v:'3.0.12',hash:'de15507',date:'2026-03-26T09:04:08Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -3428,6 +3428,8 @@ function startApp() {
         grp.add(ring3);
         scene.add(grp);
         _activeClashMarker = grp;
+        // Set orbit target to clash point so scroll-zoom centers on the clash
+        S.orbit.target.set(point[0], point[1], point[2]);
         invalidate();
       };
       window._ccRemoveActiveClashMarker = function() {
