@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.1.13',hash:'fc8806b',date:'2026-03-26T11:04:36Z'};
+  var CC_VERSION = {v:'3.1.14',hash:'59a5303',date:'2026-03-26T11:16:16Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -4174,19 +4174,35 @@ function startApp() {
       });
 
       // ── Right-click drag to move section plane ──
-      var _secDrag = null; // {startY, startPos}
+      var _secDrag = null; // {startY, startPos, didDrag, button}
       renderer.domElement.addEventListener('mousedown', function(e) {
-        if (e.button !== 2) return; // right button only
         var cs = window._ccCurrentSection;
         if (!cs) return;
-        _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false};
-      });
+        if (e.button === 2) {
+          // Right-click drag anywhere when section is active
+          _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false, button: 2};
+        } else if (e.button === 0) {
+          // Left-click: check if user clicked on the section plane visual
+          var S2 = state3d.current;
+          if (!S2._sectionPlaneVis) return;
+          var rect = renderer.domElement.getBoundingClientRect();
+          var mx = ((e.clientX-rect.left)/rect.width)*2-1;
+          var my = -((e.clientY-rect.top)/rect.height)*2+1;
+          raycaster.setFromCamera(new THREE.Vector2(mx,my), S2.camera);
+          var hits = raycaster.intersectObject(S2._sectionPlaneVis);
+          if (hits.length > 0) {
+            e.preventDefault(); e.stopPropagation();
+            _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false, button: 0};
+            S2.orbit.enabled = false; // disable orbit while dragging plane
+          }
+        }
+      }, true);
       window.addEventListener('mousemove', function(e) {
         if (!_secDrag) return;
-        var dy = _secDrag.startY - e.clientY; // up = positive
-        if (Math.abs(dy) < 3 && !_secDrag.didDrag) return; // dead zone
+        var dy = _secDrag.startY - e.clientY;
+        if (Math.abs(dy) < 3 && !_secDrag.didDrag) return;
         _secDrag.didDrag = true;
-        var sensitivity = 0.003; // pixels to section pos ratio
+        var sensitivity = 0.003;
         var newPos = Math.max(0, Math.min(1, _secDrag.startPos + dy * sensitivity));
         var cs = window._ccCurrentSection;
         if (cs && cs.axis && window._ccDispatch) {
@@ -4194,15 +4210,42 @@ function startApp() {
         } else if (cs && cs.custom && window._ccDispatch) {
           window._ccDispatch({t:A.SECTION_CUSTOM, v:cs.custom, pos:newPos});
         }
+        // Change cursor while dragging
+        renderer.domElement.style.cursor = 'ns-resize';
       });
       window.addEventListener('mouseup', function(e) {
-        if (e.button !== 2 || !_secDrag) return;
+        if (!_secDrag) return;
+        if (e.button !== _secDrag.button) return;
+        if (_secDrag.button === 0) {
+          var S2 = state3d.current;
+          if (S2.orbit) S2.orbit.enabled = true;
+        }
         _secDrag = null;
+        renderer.domElement.style.cursor = '';
       });
       // Suppress context menu when right-drag was used for section
       renderer.domElement.addEventListener('contextmenu', function(e) {
         if (_secDrag && _secDrag.didDrag) { e.preventDefault(); e.stopPropagation(); }
-      }, true); // capture phase — fires before the main contextmenu handler
+      }, true);
+      // Show grab cursor when hovering over section plane
+      var _prevSecHover = false;
+      renderer.domElement.addEventListener('mousemove', function(e) {
+        if (_secDrag) return;
+        var S2 = state3d.current;
+        if (!S2._sectionPlaneVis) { if(_prevSecHover){renderer.domElement.style.cursor='';_prevSecHover=false;} return; }
+        var rect = renderer.domElement.getBoundingClientRect();
+        var mx = ((e.clientX-rect.left)/rect.width)*2-1;
+        var my = -((e.clientY-rect.top)/rect.height)*2+1;
+        raycaster.setFromCamera(new THREE.Vector2(mx,my), S2.camera);
+        var hits = raycaster.intersectObject(S2._sectionPlaneVis);
+        if (hits.length > 0) {
+          renderer.domElement.style.cursor = 'grab';
+          _prevSecHover = true;
+        } else if (_prevSecHover) {
+          renderer.domElement.style.cursor = '';
+          _prevSecHover = false;
+        }
+      });
 
       // ── Viewpoint capture/restore ──
       _captureViewpoint = function(name, linkedId) {
@@ -4422,22 +4465,51 @@ function startApp() {
       else if(s.sectionCustom) window._ccCurrentSection = {axis:null, pos:s.sectionPos, custom:s.sectionCustom};
       else window._ccCurrentSection = null;
       var planes = [];
+      // Remove old section plane visual
+      if (S._sectionPlaneVis) { S.scene.remove(S._sectionPlaneVis); S._sectionPlaneVis.geometry.dispose(); S._sectionPlaneVis.material.dispose(); S._sectionPlaneVis = null; }
       if(s.sectionAxis && S.mg.children.length>0){
         var box=new THREE.Box3().setFromObject(S.mg);
         var cut=box.min[s.sectionAxis]+(box.max[s.sectionAxis]-box.min[s.sectionAxis])*s.sectionPos;
         var nm={x:new THREE.Vector3(1,0,0),y:new THREE.Vector3(0,1,0),z:new THREE.Vector3(0,0,1)};
         planes.push(new THREE.Plane(nm[s.sectionAxis].clone().negate(),cut));
+        // Create visible plane
+        var size = box.getSize(new THREE.Vector3());
+        var maxDim = Math.max(size.x, size.y, size.z) * 1.2;
+        var planeGeo = new THREE.PlaneGeometry(maxDim, maxDim);
+        var planeMat = new THREE.MeshBasicMaterial({color:0x3b82f6, transparent:true, opacity:0.08, side:THREE.DoubleSide, depthWrite:false});
+        var planeMesh = new THREE.Mesh(planeGeo, planeMat);
+        // Don't clip the plane itself
+        planeMat.clippingPlanes = [];
+        var center = box.getCenter(new THREE.Vector3());
+        if(s.sectionAxis==='x'){ planeMesh.rotation.y=Math.PI/2; planeMesh.position.set(cut,center.y,center.z); }
+        else if(s.sectionAxis==='y'){ planeMesh.rotation.x=-Math.PI/2; planeMesh.position.set(center.x,cut,center.z); }
+        else { planeMesh.position.set(center.x,center.y,cut); }
+        planeMesh.userData._sectionPlane = true;
+        planeMesh.renderOrder = 999;
+        S.scene.add(planeMesh);
+        S._sectionPlaneVis = planeMesh;
       } else if(s.sectionCustom){
         var sc=s.sectionCustom;
         var normal=new THREE.Vector3(sc.normal[0],sc.normal[1],sc.normal[2]);
         var pt=new THREE.Vector3(sc.point[0],sc.point[1],sc.point[2]);
-        // sectionPos offsets along the normal: 0.5=at surface, 0=back, 1=forward
         var box2=new THREE.Box3().setFromObject(S.mg);
         var diag=box2.getSize(new THREE.Vector3()).length();
         var offset=(s.sectionPos-0.5)*diag;
         var shiftedPt=pt.clone().addScaledVector(normal,offset);
         var plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normal.negate(),shiftedPt);
         planes.push(plane);
+        // Create visible plane for custom section
+        var maxDim2 = diag * 0.8;
+        var planeGeo2 = new THREE.PlaneGeometry(maxDim2, maxDim2);
+        var planeMat2 = new THREE.MeshBasicMaterial({color:0x3b82f6, transparent:true, opacity:0.08, side:THREE.DoubleSide, depthWrite:false});
+        var planeMesh2 = new THREE.Mesh(planeGeo2, planeMat2);
+        planeMat2.clippingPlanes = [];
+        planeMesh2.position.copy(shiftedPt);
+        planeMesh2.lookAt(shiftedPt.clone().add(normal));
+        planeMesh2.userData._sectionPlane = true;
+        planeMesh2.renderOrder = 999;
+        S.scene.add(planeMesh2);
+        S._sectionPlaneVis = planeMesh2;
       }
       S.renderer.clippingPlanes=planes;
       invalidate();

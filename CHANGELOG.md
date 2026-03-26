@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.14 (2026-03-26)
+- Right-click drag to move section plane in the 3D viewport
+
 ## v3.1.13 (2026-03-26)
 - Point detection run summary to its own form field entry.39972213
 
