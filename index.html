@@ -249,7 +249,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.0.4',hash:'8661b46',date:'2026-03-26T08:23:49Z'};
+  var CC_VERSION = {v:'3.0.5',hash:'d422622',date:'2026-03-26T08:24:18Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -3414,13 +3414,7 @@ function startApp() {
         window._ccRemoveActiveClashMarker();
         if(!point||point.length<3) return;
         var grp = new THREE.Group();
-        // Bright blue pulsing sphere
-        var sphereGeo = new THREE.SphereGeometry(0.25, 16, 16);
-        var sphereMat = new THREE.MeshBasicMaterial({color:0x00aaff, transparent:true, opacity:0.9});
-        var sphere = new THREE.Mesh(sphereGeo, sphereMat);
-        sphere.position.set(point[0], point[1], point[2]);
-        grp.add(sphere);
-        // Outer ring for visibility
+        // Crosshair rings only — no inner sphere (obscures small elements)
         var ringGeo2 = new THREE.RingGeometry(0.35, 0.55, 32);
         var ringMat2 = new THREE.MeshBasicMaterial({color:0x00ccff, transparent:true, opacity:0.6, side:THREE.DoubleSide});
         var ring2 = new THREE.Mesh(ringGeo2, ringMat2);

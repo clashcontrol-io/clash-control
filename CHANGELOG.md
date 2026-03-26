@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.0.5 (2026-03-26)
+- Zoom A/B toggle: second click flies to clash point
+
 ## v3.0.4 (2026-03-26)
 - Ask for data sharing consent when training mode is activated
 
