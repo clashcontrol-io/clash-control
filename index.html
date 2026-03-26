@@ -257,7 +257,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.12.9',hash:'4c53fe0',date:'2026-03-26T06:34:55Z'};
+  var CC_VERSION = {v:'2.12.10',hash:'5374776',date:'2026-03-26T06:35:42Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -9456,7 +9456,27 @@ function startApp() {
       valve:'IfcValve',valves:'IfcValve',pump:'IfcPump',pumps:'IfcPump',fan:'IfcFan',fans:'IfcFan',
       sensor:'IfcSensor',sensors:'IfcSensor',lamp:'IfcLamp',lamps:'IfcLamp',
       sprinkler:'IfcFireSuppressionTerminal',outlet:'IfcOutlet',outlets:'IfcOutlet',
-      terminal:'IfcFlowTerminal',terminals:'IfcFlowTerminal'};
+      terminal:'IfcFlowTerminal',terminals:'IfcFlowTerminal',
+      // Structural
+      space:'IfcSpace',spaces:'IfcSpace',pile:'IfcPile',piles:'IfcPile',
+      chimney:'IfcChimney',chimneys:'IfcChimney',shading:'IfcShadingDevice',
+      rebar:'IfcReinforcingBar',reinforcing:'IfcReinforcingBar',mesh:'IfcReinforcingMesh',
+      tendon:'IfcTendon',tendons:'IfcTendon',stairflight:'IfcStairFlight',rampflight:'IfcRampFlight',
+      // MEP extended
+      airterminal:'IfcAirTerminal',airterminals:'IfcAirTerminal',
+      sanitaryterminal:'IfcSanitaryTerminal',sanitary:'IfcSanitaryTerminal',
+      wasteterminal:'IfcWasteTerminal',waste:'IfcWasteTerminal',
+      firesuppression:'IfcFireSuppressionTerminal',sprinklers:'IfcFireSuppressionTerminal',
+      lightfixture:'IfcLightFixture',light:'IfcLightFixture',lights:'IfcLightFixture',
+      actuator:'IfcActuator',actuators:'IfcActuator',
+      coil:'IfcCoil',coils:'IfcCoil',compressor:'IfcCompressor',compressors:'IfcCompressor',
+      condenser:'IfcCondenser',condensers:'IfcCondenser',coolingtower:'IfcCoolingTower',
+      transformer:'IfcTransformer',transformers:'IfcTransformer',
+      motor:'IfcElectricMotor',motors:'IfcElectricMotor',generator:'IfcElectricGenerator',
+      switch:'IfcSwitchingDevice',switches:'IfcSwitchingDevice',
+      protectivedevice:'IfcProtectiveDevice',breaker:'IfcProtectiveDevice',
+      unitary:'IfcUnitaryEquipment',ahu:'IfcUnitaryEquipment',
+      cablesegment:'IfcCableSegment',cablecarrier:'IfcCableCarrierSegment',cabletray:'IfcCableCarrierSegment'};
     // Resolve a type name (shorthand, IFC, or mixed-case) to canonical IFC type
     function _resolveIfcType(raw) {
       if (!raw) return null;

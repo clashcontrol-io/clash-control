@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.12.10 (2026-03-26)
+- Add self-clash NL commands: self:discipline, intra, within same discipline
+
 ## v2.12.9 (2026-03-26)
 - Add multi-model clash grouping, custom tags, and NL group syntax
 
