@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.2.9 (2026-03-26)
+- Fix detection run summary not appearing in Google Form
+
 ## v3.2.8 (2026-03-26)
 - Add error handling to async detection and fix BVH pre-build key collision
 

@@ -250,7 +250,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.8',hash:'6ce9592',date:'2026-03-26T17:29:06Z'};
+  var CC_VERSION = {v:'3.2.9',hash:'f2232ec',date:'2026-03-26T17:30:13Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -2761,7 +2761,7 @@ function startApp() {
     var payload = {type:'clash_training', version:'1.0', app_version:CC_VERSION.v, count:records.length, records:records};
     var json = JSON.stringify(payload);
     onStatus('sending', null);
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.1252313993', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
@@ -2914,7 +2914,7 @@ function startApp() {
     var payload = {type:'nl_training', version:'1.0', app_version:CC_VERSION.v, count:records.length, records:records};
     var json = JSON.stringify(payload);
     onStatus('sending',null);
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.65932609', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
@@ -3053,7 +3053,7 @@ function startApp() {
     if (!payload) { onStatus('error','No reviewed clashes to share.'); return; }
     var json = JSON.stringify(payload);
     onStatus('sending', null);
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.1252313993', json);
     // URL split to avoid heuristic phishing scanners flagging a Google Forms endpoint in static source
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
@@ -11672,7 +11672,7 @@ function startApp() {
     var json = JSON.stringify(payload);
     _clearClashTrainStore();
     unsent.forEach(function(c){ _beaconSentIds[c.id]=true; });
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.1252313993', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
@@ -11706,7 +11706,7 @@ function startApp() {
     var json = JSON.stringify(payload);
     // Clear BEFORE sending — ensures no re-sends even if fetch fails silently
     _clearNLTrainStore();
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.65932609', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
@@ -11738,7 +11738,7 @@ function startApp() {
     var json = JSON.stringify(payload);
     try { localStorage.removeItem('cc_detection_runs'); } catch(e){}
     window.dispatchEvent(new Event('cc-training-data-change'));
-    var fd = new FormData();
+    var fd = new URLSearchParams();
     fd.append('entry.61454827', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
     var baseUrl = _gf[0]+'.'+_gf[1]+'.'+_gf[2]+_gf[3]+_gf[4];
