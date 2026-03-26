@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.12.12 (2026-03-26)
+- Replace hardcoded model/discipline matching with fuzzy resolver
+
 ## v2.12.11 (2026-03-26)
 - Expand _IFC_SHORT to cover all IFC types from IFC_TYPE_NAMES map
 

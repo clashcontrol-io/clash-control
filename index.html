@@ -257,7 +257,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'2.12.11',hash:'544841e',date:'2026-03-26T06:39:07Z'};
+  var CC_VERSION = {v:'2.12.12',hash:'c6d9653',date:'2026-03-26T06:58:13Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -9439,59 +9439,45 @@ function startApp() {
       m = t.match(/(\d+(?:\.\d+)?)\s*m(?!m)/); if (m) return Math.round(parseFloat(m[1]) * 1000);
       return null;
     }
-    // Common IFC type shorthand → full IFC type name
-    var _IFC_SHORT = {wall:'IfcWall',slab:'IfcSlab',beam:'IfcBeam',column:'IfcColumn',door:'IfcDoor',
-      window:'IfcWindow',pipe:'IfcPipeSegment',duct:'IfcDuctSegment',cable:'IfcCableCarrierSegment',
-      plate:'IfcPlate',member:'IfcMember',railing:'IfcRailing',stair:'IfcStair',
-      covering:'IfcCovering',furniture:'IfcFurnishingElement',proxy:'IfcBuildingElementProxy',
-      curtainwall:'IfcCurtainWall',footing:'IfcFooting',roof:'IfcRoof',ramp:'IfcRamp',
-      // Extra shorthands: plural forms, abbreviations, and common variations
-      walls:'IfcWall',slabs:'IfcSlab',beams:'IfcBeam',columns:'IfcColumn',doors:'IfcDoor',
-      windows:'IfcWindow',pipes:'IfcPipeSegment',ducts:'IfcDuctSegment',cables:'IfcCableCarrierSegment',
-      plates:'IfcPlate',members:'IfcMember',railings:'IfcRailing',stairs:'IfcStair',
-      footings:'IfcFooting',roofs:'IfcRoof',ramps:'IfcRamp',
-      pipesegment:'IfcPipeSegment',ductsegment:'IfcDuctSegment',cablesegment:'IfcCableCarrierSegment',
-      pipefitting:'IfcPipeFitting',ductfitting:'IfcDuctFitting',cablefitting:'IfcCableCarrierFitting',
-      fitting:'IfcPipeFitting',fittings:'IfcPipeFitting',
-      valve:'IfcValve',valves:'IfcValve',pump:'IfcPump',pumps:'IfcPump',fan:'IfcFan',fans:'IfcFan',
-      sensor:'IfcSensor',sensors:'IfcSensor',lamp:'IfcLamp',lamps:'IfcLamp',
-      sprinkler:'IfcFireSuppressionTerminal',outlet:'IfcOutlet',outlets:'IfcOutlet',
-      terminal:'IfcFlowTerminal',terminals:'IfcFlowTerminal',
-      // Structural
-      space:'IfcSpace',spaces:'IfcSpace',pile:'IfcPile',piles:'IfcPile',
-      chimney:'IfcChimney',chimneys:'IfcChimney',shading:'IfcShadingDevice',
-      rebar:'IfcReinforcingBar',reinforcing:'IfcReinforcingBar',mesh:'IfcReinforcingMesh',
-      tendon:'IfcTendon',tendons:'IfcTendon',stairflight:'IfcStairFlight',rampflight:'IfcRampFlight',
-      // MEP extended
-      airterminal:'IfcAirTerminal',airterminals:'IfcAirTerminal',
-      sanitaryterminal:'IfcSanitaryTerminal',sanitary:'IfcSanitaryTerminal',
-      wasteterminal:'IfcWasteTerminal',waste:'IfcWasteTerminal',
-      firesuppression:'IfcFireSuppressionTerminal',sprinklers:'IfcFireSuppressionTerminal',
-      lightfixture:'IfcLightFixture',light:'IfcLightFixture',lights:'IfcLightFixture',
-      actuator:'IfcActuator',actuators:'IfcActuator',
-      coil:'IfcCoil',coils:'IfcCoil',compressor:'IfcCompressor',compressors:'IfcCompressor',
-      condenser:'IfcCondenser',condensers:'IfcCondenser',coolingtower:'IfcCoolingTower',
-      transformer:'IfcTransformer',transformers:'IfcTransformer',
-      motor:'IfcElectricMotor',motors:'IfcElectricMotor',generator:'IfcElectricGenerator',
-      switch:'IfcSwitchingDevice',switches:'IfcSwitchingDevice',
-      protectivedevice:'IfcProtectiveDevice',breaker:'IfcProtectiveDevice',
-      unitary:'IfcUnitaryEquipment',ahu:'IfcUnitaryEquipment',
-      cablesegment:'IfcCableSegment',cablecarrier:'IfcCableCarrierSegment',cabletray:'IfcCableCarrierSegment'};
-    // Resolve a type name (shorthand, IFC, or mixed-case) to canonical IFC type
+    // Resolve a type name to a canonical IFC type from the loaded models.
+    // No hardcoded type list — fuzzy-matches against whatever types are present.
     function _resolveIfcType(raw) {
       if (!raw) return null;
-      var s = raw.trim();
-      // Try shorthand first (beam, pipe, wall, etc.)
-      var short = s.toLowerCase().replace(/^ifc/i,'');
-      if (_IFC_SHORT[short]) return _IFC_SHORT[short];
-      // Try full IFC name (case-insensitive normalization)
-      if (/^ifc/i.test(s)) {
-        var body = s.replace(/^ifc/i,'');
-        return 'Ifc' + body.charAt(0).toUpperCase() + body.slice(1);
-      }
-      // Try shorthand directly
-      if (_IFC_SHORT[s.toLowerCase()]) return _IFC_SHORT[s.toLowerCase()];
-      return null;
+      var input = raw.trim().toLowerCase();
+      // Strip leading "ifc" prefix for matching: "IfcBeam" → "beam"
+      var bare = input.replace(/^ifc/i, '');
+      // Strip trailing "s" for naive depluralization: "beams" → "beam"
+      var bareSing = bare.length > 3 && bare.charAt(bare.length-1) === 's' ? bare.slice(0,-1) : bare;
+      // Collect all unique IFC types from loaded models
+      var loadedTypes = {};
+      s.models.forEach(function(m) {
+        (m.elements||[]).forEach(function(el) {
+          if (el.props && el.props.ifcType) loadedTypes[el.props.ifcType] = true;
+        });
+      });
+      var types = Object.keys(loadedTypes);
+      if (!types.length) return null;
+      // Score each loaded type against the input
+      var best = null, bestScore = 0;
+      types.forEach(function(t) {
+        var tl = t.toLowerCase();
+        var tbody = tl.replace(/^ifc/, '');         // "ifcpipesegment" → "pipesegment"
+        var score = 0;
+        // Exact matches
+        if (tl === input || tl === 'ifc' + input) score = 100;
+        else if (tbody === bare || tbody === bareSing) score = 95;
+        // Starts-with (user typed "pipe", matches "pipesegment")
+        else if (tbody.indexOf(bare) === 0) score = 90;
+        else if (tbody.indexOf(bareSing) === 0) score = 88;
+        // Contains (user typed "pump", matches "ifcpump")
+        else if (tbody.indexOf(bare) !== -1) score = 80;
+        else if (tbody.indexOf(bareSing) !== -1) score = 78;
+        // Reverse: type body contained in input ("pipesegment" in "pipesegments")
+        else if (bare.indexOf(tbody) !== -1) score = 75;
+        if (score > bestScore) { bestScore = score; best = t; }
+      });
+      return bestScore >= 75 ? best : null;
+    }
     }
     function applyClashOpts(updRules) {
       var gap = parseMM(text); if (gap !== null) { updRules.maxGap = gap; updRules.hard = true; }
