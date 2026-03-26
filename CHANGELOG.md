@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.1.16 (2026-03-26)
+- Wireframe section plane + highlight on right-click without ghost
+
 ## v3.1.15 (2026-03-26)
 - Add visible section plane with drag-to-move in 3D viewport
 
