@@ -252,7 +252,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.58',hash:'54a8808',date:'2026-03-27T12:55:54Z'};
+  var CC_VERSION = {v:'3.2.59',hash:'80913bd',date:'2026-03-27T13:00:27Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -13356,8 +13356,18 @@ function startApp() {
       if (cb) setTimeout(cb, 800);
     }
 
-    // ─── 1. Clashes tab — show all detected clashes + NL command typing ───
+    // ─── 0. Show models tab briefly ───
     at(300, function() {
+      d({t:'TAB', v:'models'});
+      d({t:'ACTIVE', id:null});
+      if (_unghostAll) _unghostAll();
+      invalidate(10);
+      showCaption('Load & explore IFC models in your browser');
+      smoothOrbit(20, 2000);
+    });
+
+    // ─── 1. Clashes tab — show all detected clashes + NL command typing ───
+    at(2500, function() {
       d({t:'TAB', v:'clashes'});
       d({t:'ACTIVE', id:null});
       if (_unghostAll) _unghostAll();
@@ -13470,7 +13480,7 @@ function startApp() {
           nativeSet.call(titleInput, title.substring(0, ti));
           titleInput.dispatchEvent(new Event('input', {bubbles:true}));
           ti++;
-          setTimeout(typeTitle, 35);
+          setTimeout(typeTitle, 20);
         }
       })();
       // Type description after title finishes
@@ -13484,12 +13494,12 @@ function startApp() {
             nativeSetTA.call(descInput, desc.substring(0, di));
             descInput.dispatchEvent(new Event('input', {bubbles:true}));
             di++;
-            setTimeout(typeDesc, 20);
+            setTimeout(typeDesc, 12);
           }
         })();
-      }, title.length * 35 + 200);
+      }, title.length * 20 + 200);
     });
-    at(4500, function() {
+    at(3500, function() {
       d({t:'MODAL', v:false});
     });
 
@@ -13528,14 +13538,7 @@ function startApp() {
       d({t:'MEASURE_MODE', v:null});
     });
 
-    // ─── 11. Model tree ───
-    at(500, function() {
-      showCaption('Browse the full model tree');
-      d({t:'TAB', v:'models'});
-      smoothOrbit(30, 2500);
-    });
-
-    // ─── 11b. Show standards tab for clearances ───
+    // ─── 11. Show standards tab for clearances ───
     at(3000, function() {
       showCaption('Set default clearances per discipline');
       d({t:'TAB', v:'standards'});

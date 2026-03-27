@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.2.59 (2026-03-27)
+- Tour: add F12 diagnostics, standards tab for clearances
+
 ## v3.2.58 (2026-03-27)
 - Tour: show confirm panel, replace BCF export with model tree + clearances
 
