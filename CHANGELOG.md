@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.3 (2026-03-27)
+- Remove wireframe overlay on hover — eliminates floating plane artifacts
+
 ## v3.3.2 (2026-03-27)
 - Add model version diffing with visual change tracking
 

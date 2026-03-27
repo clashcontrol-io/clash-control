@@ -252,7 +252,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.3.2',hash:'7c6c981',date:'2026-03-27T15:59:09Z'};
+  var CC_VERSION = {v:'3.3.3',hash:'daf0b97',date:'2026-03-27T16:03:48Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -1718,6 +1718,7 @@ function startApp() {
       + 'var _extractAxis=' + _extractAxis.toString() + ';\n'
       + 'var extractProperties=' + extractProperties.toString() + ';\n'
       + 'var extractStoreys=' + extractStoreys.toString() + ';\n'
+      + 'var extractSpatialHierarchy=' + extractSpatialHierarchy.toString() + ';\n'
       + 'var resolveMaterialName=' + resolveMaterialName.toString() + ';\n'
       + 'var buildMaterialMap=' + buildMaterialMap.toString() + ';\n'
       + 'var buildPropertyMap=' + buildPropertyMap.toString() + ';\n'
@@ -6746,7 +6747,7 @@ function startApp() {
     var fileRef = useRef(null);
     var file2dRef = useRef(null);
     var ld = useState(false), loading=ld[0], _setLoadingRaw=ld[1];
-    function setLoading(v) { _setLoadingRaw(v); window._ccModelLoading=!!v; window.dispatchEvent(new CustomEvent('cc-model-loading',{detail:{loading:!!v}})); }
+    function setLoading(v) { _setLoadingRaw(v); window._ccModelLoading=!!v; window._ccModelLoadMsg=v?'Loading…':''; window.dispatchEvent(new CustomEvent('cc-model-loading',{detail:{loading:!!v}})); }
     var lm = useState(''), loadMsg=lm[0], setLoadMsg=lm[1];
     var er = useState(''), err=er[0], setErr=er[1];
     var dg = useState(false), dragging=dg[0], setDragging=dg[1];
@@ -6811,7 +6812,7 @@ function startApp() {
           setLoadMsg(totalIfc > 1 ? f.name + ' (' + (doneIfc + 1) + '/' + totalIfc + ')…' : 'Loading ' + f.name + '…');
           return f.arrayBuffer().then(function(buf) {
             var disc='structural', col=DISC[0].c;
-            var _onProg = function(msg){ setLoadMsg(f.name + ': ' + msg); };
+            var _onProg = function(msg){ setLoadMsg(f.name + ': ' + msg); window._ccModelLoadMsg=f.name+': '+msg; window.dispatchEvent(new CustomEvent('cc-model-loading',{detail:{loading:true,msg:f.name+': '+msg}})); };
             var _loadP = loadIFCWorker(buf, col, _onProg);
             var _workerGen = _ccLoadGeneration; // capture generation assigned by loadIFCWorker
             _loadP = _loadP.catch(function(workerErr) {
@@ -7878,6 +7879,29 @@ function startApp() {
     var isExplorerTab = s.tab==='navigator';
     var isStandardsTab = s.tab==='standards';
     var rawItems = isClashTab ? s.clashes.filter(function(c){return c.status!=='denied';}) : s.issues;
+    // Append IDS validation failures as clash-like items on clashes tab
+    if (isClashTab && s.idsValidation && s.idsValidation.results && s.idsValidation.results.length > 0) {
+      var idsItems = s.idsValidation.results.map(function(r, i) {
+        return {
+          id: 'ids_' + i,
+          title: r.ruleDesc,
+          description: r.specName + ': ' + r.elementName + ' (' + r.ifcType + ')',
+          type: r.severity === 'error' ? 'hard' : 'soft',
+          status: 'open',
+          priority: r.severity === 'error' ? 'critical' : r.severity === 'warning' ? 'normal' : 'low',
+          createdAt: new Date().toISOString(),
+          elemA: r.elementId,
+          elemAName: r.elementName,
+          elemAType: r.ifcType,
+          modelAId: r.modelId,
+          storey: r.storey,
+          distance: 0,
+          _idsValidation: true,
+          _severity: r.severity
+        };
+      });
+      rawItems = rawItems.concat(idsItems);
+    }
 
     // Build set of visible model IDs for filtering
     var visibleModelIds = useMemo(function(){
@@ -8004,7 +8028,6 @@ function startApp() {
       </div>`}
 
       ${!isExplorerTab && !isStandardsTab && rawItems.length > 0 && html`<${ClashStatsBar} items=${rawItems} isClash=${isClashTab} delta=${isClashTab ? s.lastDeltaSummary : null} />`}
-      ${isClashTab && html`<${ClashRulesPanel} s=${s} d=${d} />`}
 
       ${s.tab==='navigator' && html`<${NavigatorPanel} s=${s} d=${d} />`}
       ${isStandardsTab && html`<${StandardsPanel} s=${s} d=${d} />`}
@@ -8877,6 +8900,9 @@ function startApp() {
     var selStyle={fontSize:'0.69rem',padding:'.2rem .25rem',borderRadius:4,background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border)',flex:1};
     var rowInputStyle={fontSize:'0.69rem',padding:'.2rem .3rem',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:4,color:'var(--text-primary)',width:'100%',boxSizing:'border-box'};
     return html`<div style=${{flex:1,overflowY:'auto',padding:'.6rem'}}>
+      ${s && d && html`<div style=${{marginBottom:'1rem',paddingBottom:'.8rem',borderBottom:'2px solid var(--border)'}}>
+        <${ClashRulesPanel} s=${s} d=${d} />
+      </div>`}
       <div style=${{marginBottom:'.8rem'}}>
         <span style=${LS}>Default minimum clearance (mm)</span>
         <input type="number" min="0" step="1" placeholder="e.g. 50"
@@ -12220,9 +12246,15 @@ function startApp() {
       window.addEventListener('cc-project-switch', onSwitch);
       return function(){ window.removeEventListener('cc-project-switch', onSwitch); };
     }, []);
-    // Track model loading state for glow effect
+    // Track model loading state and progress message
+    var stLoadMsg = useState(''), modelLoadMsg = stLoadMsg[0], setModelLoadMsg = stLoadMsg[1];
     useEffect(function() {
-      function onModelLoad(e) { setModelLoading(!!(e.detail && e.detail.loading)); }
+      function onModelLoad(e) {
+        var d = e.detail || {};
+        setModelLoading(!!d.loading);
+        if (d.msg) setModelLoadMsg(d.msg);
+        else if (!d.loading) setModelLoadMsg('');
+      }
       window.addEventListener('cc-model-loading', onModelLoad);
       return function() { window.removeEventListener('cc-model-loading', onModelLoad); };
     }, []);
@@ -12684,7 +12716,7 @@ function startApp() {
             else if(t<30) msg=p<50?'Running clash detection':p<93?'Working hard':'Almost done';
             else msg=p===0?'Running clash detection':p<15?'Running clash detection':p<30?'Crunching triangles':p<45?'Working hard':p<60?'Running as fast as I can':p<75?'Almost halfway… just kidding, past it':p<85?'So many clashes to check':p<93?'Wrapping things up':'Final stretch';
             return msg+(p>0?' — '+p+'%':'')+'…';
-          }()) : 'Model loading…'}</span>
+          }()) : (modelLoadMsg || 'Model loading…')}</span>
         </div>
       </div>` : html`<div style=${{
         padding:'.55rem .7rem', borderTop:'1px solid '+borderCol,
