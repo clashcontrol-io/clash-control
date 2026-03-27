@@ -252,12 +252,11 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.33',hash:'0653428',date:'2026-03-27T05:26:35Z'};
+  var CC_VERSION = {v:'3.2.36',hash:'cfc830b',date:'2026-03-27T06:32:49Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
   var NL_DATA_ENDPOINT = 'https://your-server.com/api/nl-data';
-  var _beaconSentIds = {}; // in-memory clash dedup Set (reset each session)
   var _beaconNLSentIdx = 0; // NL records sent up to this index (reset each session)
 
   // Check CDN deps loaded
@@ -1412,11 +1411,11 @@ function startApp() {
 
   var _ccLoadGeneration = 0; // incremented each load to cancel stale in-progress loads
 
-  function loadIFC(buffer, fallbackColor, onProgress) {
+  function loadIFC(buffer, fallbackColor, onProgress, _parentGen) {
     var loadStart = performance.now();
     var _lp = { t0: loadStart, phases: {} };
     function _lmark(name) { _lp.phases[name] = performance.now() - _lp.t0; }
-    var _myGen = ++_ccLoadGeneration;
+    var _myGen = _parentGen || ++_ccLoadGeneration;
 
     return getIfcAPI().then(function(api) {
       _lmark('WASM ready');
@@ -2269,7 +2268,7 @@ function startApp() {
       try {
         // Run synchronous detection but yield between chunks
         var result = _detectClashesCore(models, rules, onProgress, function(r) {
-          if (gen === _ccDetectGeneration) resolve(r); // only resolve if still current
+          resolve(gen === _ccDetectGeneration ? r : []); // discard stale results
         });
         if (result !== undefined) resolve(result); // fell through synchronously (small dataset)
       } catch(e) {
@@ -2310,6 +2309,31 @@ function startApp() {
     var _softPairBuf = [0,0,0,0,0,0]; // reusable buffer for soft clash closest-pair output
 
     // ── Shared helpers for clash object construction ──
+    // Bucket raw IFC material names into generic categories for ML training.
+    // Returns a lowercase category string that generalises across projects.
+    var _matPatterns = [
+      [/\bconcrete|beton|c\d{2,3}[\/\\]?\d{0,2}\b/i, 'concrete'],
+      [/\bsteel|stahl|s[23]\d{2}\b/i, 'steel'],
+      [/\btimber|wood|holz|glulam|clt\b/i, 'timber'],
+      [/\balu(?:mi)?n[iu]um|alu\b/i, 'aluminium'],
+      [/\bglass|glas|glazing\b/i, 'glass'],
+      [/\bmasonry|brick|stein|block\b/i, 'masonry'],
+      [/\binsulat|d[aä]mm|mineral\s*wool|rock\s*wool|foam|eps|xps\b/i, 'insulation'],
+      [/\bgypsum|gips|drywall|plaster\b/i, 'gypsum'],
+      [/\bcopper|kupfer\b/i, 'copper'],
+      [/\bpvc|pe\-?hd|hdpe|pp\b|plastic/i, 'plastic'],
+      [/\bcast\s*iron|guss/i, 'cast_iron'],
+      [/\bwater|wasser\b/i, 'fluid'],
+      [/\bair|luft\b/i, 'air']
+    ];
+    function _matCategory(name) {
+      if (!name) return 'unknown';
+      for (var i = 0; i < _matPatterns.length; i++) {
+        if (_matPatterns[i][0].test(name)) return _matPatterns[i][1];
+      }
+      return 'other';
+    }
+
     function _aabbOverlap(bA, bB) {
       var ox=Math.max(0,Math.min(bA.max.x,bB.max.x)-Math.max(bA.min.x,bB.min.x));
       var oy=Math.max(0,Math.min(bA.max.y,bB.max.y)-Math.max(bA.min.y,bB.min.y));
@@ -2551,20 +2575,42 @@ function startApp() {
           title:sameModel?mA.name+' (self)':mA.discipline.toUpperCase()+' \u2194 '+mB.discipline.toUpperCase(),
           description:b.tA+': '+b.nA+' ('+mA.name+') vs '+b.tB+': '+b.nB+' ('+mB.name+')',
           overlapVolM3:ov.vol, clearanceMm:clrMm,
-          _trainFV:{
-            type_pair:[b.tA,b.tB].sort().join(':'),
-            disc_pair:[mA.discipline,mB.discipline].sort().join(':'),
-            same_storey:(b.pA.storey||'')===(b.pB.storey||'')&&!!(b.pA.storey||b.pB.storey),
-            same_model:sameModel,
-            overlap_vol_m3:ov.vol,
-            pen_depth_mm:hardPt?(dist<0?Math.abs(dist):0):0,
-            clearance_mm:clrMm,
-            bbox_a:b.obj.bboxA, bbox_b:b.obj.bboxB,
-            mat_a:b.pA.material||'',
-            mat_b:b.pB.material||'',
-            storey:b.pA.storey||b.pB.storey||'',
-            max_gap_mm:Math.round(maxGapM*1000)
-          }
+          _trainFV:function(){
+            // Element volumes (bbox proxy, m³) and size ratio
+            var _ba=b.obj.bboxA, _bb=b.obj.bboxB;
+            var volA=(_ba.dx*_ba.dy*_ba.dz)*1e-9, volB=(_bb.dx*_bb.dy*_bb.dz)*1e-9; // mm³→m³
+            var minVol=Math.min(volA,volB)||1e-9, maxVol=Math.max(volA,volB)||1e-9;
+            var sizeRatio=maxVol/minVol;
+            // Normalized overlap: fraction of smaller element's volume consumed by overlap
+            var overlapNorm=minVol>0?Math.min(ov.vol/minVol,1):0;
+            // Normalized penetration: fraction of smaller element's min dimension
+            var minDimA=Math.min(_ba.dx,_ba.dy,_ba.dz)||1;
+            var minDimB=Math.min(_bb.dx,_bb.dy,_bb.dz)||1;
+            var minDim=Math.min(minDimA,minDimB);
+            var penMm=hardPt?(dist<0?Math.abs(dist):0):0;
+            var penNorm=minDim>0?Math.min(penMm/minDim,1):0;
+            return {
+              type_pair:[b.tA,b.tB].sort().join(':'),
+              disc_pair:[mA.discipline,mB.discipline].sort().join(':'),
+              same_storey:(b.pA.storey||'')===(b.pB.storey||'')&&!!(b.pA.storey||b.pB.storey),
+              same_model:sameModel,
+              clash_type:hardPt?'hard':'soft',
+              // Raw values (for classical ML)
+              overlap_vol_m3:ov.vol,
+              pen_depth_mm:penMm,
+              clearance_mm:clrMm,
+              vol_a_m3:Math.round(volA*1e6)/1e6,
+              vol_b_m3:Math.round(volB*1e6)/1e6,
+              // Derived ratios (most predictive for ML)
+              size_ratio:Math.round(sizeRatio*100)/100,
+              overlap_norm:Math.round(overlapNorm*1e4)/1e4,
+              pen_norm:Math.round(penNorm*1e4)/1e4,
+              // Bucketed materials
+              mat_cat_a:_matCategory(b.pA.material||''),
+              mat_cat_b:_matCategory(b.pB.material||''),
+              max_gap_mm:Math.round(maxGapM*1000)
+            };
+          }()
         }));
       }
     }
@@ -2756,7 +2802,7 @@ function startApp() {
     var chunkIdx = 0;
     var _myGen = _ccDetectGeneration; // snapshot generation at start
     function _runChunk() {
-      if (_myGen !== _ccDetectGeneration) return; // cancelled by newer detection
+      if (_myGen !== _ccDetectGeneration) { resolveAsync([]); return; } // cancelled by newer detection
       try {
       var end = Math.min(chunkIdx + _DETECT_CHUNK_SIZE, totalCandidates);
       for (var i=chunkIdx; i<end; i++) { try { _processCandidate(candidates[i]); } catch(e) { /* skip bad candidate */ } }
@@ -3570,6 +3616,7 @@ function startApp() {
     var _tmpVec = new THREE.Vector3();
     var _tmpDir = new THREE.Vector3();
     var _tmpRight = new THREE.Vector3();
+    var _up = new THREE.Vector3(0,1,0);
 
     function sync() {
       var o = _tmpVec.copy(camera.position).sub(target);
@@ -3602,7 +3649,7 @@ function startApp() {
       if(panning){
         var sp=sph.r*0.0008;
         orbit.camera.getWorldDirection(_tmpDir);
-        _tmpRight.set(0,1,0); _tmpRight.crossVectors(_tmpDir,_tmpRight).normalize();
+        _tmpRight.crossVectors(_tmpDir, _up).normalize();
         target.addScaledVector(_tmpRight,-dx*sp); target.y+=dy*sp; orbit.apply(); invalidate();
       }
     });
@@ -3677,7 +3724,7 @@ function startApp() {
         var pdx=mx-touchState.lx, pdy=my-touchState.ly;
         var sp=sph.r*0.0008;
         orbit.camera.getWorldDirection(_tmpDir);
-        _tmpRight.set(0,1,0); _tmpRight.crossVectors(_tmpDir,_tmpRight).normalize();
+        _tmpRight.crossVectors(_tmpDir, _up).normalize();
         target.addScaledVector(_tmpRight,-pdx*sp); target.y+=pdy*sp;
         // Pinch zoom
         if(touchState.dist>0) {
@@ -4061,8 +4108,7 @@ function startApp() {
       };
       window._ccRemoveActiveClashMarker = function() {
         if(_activeClashMarker) {
-          _activeClashMarker.traverse(function(obj){if(obj.isMesh){if(obj.geometry)obj.geometry.dispose();if(obj.material)obj.material.dispose();}});
-          scene.remove(_activeClashMarker);
+          _disposeGroup(_activeClashMarker);
           _activeClashMarker = null;
           invalidate();
         }
@@ -4100,14 +4146,18 @@ function startApp() {
         clashMarkersRef.current = grp;
         invalidate();
       };
+      // Dispose all unique geometries/materials in a group, then remove from scene
+      function _disposeGroup(grp) {
+        var g={},m={};
+        grp.traverse(function(o){if(o.isMesh){
+          if(o.geometry&&!g[o.geometry.id]){g[o.geometry.id]=1;o.geometry.dispose();}
+          if(o.material&&!m[o.material.id]){m[o.material.id]=1;o.material.dispose();}
+        }});
+        scene.remove(grp);
+      }
       _clearClashMarkers = function() {
         if(clashMarkersRef.current){
-          var _dg={}, _dm={};
-          clashMarkersRef.current.traverse(function(obj){if(obj.isMesh){
-            if(obj.geometry&&!_dg[obj.geometry.id]){_dg[obj.geometry.id]=1;obj.geometry.dispose();}
-            if(obj.material&&!_dm[obj.material.id]){_dm[obj.material.id]=1;obj.material.dispose();}
-          }});
-          scene.remove(clashMarkersRef.current);
+          _disposeGroup(clashMarkersRef.current);
           clashMarkersRef.current = null;
           invalidate();
         }
@@ -4141,12 +4191,7 @@ function startApp() {
       };
       _clearIssueMarkers = function() {
         if(issueMarkersRef.current){
-          var _dg={}, _dm={};
-          issueMarkersRef.current.traverse(function(obj){if(obj.isMesh){
-            if(obj.geometry&&!_dg[obj.geometry.id]){_dg[obj.geometry.id]=1;obj.geometry.dispose();}
-            if(obj.material&&!_dm[obj.material.id]){_dm[obj.material.id]=1;obj.material.dispose();}
-          }});
-          scene.remove(issueMarkersRef.current);
+          _disposeGroup(issueMarkersRef.current);
           issueMarkersRef.current = null;
           invalidate();
         }
@@ -6313,7 +6358,7 @@ function startApp() {
             if(cached && cached.v >= 1) return _geoDeserialize(cached);
             return loadIFC(entry.buffer, DISC[0].c, function(){})
               .then(function(result) {
-                idbSaveGeoCache(entry.id, _geoSerialize(result));
+                if (result) idbSaveGeoCache(entry.id, _geoSerialize(result));
                 return result;
               });
           }).then(function(result){
@@ -6718,9 +6763,11 @@ function startApp() {
           return f.arrayBuffer().then(function(buf) {
             var disc='structural', col=DISC[0].c;
             var _onProg = function(msg){ setLoadMsg(f.name + ': ' + msg); };
-            var _loadP = loadIFCWorker(buf, col, _onProg).catch(function(workerErr) {
+            var _loadP = loadIFCWorker(buf, col, _onProg);
+            var _workerGen = _ccLoadGeneration; // capture generation assigned by loadIFCWorker
+            _loadP = _loadP.catch(function(workerErr) {
               console.warn('[IFC Worker fallback]', workerErr.message || workerErr);
-              return loadIFC(buf, col, _onProg);
+              return loadIFC(buf, col, _onProg, _workerGen);
             });
             return _loadP.then(function(result) {
               if (!result) return; // load was cancelled by a newer load
@@ -12097,7 +12144,7 @@ function startApp() {
               try{
                 var cur=window._ccLatestState;
                 if(cur){
-                  _beaconSendTrainingData(cur.clashes, cur.detectionSettings, cur.models, cur.prefs.defaultTolerances, cur.issues);
+                  _beaconSendTrainingData();
                   _beaconSendNLTrainingData(cur.models);
                 }
                 _beaconSendDetectionRuns();
@@ -12142,21 +12189,17 @@ function startApp() {
   // ── Training Mode Info Popup ──────────────────────────────────
 
   // ── sendBeacon auto-send ──────────────────────────────────────
-  function _beaconSendTrainingData(clashes, detectionSettings, models, defaultTolerances, issues) {
+  function _beaconSendTrainingData() {
     try {
       if(localStorage.getItem('cc_data_consent')!=='granted') return;
     } catch(e){ return; }
-    var allClashData = clashes.slice();
-    if(issues) issues.forEach(function(i){if(i.source==='clash') allClashData.push(i);});
-    var unsent = allClashData.filter(function(c){
-      return c.status!=='open' && !_beaconSentIds[c.id];
-    });
-    if(!unsent.length) return;
-    var payload = _buildAITrainingPayload(unsent, detectionSettings, models, defaultTolerances, []);
-    if(!payload) return;
+    var store = _getClashTrainStore();
+    var keys = Object.keys(store);
+    if(!keys.length) return;
+    var records = keys.map(function(k) { return Object.assign({id:k}, store[k]); });
+    var payload = {type:'clash_training', version:'1.0', app_version:CC_VERSION.v, count:records.length, records:records};
     var json = JSON.stringify(payload);
     _clearClashTrainStore();
-    unsent.forEach(function(c){ _beaconSentIds[c.id]=true; });
     var fd = new URLSearchParams();
     fd.append('entry.1252313993', json);
     var _gf = ['https://docs','google','com/forms/d/e/','1FAIpQLSc51xdQw_8JY2lN1aw8OZOT2Jzdx42m','vilJzqMGVw4tXo7wtA'];
@@ -12768,9 +12811,9 @@ function startApp() {
         if (a.t===A.UPD_CLASH && a.u && a.u.status) {
           var c = _clashes.find(function(c){return c.id===a.id;});
           if (c && c._trainFV && a.u.status !== c.status) {
-            var labelMap = {confirmed:1.0, denied:0.0, accepted_needs_check:0.6, in_progress:0.8, resolved:0.7, closed:0.2};
-            var isVerdict = a.u.status==='confirmed'||a.u.status==='denied';
-            if (labelMap[a.u.status] != null) _saveClashTrainRecord(c.id, c._trainFV, labelMap[a.u.status], isVerdict?'verdict':'status_change', false);
+            // Only record explicit quality judgments — skip workflow statuses (in_progress, resolved, closed)
+            var labelMap = {confirmed:1.0, denied:0.0};
+            if (labelMap[a.u.status] != null) _saveClashTrainRecord(c.id, c._trainFV, labelMap[a.u.status], 'verdict', false);
           }
         }
         if (a.t===A.AI_FEEDBACK && a.v) {
@@ -12782,11 +12825,11 @@ function startApp() {
           if (c3 && c3._trainFV) _saveClashTrainRecord(c3.id, c3._trainFV, 1.0, 'issue_created', false);
         }
         if (a.t===A.BATCH_UPD_CLASH && a.u && a.u.status) {
-          var labelMap2 = {confirmed:1.0, denied:0.0, accepted_needs_check:0.6, in_progress:0.8, resolved:0.7, closed:0.2};
+          // Only record explicit quality judgments — skip workflow statuses
+          var labelMap2 = {confirmed:1.0, denied:0.0};
           if (labelMap2[a.u.status] != null) {
             _clashes.forEach(function(c){
-              var isV2 = a.u.status==='confirmed'||a.u.status==='denied';
-              if (_sel[c.id] && c._trainFV && c.status !== a.u.status) _saveClashTrainRecord(c.id, c._trainFV, labelMap2[a.u.status], isV2?'verdict':'status_change', false);
+              if (_sel[c.id] && c._trainFV && c.status !== a.u.status) _saveClashTrainRecord(c.id, c._trainFV, labelMap2[a.u.status], 'verdict', false);
             });
           }
         }
@@ -12876,7 +12919,7 @@ function startApp() {
         var cur = _latestSRef.current;
         if(_hasProjectData(cur)) _saveCurrentProjectData(cur);
         // Phase 0.5: beacon training data on tab close
-        _beaconSendTrainingData(cur.clashes, cur.detectionSettings, cur.models, cur.prefs.defaultTolerances, cur.issues);
+        _beaconSendTrainingData();
         _beaconSendNLTrainingData(cur.models);
         _beaconSendDetectionRuns();
       }
@@ -12887,17 +12930,15 @@ function startApp() {
       }, 5000);
       return function(){ window.removeEventListener('beforeunload', onUnload); clearTimeout(startupTimer); };
     }, []);
-    // Phase 0.5: periodic auto-send every 25 reviewed clashes
+    // Phase 0.5: periodic auto-send every 25 labeled clashes in store
     var _beaconReviewRef = useRef(0);
     useEffect(function(){
-      var allData = s.clashes.slice();
-      s.issues.forEach(function(i){if(i.source==='clash') allData.push(i);});
-      var reviewedNow = allData.filter(function(c){ return c.status!=='open' && !_beaconSentIds[c.id]; }).length;
-      if(reviewedNow >= 25 && reviewedNow !== _beaconReviewRef.current) {
-        _beaconReviewRef.current = reviewedNow;
-        _beaconSendTrainingData(s.clashes, s.detectionSettings, s.models, s.prefs.defaultTolerances, s.issues);
+      var storeCount = _getClashTrainCount();
+      if(storeCount >= 25 && storeCount !== _beaconReviewRef.current) {
+        _beaconReviewRef.current = storeCount;
+        _beaconSendTrainingData();
       }
-      if(reviewedNow < _beaconReviewRef.current) _beaconReviewRef.current = reviewedNow;
+      if(storeCount < _beaconReviewRef.current) _beaconReviewRef.current = storeCount;
     }, [s.clashes, s.issues]);
     // Phase 0.5: periodic auto-send NL training every 25 new records
     var _beaconNLRef = useRef(0);
