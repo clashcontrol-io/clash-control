@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.2.36 (2026-03-27)
+- Beacon sends labeled clash records from store, not live state
+
 ## v3.2.35 (2026-03-27)
 - Review fixes: cancel-safe detection, orbit crossVectors, shared dispose helper
 
