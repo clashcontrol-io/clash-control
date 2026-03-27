@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.3.4 (2026-03-27)
+- Fix worker error, add loading progress to chatbox, move clash rules to Standards, show IDS failures in clashes
+
+## v3.3.3 (2026-03-27)
+- Remove wireframe overlay on hover — eliminates floating plane artifacts
+
+## v3.3.2 (2026-03-27)
+- Add model version diffing with visual change tracking
+
 ## v3.3.1 (2026-03-27)
 - Add Navigator spatial tree, IDS validation, property inspector, glTF export, and BCF enhancements
 
