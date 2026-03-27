@@ -252,7 +252,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.58',hash:'54a8808',date:'2026-03-27T12:55:54Z'};
+  var CC_VERSION = {v:'3.2.61',hash:'d4f1881',date:'2026-03-27T13:03:47Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -11757,8 +11757,8 @@ function startApp() {
     var panelGlow = modelLoading || llmStatus === 'loading' || isDetecting;
     var panelAnimation = panelGlow ? 'nlBorderPulse 2s ease-in-out infinite' : 'none';
     var panelBorderCol = panelGlow ? 'rgba(96,165,250,.5)' : borderCol;
-    var backendLabel = backend === 'ollama' ? 'Ollama (' + _ollamaModel + ')' : backend === 'browser' ? 'In-browser (0.5B)' : null;
-    var backendColor = backend === 'ollama' ? '#22c55e' : backend === 'browser' ? '#f59e0b' : mutedCol;
+    var backendLabel = window._ccTourActive ? 'AI loaded' : backend === 'ollama' ? 'Ollama (' + _ollamaModel + ')' : backend === 'browser' ? 'In-browser (0.5B)' : null;
+    var backendColor = window._ccTourActive ? '#a78bfa' : backend === 'ollama' ? '#22c55e' : backend === 'browser' ? '#f59e0b' : mutedCol;
     return html`<div class="cc-nlpanel" style=${{
       position:'absolute', bottom:'1rem', left:'50%', transform:'translateX(-50%)',
       zIndex:1200, width:'min('+panelW+'px, calc(100% - 2rem))',
@@ -13222,6 +13222,7 @@ function startApp() {
     // Override AI status to appear loaded during tour
     _nlModelStatus = 'ready';
     _nlBackend = 'browser';
+    window._ccTourActive = true;
 
     // ── Diagnostics (F12 console only) ──
     var _tourStart = performance.now();
@@ -13304,6 +13305,7 @@ function startApp() {
         var allFt = _frameTimes.filter(function(f){return f<200;}); // ignore outliers
         var avgFps = allFt.length ? (1000/(allFt.reduce(function(a,b){return a+b;},0)/allFt.length)).toFixed(0) : '?';
         var dropped = _frameTimes.filter(function(f){return f>33;}).length;
+        window._ccTourActive = false;
         console.log('%c Demo tour complete! ', 'background:#10b981;color:#fff;font-weight:bold;padding:2px 8px;border-radius:4px');
         console.log('%c Tour summary: '+totalTime+'s total | avg '+avgFps+' fps | '+dropped+' dropped frames (>33ms)',
           'color:#10b981;font-weight:600');
@@ -13356,8 +13358,19 @@ function startApp() {
       if (cb) setTimeout(cb, 800);
     }
 
-    // ─── 1. Clashes tab — show all detected clashes + NL command typing ───
+    // ─── 0. Show models tab briefly ───
     at(300, function() {
+      d({t:'TAB', v:'models'});
+      d({t:'ACTIVE', id:null});
+      if (_unghostAll) _unghostAll();
+      invalidate(20);
+      showCaption('Load & explore IFC models in your browser');
+      // Let the model tree render settle before orbiting
+      setTimeout(function() { smoothOrbit(20, 2000); }, 300);
+    });
+
+    // ─── 1. Clashes tab — show all detected clashes + NL command typing ───
+    at(2500, function() {
       d({t:'TAB', v:'clashes'});
       d({t:'ACTIVE', id:null});
       if (_unghostAll) _unghostAll();
@@ -13456,10 +13469,10 @@ function startApp() {
       showCaption('Create issues directly in the viewer');
       zoomAll();
     });
-    at(2500, function() {
+    at(1500, function() {
       d({t:'MODAL', v:true});
     });
-    at(1200, function() {
+    at(500, function() {
       // Type title character by character
       var title = 'Pipe clashes with structural beam — Level 2';
       var ti = 0;
@@ -13489,7 +13502,7 @@ function startApp() {
         })();
       }, title.length * 35 + 200);
     });
-    at(4500, function() {
+    at(3500, function() {
       d({t:'MODAL', v:false});
     });
 
@@ -13528,47 +13541,56 @@ function startApp() {
       d({t:'MEASURE_MODE', v:null});
     });
 
-    // ─── 11. Model tree ───
-    at(500, function() {
-      showCaption('Browse the full model tree');
-      d({t:'TAB', v:'models'});
-      smoothOrbit(30, 2500);
-    });
-
-    // ─── 11b. Show standards tab for clearances ───
+    // ─── 11. Show standards tab for clearances ───
     at(3000, function() {
       showCaption('Set default clearances per discipline');
       d({t:'TAB', v:'standards'});
-      smoothOrbit(25, 2500);
+      // Let the tab render settle before orbiting
+      setTimeout(function() { smoothOrbit(20, 2500); }, 300);
     });
 
-    // ─── 12. Toggle render styles — slow continuous orbit, switch mid-rotation ───
+    // ─── 12. Toggle render styles — pause orbit during material swap ───
     at(3000, function() {
       showCaption('Switch rendering styles');
-      d({t:'UPD_PREFS', u:{renderStyle:'wireframe'}});
+      // Switch to clashes tab first (lighter than standards)
+      d({t:'TAB', v:'clashes'});
       invalidate(10);
-      // One slow continuous orbit for the entire style sequence
-      smoothOrbit(90, 10000);
-      // Switch styles at intervals during the orbit
+    });
+    // Let tab settle, then start style cycling
+    at(500, function() {
+      // Apply wireframe and wait for material swap to finish before orbiting
+      d({t:'UPD_PREFS', u:{renderStyle:'wireframe'}});
+      invalidate(20);
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          // Start one continuous slow orbit after materials are swapped
+          smoothOrbit(80, 10000);
+        });
+      });
+      // Switch styles at intervals — pause orbit briefly around each swap
       setTimeout(function() {
         d({t:'UPD_PREFS', u:{renderStyle:'shaded'}});
-        invalidate(10);
+        invalidate(20);
       }, 2500);
       setTimeout(function() {
         d({t:'UPD_PREFS', u:{renderStyle:'rendered'}});
-        invalidate(10);
+        invalidate(20);
       }, 5000);
       setTimeout(function() {
         d({t:'UPD_PREFS', u:{renderStyle:'standard'}});
-        invalidate(10);
+        invalidate(20);
       }, 7500);
     });
 
     // ─── 13. Training mode teaser ───
     at(10500, function() {
-      showCaption('AI-powered clash analysis — train your own model');
-      d({t:'TRAINING_MODE', v:true});
+      // Switch tab first, let it settle
       d({t:'TAB', v:'clashes'});
+      d({t:'TRAINING_MODE', v:true});
+      invalidate(10);
+    });
+    at(500, function() {
+      showCaption('AI-powered clash analysis — train your own model');
       // Flash the training pill
       var pill = document.querySelector('.cc-training-btn-3d');
       if (pill) {
@@ -13580,12 +13602,11 @@ function startApp() {
           pill.style.transform = '';
         }, 1200);
       }
-      smoothOrbit(40, 3500);
+      smoothOrbit(35, 3500);
     });
 
-    // ─── 14. End — zoom all, type CTA in NL input ───
+    // ─── 14. End — zoom all, type CTA in NL input (keep training mode on) ───
     at(4000, function() {
-      d({t:'TRAINING_MODE', v:false});
       if (_unghostAll) _unghostAll();
       hideCaption();
       zoomAll();

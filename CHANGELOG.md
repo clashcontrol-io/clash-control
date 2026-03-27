@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.2.61 (2026-03-27)
+- Tour: show 'AI loaded' in purple, keep training mode on at end, faster modal open
+
+## v3.2.60 (2026-03-27)
+- Tour: show models tab at start, faster modal typing, remove duplicate model tree step
+
+## v3.2.59 (2026-03-27)
+- Tour: add F12 diagnostics, standards tab for clearances
+
 ## v3.2.58 (2026-03-27)
 - Tour: show confirm panel, replace BCF export with model tree + clearances
 
