@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.13 (2026-03-27)
+- Add geometry compression for IndexedDB cache (Level 3)
+
 ## v3.3.12 (2026-03-27)
 - Add GoatCounter analytics with custom event tracking
 

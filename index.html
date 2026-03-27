@@ -17,6 +17,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
 
@@ -257,7 +258,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.3.12',hash:'4fbd668',date:'2026-03-27T20:55:51Z'};
+  var CC_VERSION = {v:'3.3.13',hash:'2779a11',date:'2026-03-27T22:10:27Z'};
 
   // ── GoatCounter event helper (no-op if GoatCounter not configured) ──
   function _gcEvent(name, title) {
@@ -5990,9 +5991,17 @@ function startApp() {
             <div style=${SECHDR}>${sec.name}</div>
             ${sec.props.map(function(p){return html`<div key=${p.k} style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>${p.k}</span><span style=${{color:'var(--text-primary)',maxWidth:'55%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textAlign:'right'}} title=${p.v}>${p.v}</span></div>`})}
           </div>`})}
+          ${ep && (ep.phase||ep.workset||ep.designOption||ep.hostId||ep.layers) && html`<div style=${SEC}>
+            <div style=${SECHDR}>Revit Data</div>
+            ${ep.phase && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Phase</span><span style=${{color:'var(--text-primary)'}}>${ep.phase}</span></div>`}
+            ${ep.workset && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Workset</span><span style=${{color:'var(--text-primary)'}}>${ep.workset}</span></div>`}
+            ${ep.designOption && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Design Option</span><span style=${{color:'var(--text-primary)'}}>${ep.designOption}</span></div>`}
+            ${ep.hostId && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Host</span><span style=${{color:'var(--text-primary)'}}>${ep.hostId}</span></div>`}
+            ${ep.layers && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Layers</span><span style=${{color:'var(--text-primary)',maxWidth:'55%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${Array.isArray(ep.layers)?ep.layers.join(', '):ep.layers}>${Array.isArray(ep.layers)?ep.layers.join(', '):ep.layers}</span></div>`}
+          </div>`}
           <div style=${{marginTop:'.3rem',paddingTop:'.2rem',borderTop:'1px solid var(--border-subtle)',display:'flex',justifyContent:'space-between',fontSize:'0.63rem',color:'var(--text-faint)',marginBottom:'.35rem'}}>
             <span>${ep&&ep.ifcType||''}</span>
-            <span>#${selectedEl.expressId}</span>
+            <span>${ep&&ep.globalId?ep.globalId:'#'+selectedEl.expressId}</span>
           </div>
           <button onClick=${function(){d({t:A.MODAL,v:true,el:selectedEl});d({t:A.TAB,v:'issues'});}}
             style=${{...S_BTN,width:'100%',padding:'.4rem',background:'#2563eb',color:'#fff',fontSize:'0.8rem',fontWeight:600,borderRadius:6,textAlign:'center',justifyContent:'center'}}>
@@ -6810,6 +6819,275 @@ function startApp() {
     </header>`;
   }
 
+  // ── GLB + IFC Paired Loading ──────────────────────────────────
+  // When a Revit exporter produces GLB (geometry) + IFC (metadata) + optional sidecar JSON,
+  // we load the GLB for fast geometry and the IFC for properties only (skip heavy mesh streaming).
+  // GLB node names must equal IFC GlobalIds to enable the join.
+
+  // Load a GLB/glTF file and return {meshes, meshByGlobalId}
+  function loadGLB(buffer, fileName, onProgress) {
+    return new Promise(function(resolve, reject) {
+      if (!THREE.GLTFLoader) { reject(new Error('GLTFLoader not available')); return; }
+      var loader = new THREE.GLTFLoader();
+      if (onProgress) onProgress('Parsing GLB geometry…');
+      loader.parse(buffer, '', function(gltf) {
+        var meshes = [], meshByGid = {};
+        gltf.scene.traverse(function(child) {
+          if (!child.isMesh) return;
+          // node.name = IFC GlobalId (set by Revit exporter)
+          var gid = child.name || '';
+          // Ensure proper material for ClashControl rendering
+          var oldMat = child.material;
+          var col = oldMat && oldMat.color ? oldMat.color.clone() : new THREE.Color(0.6, 0.6, 0.6);
+          var opacity = oldMat && oldMat.opacity != null ? oldMat.opacity : 1;
+          var mat = new THREE.MeshPhongMaterial({
+            color: col, opacity: opacity,
+            transparent: opacity < 0.99,
+            side: THREE.DoubleSide
+          });
+          child.material = mat;
+          if (oldMat && oldMat.dispose) oldMat.dispose();
+          // Bake world transform so mesh works independently of glTF scene hierarchy
+          child.updateWorldMatrix(true, false);
+          var m = new THREE.Mesh(child.geometry.clone(), mat);
+          m.applyMatrix4(child.matrixWorld);
+          if (gid) {
+            m.userData.globalId = gid;
+            if (!meshByGid[gid]) meshByGid[gid] = [];
+            meshByGid[gid].push(m);
+          }
+          meshes.push(m);
+        });
+        if (onProgress) onProgress(meshes.length + ' meshes from GLB');
+        resolve({meshes: meshes, meshByGid: meshByGid});
+      }, function(err) {
+        reject(new Error('GLB parse failed: ' + (err.message || err)));
+      });
+    });
+  }
+
+  // Load IFC metadata only — skip geometry streaming, just extract properties + spatial data.
+  // Returns {propsByGlobalId, storeys, storeyData, spatialHierarchy, relatedPairs, elementExpressIds}
+  function loadIFCMetadataOnly(buffer, onProgress) {
+    return _getIfcAPI().then(function(api) {
+      if (onProgress) onProgress('Parsing IFC metadata…');
+      var modelID = api.OpenModel(new Uint8Array(buffer));
+
+      // Extract storeys + spatial hierarchy
+      var storeyResult = extractStoreys(api, modelID);
+      var spatialHierarchy = extractSpatialHierarchy(api, modelID);
+
+      // Build property/material maps (same as full loadIFC)
+      var propMap = buildPropertyMap(api, modelID);
+      var matMap = {};
+      try {
+        var matRelIds = api.GetLineIDsWithType(modelID, IFC.IFCRELASSOCIATESMATERIAL);
+        for (var mi = 0; mi < matRelIds.size(); mi++) {
+          try {
+            var matRel = api.GetLine(modelID, matRelIds.get(mi));
+            var matName = '';
+            var rm = matRel.RelatingMaterial;
+            if (rm) {
+              if (rm.type === IFC.IFCMATERIALLAYERSETUSAGE || rm.type === IFC.IFCMATERIALLAYERSET) {
+                var ls = rm.type === IFC.IFCMATERIALLAYERSETUSAGE ? api.GetLine(modelID, rm.ForLayerSet.value) : rm;
+                if (ls.MaterialLayers) {
+                  var names = [];
+                  for (var li = 0; li < ls.MaterialLayers.length; li++) {
+                    var layer = api.GetLine(modelID, ls.MaterialLayers[li].value);
+                    if (layer.Material) { var mm = api.GetLine(modelID, layer.Material.value); names.push(safeStr(mm.Name)); }
+                  }
+                  matName = names.filter(Boolean).join(' / ');
+                }
+              } else { matName = safeStr(rm.Name); }
+            }
+            if (matName && matRel.RelatedObjects) {
+              matRel.RelatedObjects.forEach(function(ro) { matMap[ro.value || ro] = matName; });
+            }
+          } catch (e2) {}
+        }
+      } catch (e) {}
+
+      // Build related pairs (void/fill relationships)
+      var relatedPairs = {};
+      try {
+        var voidIds = api.GetLineIDsWithType(modelID, IFC.IFCRELVOIDSELEMENT);
+        for (var vi = 0; vi < voidIds.size(); vi++) {
+          try {
+            var vr = api.GetLine(modelID, voidIds.get(vi));
+            var bldEid = vr.RelatingBuildingElement ? (vr.RelatingBuildingElement.value || vr.RelatingBuildingElement) : null;
+            var openEid = vr.RelatedOpeningElement ? (vr.RelatedOpeningElement.value || vr.RelatedOpeningElement) : null;
+            if (bldEid && openEid) { relatedPairs[bldEid + ':' + openEid] = true; relatedPairs[openEid + ':' + bldEid] = true; }
+          } catch (e3) {}
+        }
+        var fillIds = api.GetLineIDsWithType(modelID, IFC.IFCRELFILLSVOID);
+        for (var fi = 0; fi < fillIds.size(); fi++) {
+          try {
+            var fr = api.GetLine(modelID, fillIds.get(fi));
+            var openId = fr.RelatingOpeningElement ? (fr.RelatingOpeningElement.value || fr.RelatingOpeningElement) : null;
+            var fillId = fr.RelatedBuildingElement ? (fr.RelatedBuildingElement.value || fr.RelatedBuildingElement) : null;
+            if (openId && fillId) { relatedPairs[openId + ':' + fillId] = true; relatedPairs[fillId + ':' + openId] = true; }
+          } catch (e4) {}
+        }
+      } catch (e) {}
+
+      // Collect all element IDs that have geometry (via StreamAllMeshes, but don't extract geo)
+      var elementIds = [];
+      try {
+        api.StreamAllMeshes(modelID, function(ifcMesh) {
+          elementIds.push(ifcMesh.expressID);
+        });
+      } catch (e) {}
+
+      if (onProgress) onProgress('Extracting properties for ' + elementIds.length + ' elements…');
+
+      // Extract properties for every element, keyed by GlobalId
+      var propsByGlobalId = {};
+      var propsByExpressId = {};
+      elementIds.forEach(function(eid) {
+        var props = extractProperties(api, modelID, eid);
+        props.storey = storeyResult.map[eid] || '';
+        props.material = matMap[eid] || '';
+        var pm = propMap[eid];
+        if (pm) { props.quantities = pm.quantities; props.psets = pm.psets; }
+        if (props.globalId) propsByGlobalId[props.globalId] = props;
+        propsByExpressId[eid] = props;
+      });
+
+      api.CloseModel(modelID);
+      if (onProgress) onProgress('IFC metadata ready (' + elementIds.length + ' elements)');
+
+      var sortedStoreyNames = storeyResult.data.map(function(sd){ return sd.name; });
+      return {
+        propsByGlobalId: propsByGlobalId,
+        propsByExpressId: propsByExpressId,
+        storeys: sortedStoreyNames,
+        storeyData: storeyResult.data,
+        spatialHierarchy: spatialHierarchy,
+        relatedPairs: relatedPairs,
+        elementCount: elementIds.length
+      };
+    });
+  }
+
+  // Join GLB meshes with IFC metadata by GlobalId, producing the same result shape as loadIFC
+  function joinGLBWithIFC(glbResult, ifcMeta, fileName, onProgress) {
+    if (onProgress) onProgress('Joining GLB geometry with IFC metadata…');
+    var meshes = glbResult.meshes;
+    var meshByGid = glbResult.meshByGid;
+    var elements = [];
+    var matched = 0, unmatched = 0;
+
+    // For each GlobalId in GLB, find the matching IFC properties
+    var processedGids = {};
+    Object.keys(meshByGid).forEach(function(gid) {
+      processedGids[gid] = true;
+      var elMeshes = meshByGid[gid];
+      var props = ifcMeta.propsByGlobalId[gid];
+      if (!props) {
+        // No IFC match — create minimal props from GLB data
+        unmatched++;
+        props = {expressId: 0, globalId: gid, ifcType: 'Element', name: gid, description: '', objectType: '', storey: '', material: '', quantities: {}, psets: {}};
+      } else {
+        matched++;
+      }
+
+      // Assign expressId to mesh userData for picking/highlighting
+      elMeshes.forEach(function(m) { m.userData.expressId = props.expressId || elements.length + 1; });
+
+      // Compute bounding box
+      var box = new THREE.Box3();
+      elMeshes.forEach(function(m) { box.expandByObject(m); });
+
+      elements.push({
+        expressId: props.expressId || elements.length + 1,
+        meshes: elMeshes,
+        box: box,
+        props: props
+      });
+    });
+
+    // Also include IFC elements that weren't in the GLB (metadata-only, no geometry)
+    // These won't be visible but their properties are available for queries
+    if (ifcMeta.propsByGlobalId) {
+      Object.keys(ifcMeta.propsByGlobalId).forEach(function(gid) {
+        if (processedGids[gid]) return;
+        // Skip elements with no geometry representation in GLB
+      });
+    }
+
+    var joinRate = matched + unmatched > 0 ? Math.round(matched / (matched + unmatched) * 100) : 0;
+    console.log('%c[GLB+IFC] ' + fileName + ': ' + matched + ' matched, ' + unmatched + ' unmatched (' + joinRate + '% join rate)', 'color:#22c55e;font-weight:bold');
+    if (onProgress) onProgress('Joined: ' + matched + '/' + (matched + unmatched) + ' elements (' + joinRate + '%)');
+
+    return {
+      meshes: meshes,
+      elements: elements,
+      storeys: ifcMeta.storeys || [],
+      storeyData: ifcMeta.storeyData || [],
+      spatialHierarchy: ifcMeta.spatialHierarchy || {},
+      relatedPairs: ifcMeta.relatedPairs || {},
+      stats: {
+        loadTime: 0,  // will be set by caller
+        fileSize: 0,
+        elementCount: elements.length,
+        meshCount: meshes.length,
+        glbJoinRate: joinRate,
+        glbMatched: matched,
+        glbUnmatched: unmatched
+      }
+    };
+  }
+
+  // Load GLB with optional sidecar JSON metadata (no IFC needed)
+  function joinGLBWithSidecar(glbResult, sidecarJSON, onProgress) {
+    if (onProgress) onProgress('Applying sidecar metadata…');
+    var meshByGid = glbResult.meshByGid;
+    var elements = [];
+    var meta = sidecarJSON || {};
+    var elementMeta = meta.elements || {};
+
+    Object.keys(meshByGid).forEach(function(gid) {
+      var elMeshes = meshByGid[gid];
+      var sc = elementMeta[gid] || {};
+      var props = {
+        expressId: sc.expressId || elements.length + 1,
+        globalId: gid,
+        ifcType: sc.ifcType || sc.category || 'Element',
+        name: sc.name || gid,
+        description: sc.description || '',
+        objectType: sc.objectType || '',
+        storey: sc.storey || '',
+        material: sc.material || '',
+        quantities: sc.quantities || {},
+        psets: sc.psets || {}
+      };
+      // Copy Revit-specific sidecar data (from MetadataWriter.cs)
+      if (sc.phase) props.phase = sc.phase;
+      if (sc.workset) props.workset = sc.workset;
+      if (sc.designOption) props.designOption = sc.designOption;
+      if (sc.hostId) props.hostId = sc.hostId;
+      if (sc.layers) props.layers = sc.layers;
+      if (sc.flipState) props.flipState = sc.flipState;
+      if (sc.constraints) props.constraints = sc.constraints;
+      if (sc.hostRelationships) props.hostRelationships = sc.hostRelationships;
+
+      elMeshes.forEach(function(m) { m.userData.expressId = props.expressId; });
+      var box = new THREE.Box3();
+      elMeshes.forEach(function(m) { box.expandByObject(m); });
+      elements.push({expressId: props.expressId, meshes: elMeshes, box: box, props: props});
+    });
+
+    return {
+      meshes: glbResult.meshes,
+      elements: elements,
+      storeys: meta.storeys || [],
+      storeyData: meta.storeyData || [],
+      spatialHierarchy: meta.spatialHierarchy || {},
+      relatedPairs: meta.relatedPairs || {},
+      stats: {elementCount: elements.length, meshCount: glbResult.meshes.length}
+    };
+  }
+
   // ── Model Sidebar ──────────────────────────────────────────────
 
   // Auto-detect discipline from IFC types
@@ -6847,12 +7125,134 @@ function startApp() {
       var errors = [];
       var chain = Promise.resolve();
       var totalIfc = 0, doneIfc = 0;
+
+      // ── Group files by base name to detect GLB+IFC pairs ──
+      var byBase = {}; // baseName → {glb, ifc, ifcmeta, other:[]}
+      files.forEach(function(f) {
+        var ext = f.name.split('.').pop().toLowerCase();
+        var base = f.name.replace(/\.[^.]+$/, '');
+        if (!byBase[base]) byBase[base] = {glb:null, ifc:null, ifcmeta:null};
+        if (ext === 'glb' || ext === 'gltf') byBase[base].glb = f;
+        else if (ext === 'ifc') byBase[base].ifc = f;
+        else if (ext === 'ifcmeta' || (ext === 'json' && f.name.indexOf('.ifcmeta') !== -1)) byBase[base].ifcmeta = f;
+      });
+
+      // Process GLB+IFC pairs first
+      var pairedBases = {};
+      Object.keys(byBase).forEach(function(base) {
+        var grp = byBase[base];
+        if (grp.glb && (grp.ifc || grp.ifcmeta)) {
+          pairedBases[base] = true;
+          chain = chain.then(function() {
+            setLoading(true);
+            var t0 = performance.now();
+            var _onProg = function(msg) {
+              setLoadMsg(base + ': ' + msg);
+              window._ccModelLoadMsg = base + ': ' + msg;
+              window.dispatchEvent(new CustomEvent('cc-model-loading', {detail:{loading:true, msg:base+': '+msg}}));
+            };
+            _onProg('Loading GLB geometry…');
+            return grp.glb.arrayBuffer().then(function(glbBuf) {
+              return loadGLB(glbBuf, base, _onProg).then(function(glbResult) {
+                // Load IFC metadata or sidecar
+                var metaPromise;
+                if (grp.ifc) {
+                  metaPromise = grp.ifc.arrayBuffer().then(function(ifcBuf) {
+                    return loadIFCMetadataOnly(ifcBuf, _onProg);
+                  });
+                } else {
+                  metaPromise = grp.ifcmeta.text().then(function(txt) {
+                    return JSON.parse(txt);
+                  });
+                }
+                return metaPromise.then(function(meta) {
+                  var result;
+                  if (grp.ifc) {
+                    result = joinGLBWithIFC(glbResult, meta, base, _onProg);
+                  } else {
+                    result = joinGLBWithSidecar(glbResult, meta, _onProg);
+                  }
+                  result.stats.loadTime = Math.round(performance.now() - t0);
+                  result.stats.fileSize = grp.glb.size + (grp.ifc ? grp.ifc.size : grp.ifcmeta.size);
+                  var disc = detectDiscipline(result.elements);
+                  var dObj = DISC.find(function(x){return x.id===disc;});
+                  var col = dObj ? dObj.c : DISC[0].c;
+                  var modelId = uid();
+                  d({t:A.ADD_MODEL, v:{id:modelId, name:base, discipline:disc, color:col, visible:true, _version:1,
+                    meshes:result.meshes, elements:result.elements, storeys:result.storeys||[],
+                    storeyData:result.storeyData||[], spatialHierarchy:result.spatialHierarchy||{},
+                    relatedPairs:result.relatedPairs||{}, stats:result.stats}});
+                  _gcEvent('glb-ifc-paired', base);
+                  _onProg('Model ready (' + result.stats.loadTime + 'ms)');
+                });
+              });
+            }).catch(function(er) {
+              console.error(er);
+              errors.push(base + ' (GLB+IFC): ' + (er.message || 'Load failed'));
+            });
+          });
+        }
+      });
+
+      // Process standalone GLB files (geometry only, no IFC metadata)
+      Object.keys(byBase).forEach(function(base) {
+        var grp = byBase[base];
+        if (grp.glb && !grp.ifc && !grp.ifcmeta && !pairedBases[base]) {
+          chain = chain.then(function() {
+            setLoading(true);
+            var t0 = performance.now();
+            var _onProg = function(msg) { setLoadMsg(base + ': ' + msg); };
+            return grp.glb.arrayBuffer().then(function(glbBuf) {
+              return loadGLB(glbBuf, base, _onProg).then(function(glbResult) {
+                // Create minimal element data from GLB meshes
+                var elements = [];
+                Object.keys(glbResult.meshByGid).forEach(function(gid) {
+                  var elMeshes = glbResult.meshByGid[gid];
+                  var eid = elements.length + 1;
+                  elMeshes.forEach(function(m) { m.userData.expressId = eid; });
+                  var box = new THREE.Box3();
+                  elMeshes.forEach(function(m) { box.expandByObject(m); });
+                  elements.push({expressId:eid, meshes:elMeshes, box:box,
+                    props:{expressId:eid, globalId:gid, ifcType:'Element', name:gid, description:'', objectType:'', storey:'', material:'', quantities:{}, psets:{}}});
+                });
+                // Meshes with no GlobalId — group as single element
+                var orphans = glbResult.meshes.filter(function(m){ return !m.userData.globalId; });
+                if (orphans.length) {
+                  var eid = elements.length + 1;
+                  orphans.forEach(function(m){ m.userData.expressId = eid; });
+                  var box = new THREE.Box3();
+                  orphans.forEach(function(m){ box.expandByObject(m); });
+                  elements.push({expressId:eid, meshes:orphans, box:box,
+                    props:{expressId:eid, globalId:'', ifcType:'Element', name:'Ungrouped', description:'', objectType:'', storey:'', material:'', quantities:{}, psets:{}}});
+                }
+                var modelId = uid();
+                d({t:A.ADD_MODEL, v:{id:modelId, name:base, discipline:'architectural', color:DISC[2].c, visible:true, _version:1,
+                  meshes:glbResult.meshes, elements:elements, storeys:[], storeyData:[], spatialHierarchy:{}, relatedPairs:{},
+                  stats:{loadTime:Math.round(performance.now()-t0), fileSize:grp.glb.size, elementCount:elements.length, meshCount:glbResult.meshes.length}}});
+                _gcEvent('glb-standalone', base);
+              });
+            }).catch(function(er) {
+              console.error(er);
+              errors.push(base + ' (GLB): ' + (er.message || 'Load failed'));
+            });
+          });
+        }
+      });
+
+      // Process remaining files (IFC, DXF, PDF — existing pipeline)
       files.forEach(function(f) {
         var ext = f.name.split('.').pop().toLowerCase();
         if (ext === 'ifc') totalIfc++;
       });
+      // Subtract paired IFCs from count
+      Object.keys(pairedBases).forEach(function(base) { if (byBase[base].ifc) totalIfc--; });
       files.forEach(function(f) {
         var ext = f.name.split('.').pop().toLowerCase();
+        var base = f.name.replace(/\.[^.]+$/, '');
+        // Skip files already handled as pairs
+        if (pairedBases[base]) return;
+        // Skip GLB files (already handled above)
+        if (ext === 'glb' || ext === 'gltf' || ext === 'ifcmeta') return;
         if (ext === 'dwg') {
           errors.push(f.name + ': DWG cannot be parsed in-browser. Convert to DXF first.');
           return;
@@ -7004,9 +7404,9 @@ function startApp() {
           <span style=${{fontSize:'0.8rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Models</span>
           <span style=${{fontSize:'0.8rem',color:'var(--text-faint)'}}>${s.models.length} loaded</span>
         </div>
-        <input ref=${fileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${onFiles} />
+        <input ref=${fileRef} type="file" accept=".ifc,.glb,.gltf,.ifcmeta" multiple style=${{display:'none'}} onChange=${onFiles} />
         <input ref=${file2dRef} type="file" accept=".dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${onFiles} />
-        <button class="cc-tip cc-tip-left" data-tip=${dragging?'Drop to load':'Add IFC / DXF / PDF'} onClick=${function(){setErr('');fileRef.current&&fileRef.current.click()}} disabled=${loading}
+        <button class="cc-tip cc-tip-left" data-tip=${dragging?'Drop to load':'Add IFC / GLB / DXF / PDF'} onClick=${function(){setErr('');fileRef.current&&fileRef.current.click()}} disabled=${loading}
           style=${{...S_BTN,width:'100%',background:dragging?'#1e3a5f':'var(--bg-secondary)',color:dragging?'#93c5fd':'var(--text-secondary)',border:dragging?'2px dashed #3b82f6':'1px dashed var(--border)',display:'flex',alignItems:'center',justifyContent:'center',gap:'.3rem',transition:'all .15s'}}>
           ${loading?html`<span class="spin">⟳</span>`:html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>`}
         </button>
@@ -14152,7 +14552,7 @@ function startApp() {
 
     var is2D = s.underlayMode === 'view2d' || s.underlayMode === 'compare';
     return html`<div style=${{height:'100vh',display:'flex',flexDirection:'row',overflow:'hidden'}}>
-      <input ref=${_gFileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
+      <input ref=${_gFileRef} type="file" accept=".ifc,.glb,.gltf,.ifcmeta" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <input ref=${_gFile2dRef} type="file" accept=".dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <${LeftRail} s=${s} d=${d} />
       <div style=${{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',minWidth:0}}>
