@@ -252,7 +252,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.53',hash:'3bbc091',date:'2026-03-27T12:20:40Z'};
+  var CC_VERSION = {v:'3.2.54',hash:'3e255d2',date:'2026-03-27T12:29:58Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -13223,10 +13223,10 @@ function startApp() {
     var prev = document.getElementById('_ccTourOverlay');
     if (prev) prev.parentNode.removeChild(prev);
 
-    // Caption overlay
+    // Caption overlay — centered at top of viewer, below training pill
     var overlay = document.createElement('div');
     overlay.id = '_ccTourOverlay';
-    overlay.style.cssText = 'position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;text-align:center;';
+    overlay.style.cssText = 'position:fixed;top:4.5rem;left:50%;transform:translateX(-50%);z-index:99999;pointer-events:none;text-align:center;';
     document.body.appendChild(overlay);
     var caption = document.createElement('div');
     caption.style.cssText = 'display:inline-block;background:rgba(0,0,0,0.75);color:#fff;font-family:system-ui,sans-serif;font-size:1.15rem;font-weight:500;padding:10px 28px;border-radius:12px;backdrop-filter:blur(8px);letter-spacing:0.01em;transition:opacity 0.4s;opacity:0;';
@@ -13402,8 +13402,23 @@ function startApp() {
     });
     at(2000, function() {
       d({t:'MODAL', v:true});
+      // Fill in the modal fields quickly
+      setTimeout(function() {
+        var titleInput = document.querySelector('[role="dialog"] input[type="text"]');
+        var descInput = document.querySelector('[role="dialog"] textarea');
+        if (titleInput) {
+          var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+          nativeSet.call(titleInput, 'Pipe clashes with structural beam — Level 2');
+          titleInput.dispatchEvent(new Event('input', {bubbles:true}));
+        }
+        if (descInput) {
+          var nativeSetTA = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+          nativeSetTA.call(descInput, 'MEP pipe penetrates concrete beam at grid B3. Needs rerouting or sleeve.');
+          descInput.dispatchEvent(new Event('input', {bubbles:true}));
+        }
+      }, 400);
     });
-    at(2500, function() {
+    at(3000, function() {
       d({t:'MODAL', v:false});
     });
 
@@ -13414,13 +13429,31 @@ function startApp() {
       zoomAll();
     });
 
-    // ─── 10. Measurement tools ───
+    // ─── 10. Measurement tools — add a real measurement ───
     at(2500, function() {
       showCaption('Built-in measurement tools');
       d({t:'MEASURE_MODE', v:'length'});
+      // Create a measurement between two points on the model
+      var s = window._ccLatestState;
+      if (s && s.clashes.length >= 2) {
+        var p1 = s.clashes[0].point;
+        var p2 = s.clashes[Math.min(1, s.clashes.length - 1)].point;
+        if (p1 && p2) {
+          var dx = p1[0]-p2[0], dy = p1[1]-p2[1], dz = p1[2]-p2[2];
+          var dist = Math.sqrt(dx*dx+dy*dy+dz*dz);
+          var label = dist < 1 ? (dist*1000).toFixed(0)+'mm' : dist.toFixed(2)+'m';
+          d({t:A.ADD_MEASUREMENT, v:{id:uid(), type:'length', value:dist, label:label, points:[p1, p2]}});
+          invalidate(10);
+        }
+      }
       smoothOrbit(40, 2500);
     });
     at(3000, function() {
+      // Remove the measurement and exit measure mode
+      var s = window._ccLatestState;
+      if (s && s.measurements.length > 0) {
+        d({t:A.DEL_MEASUREMENT, id:s.measurements[s.measurements.length - 1].id});
+      }
       d({t:'MEASURE_MODE', v:null});
     });
 
@@ -13431,30 +13464,30 @@ function startApp() {
       smoothOrbit(35, 2500);
     });
 
-    // ─── 12. Toggle render styles — orbit through each ───
+    // ─── 12. Toggle render styles — continuous orbit, switch mid-rotation ───
     at(3000, function() {
       showCaption('Switch rendering styles');
       d({t:'UPD_PREFS', u:{renderStyle:'wireframe'}});
       invalidate(10);
-      smoothOrbit(30, 1500);
-    });
-    at(1800, function() {
-      d({t:'UPD_PREFS', u:{renderStyle:'shaded'}});
-      invalidate(10);
-      smoothOrbit(30, 1500);
-    });
-    at(1800, function() {
-      d({t:'UPD_PREFS', u:{renderStyle:'rendered'}});
-      invalidate(10);
-      smoothOrbit(30, 1500);
-    });
-    at(1800, function() {
-      d({t:'UPD_PREFS', u:{renderStyle:'standard'}});
-      invalidate(10);
+      // One continuous orbit for the entire style sequence
+      smoothOrbit(120, 7000);
+      // Switch styles at intervals during the orbit
+      setTimeout(function() {
+        d({t:'UPD_PREFS', u:{renderStyle:'shaded'}});
+        invalidate(10);
+      }, 1800);
+      setTimeout(function() {
+        d({t:'UPD_PREFS', u:{renderStyle:'rendered'}});
+        invalidate(10);
+      }, 3600);
+      setTimeout(function() {
+        d({t:'UPD_PREFS', u:{renderStyle:'standard'}});
+        invalidate(10);
+      }, 5400);
     });
 
     // ─── 13. Training mode teaser ───
-    at(1500, function() {
+    at(7500, function() {
       showCaption('AI-powered clash analysis — train your own model');
       d({t:'TRAINING_MODE', v:true});
       d({t:'TAB', v:'clashes'});
