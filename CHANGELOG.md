@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.2.54 (2026-03-27)
+- Tour: move NL typing to step 1, zoom-all before create issue, type CTA in input
+
 ## v3.2.53 (2026-03-27)
 - Fix app not loading — undefined nextIdx variable in _ccAdvanceToNext
 
