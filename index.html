@@ -252,7 +252,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.2.57',hash:'1e6ed95',date:'2026-03-27T12:53:50Z'};
+  var CC_VERSION = {v:'3.2.58',hash:'54a8808',date:'2026-03-27T12:55:54Z'};
 
   // ── AI Data Collection (Phase 0.5) ──
   var CLASH_DATA_ENDPOINT = 'https://your-server.com/api/clash-data';
@@ -13223,6 +13223,36 @@ function startApp() {
     _nlModelStatus = 'ready';
     _nlBackend = 'browser';
 
+    // ── Diagnostics (F12 console only) ──
+    var _tourStart = performance.now();
+    var _stepTimings = [];
+    var _frameTimes = [];
+    var _frameRafId = null;
+    var _lastFrame = performance.now();
+    function _trackFrames() {
+      var now = performance.now();
+      _frameTimes.push(now - _lastFrame);
+      _lastFrame = now;
+      _frameRafId = requestAnimationFrame(_trackFrames);
+    }
+    _frameRafId = requestAnimationFrame(_trackFrames);
+    function _logStep(idx, name) {
+      var elapsed = ((performance.now() - _tourStart) / 1000).toFixed(1);
+      var recent = _frameTimes.slice(-30);
+      var avgFt = recent.length ? (recent.reduce(function(a,b){return a+b;},0)/recent.length) : 0;
+      var fps = avgFt > 0 ? (1000/avgFt).toFixed(0) : '?';
+      var minFps = recent.length ? (1000/Math.max.apply(null,recent)).toFixed(0) : '?';
+      _stepTimings.push({step:idx, name:name, t:elapsed, fps:fps, minFps:minFps});
+      console.log('%c Step '+idx+' %c '+name+' %c '+elapsed+'s  '+fps+' fps (min '+minFps+')',
+        'background:#2563eb;color:#fff;padding:1px 6px;border-radius:3px;font-weight:bold',
+        'color:#93c5fd;font-weight:600',
+        'color:#6b7280');
+    }
+
+    // ── Preload: force a render pass + warm up ghost material ──
+    invalidate(5);
+    if (S._ghostMat) S._ghostMat.needsUpdate = true;
+
     // Remove any previous tour overlay
     var prev = document.getElementById('_ccTourOverlay');
     if (prev) prev.parentNode.removeChild(prev);
@@ -13240,7 +13270,8 @@ function startApp() {
     var caption = document.createElement('div');
     caption.style.cssText = 'display:inline-block;background:rgba(0,0,0,0.75);color:#fff;font-family:system-ui,sans-serif;font-size:1.15rem;font-weight:500;padding:10px 28px;border-radius:12px;backdrop-filter:blur(8px);letter-spacing:0.01em;transition:opacity 0.4s;opacity:0;';
     overlay.appendChild(caption);
-    function showCaption(text) { caption.textContent = text; caption.style.opacity = '1'; }
+    var _captionCount = 0;
+    function showCaption(text) { caption.textContent = text; caption.style.opacity = '1'; _logStep(++_captionCount, text); }
     function hideCaption() { caption.style.opacity = '0'; }
 
     // Smooth orbit helper
@@ -13268,8 +13299,16 @@ function startApp() {
     function run() {
       if (cur >= steps.length) {
         hideCaption();
-        setTimeout(function(){ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 600);
+        if (_frameRafId) cancelAnimationFrame(_frameRafId);
+        var totalTime = ((performance.now() - _tourStart) / 1000).toFixed(1);
+        var allFt = _frameTimes.filter(function(f){return f<200;}); // ignore outliers
+        var avgFps = allFt.length ? (1000/(allFt.reduce(function(a,b){return a+b;},0)/allFt.length)).toFixed(0) : '?';
+        var dropped = _frameTimes.filter(function(f){return f>33;}).length;
         console.log('%c Demo tour complete! ', 'background:#10b981;color:#fff;font-weight:bold;padding:2px 8px;border-radius:4px');
+        console.log('%c Tour summary: '+totalTime+'s total | avg '+avgFps+' fps | '+dropped+' dropped frames (>33ms)',
+          'color:#10b981;font-weight:600');
+        console.table(_stepTimings);
+        setTimeout(function(){ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 600);
         return;
       }
       var s = steps[cur++];
@@ -13496,12 +13535,11 @@ function startApp() {
       smoothOrbit(30, 2500);
     });
 
-    // ─── 11b. Set default clearances ───
+    // ─── 11b. Show standards tab for clearances ───
     at(3000, function() {
-      showCaption('Set default clearances for detection');
-      d({t:'UPD_RULES', u:{maxGap:75}});
-      d({t:'TAB', v:'clashes'});
-      smoothOrbit(25, 2000);
+      showCaption('Set default clearances per discipline');
+      d({t:'TAB', v:'standards'});
+      smoothOrbit(25, 2500);
     });
 
     // ─── 12. Toggle render styles — slow continuous orbit, switch mid-rotation ───

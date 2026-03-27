@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.2.58 (2026-03-27)
+- Tour: show confirm panel, replace BCF export with model tree + clearances
+
 ## v3.2.57 (2026-03-27)
 - Tour: override AI status to show as loaded during demo
 
