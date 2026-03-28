@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.38 (2026-03-28)
+- Add _ccCompareModels() console helper
+
 ## v3.3.37 (2026-03-28)
 - Remove element data panel from model card UI (console-only)
 
