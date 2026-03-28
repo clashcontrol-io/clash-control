@@ -13869,7 +13869,7 @@ function startApp() {
       display:'flex',flexDirection:'column',overflow:'visible',userSelect:'none',position:'relative',zIndex:10
     }}>
       <div style=${{height:48,borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}></div>
-      ${tabBtn('models',  SVG_MODELS,  'Models',   0)}
+      ${tabBtn('models',  SVG_MODELS,  'Models',   s.models.length)}
       ${tabBtn('clashes', SVG_CLASHES, 'Clashes',  clashN)}
       ${tabBtn('issues',  SVG_ISSUES,  'Issues',   issueN)}
       ${tabBtn('navigator',SVG_EXPLORE, 'Navigator', 0)}
