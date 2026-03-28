@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.32 (2026-03-28)
+- fix: handle black/missing colors in GLB material loading
+
 ## v3.3.31 (2026-03-28)
 - feat: add load profiler to model card
 
