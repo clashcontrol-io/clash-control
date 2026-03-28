@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.18 (2026-03-28)
+- Add Save/Import Project buttons to Tools panel
+
 ## v3.3.17 (2026-03-28)
 - Add BCF export with version choice to Tools panel
 

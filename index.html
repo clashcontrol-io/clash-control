@@ -260,7 +260,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.3.17',hash:'45a6b1c',date:'2026-03-28T04:33:10Z'};
+  var CC_VERSION = {v:'3.3.18',hash:'715f1be',date:'2026-03-28T04:35:25Z'};
 
   // ── GoatCounter event helper (no-op if GoatCounter not configured) ──
   function _gcEvent(name, title) {
@@ -6574,7 +6574,9 @@ function startApp() {
     {sel:'.cc-nlpanel-closed,.cc-nlpanel', pos:'top', title:'AI Chat',
       text:'Press / to open. Type natural language commands like "check structural vs MEP", "find clashes within 50mm", or "help" to see all available commands.'},
     {sel:'.cc-overlay-info', pos:'bottom', title:'Viewport Info',
-      text:'Shows loaded model count, detected clashes, and rendering performance. Click to see detailed stats.'}
+      text:'Shows loaded model count, detected clashes, and rendering performance. Click to see detailed stats.'},
+    {sel:'.cc-header-actions,.cc-mobile-nav', pos:'bottom', title:'Save & Share Projects',
+      text:'Use Save Project to export your clashes, issues, viewpoints, and settings as a .ccproject file. Share it with other teams — they can Import Project to see your exact results, continue your work, or add their own findings. Find these in the Tools tab or header bar.'}
   ];
 
   function GuidedTour(props) {
@@ -6730,12 +6732,18 @@ function startApp() {
       <div style=${{display:'flex',alignItems:'center',gap:'.75rem'}}>
         <div style=${{position:'relative'}}>
           <div style=${{width:32,height:32,background:'var(--accent)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}} title="ClashControl — tap for version info" onClick=${function(){setShowVer(!showVer);}}><span style=${{color:'#fff',fontWeight:900,fontSize:14}}>CC</span></div>
-          ${showVer && html`<div style=${{position:'absolute',top:38,left:0,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,padding:'.6rem .8rem',zIndex:200,minWidth:200,boxShadow:'0 8px 24px rgba(0,0,0,.4)',fontSize:'0.83rem',color:'var(--text-primary)',whiteSpace:'nowrap'}} onClick=${function(e){e.stopPropagation();}}>
+          ${showVer && html`<div style=${{position:'absolute',top:38,left:0,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,padding:'.6rem .8rem',zIndex:200,minWidth:220,boxShadow:'0 8px 24px rgba(0,0,0,.4)',fontSize:'0.83rem',color:'var(--text-primary)',whiteSpace:'nowrap'}} onClick=${function(e){e.stopPropagation();}}>
             <div style=${{fontWeight:700,marginBottom:'.3rem'}}>ClashControl</div>
             <div style=${{color:'var(--text-muted)'}}>Version <strong>v${CC_VERSION.v}</strong></div>
             <div style=${{color:'var(--text-faint)',marginTop:'.2rem'}}>Build: ${CC_VERSION.hash}</div>
             <div style=${{color:'var(--text-faint)'}}>${new Date(CC_VERSION.date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</div>
-            <div style=${{marginTop:'.4rem',borderTop:'1px solid var(--border-subtle)',paddingTop:'.3rem',color:'var(--text-faint)',fontSize:'0.75rem'}}>Free, open-source IFC clash detection</div>
+            <div style=${{marginTop:'.5rem',borderTop:'1px solid var(--border-subtle)',paddingTop:'.4rem',display:'flex',flexDirection:'column',gap:'.3rem'}}>
+              <button onClick=${function(){setShowVer(false);if(window._ccToggleTutorial)window._ccToggleTutorial();}}
+                style=${{...S_BTN,width:'100%',padding:'.35rem .5rem',background:'var(--accent)',color:'#fff',fontSize:'0.8rem',fontWeight:600,borderRadius:6,textAlign:'center',justifyContent:'center'}}}>Quick Start Guide</button>
+              <button onClick=${function(){setShowVer(false);if(window._ccStartTour)window._ccStartTour();}}
+                style=${{...S_BTN,width:'100%',padding:'.35rem .5rem',background:'#7c3aed',color:'#fff',fontSize:'0.8rem',fontWeight:600,borderRadius:6,textAlign:'center',justifyContent:'center'}}}>Interactive Tour</button>
+            </div>
+            <div style=${{marginTop:'.3rem',fontSize:'0.69rem',color:'var(--text-faint)'}}>Free, open-source IFC clash detection</div>
           </div>`}
         </div>
         <div>
