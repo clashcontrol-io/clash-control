@@ -7311,6 +7311,11 @@ function startApp() {
                     ? (grp.ifcmeta ? 'GLB+props+meta' : 'GLB+props')
                     : (ifcMeta ? (grp.ifcmeta ? 'GLB+IFC+meta' : 'GLB+IFC') : 'GLB+meta');
                   result.stats.loadType = _loadType;
+                  var totalSize = grp.glb.size;
+                  if (grp.ifc) totalSize += grp.ifc.size;
+                  if (grp.ifcmeta) totalSize += grp.ifcmeta.size;
+                  if (grp.ifcprops) totalSize += grp.ifcprops.size;
+                  result.stats.fileSize = totalSize;
                   // Console profiler (matches IFC load profile output)
                   (function() {
                     var ph = _phases, prev = 0, total = result.stats.loadTime;
@@ -7328,11 +7333,6 @@ function startApp() {
                     console.table(rows);
                     console.groupEnd();
                   }());
-                  var totalSize = grp.glb.size;
-                  if (grp.ifc) totalSize += grp.ifc.size;
-                  if (grp.ifcmeta) totalSize += grp.ifcmeta.size;
-                  if (grp.ifcprops) totalSize += grp.ifcprops.size;
-                  result.stats.fileSize = totalSize;
                   var disc = detectDiscipline(result.elements);
                   var dObj = DISC.find(function(x){return x.id===disc;});
                   var col = dObj ? dObj.c : DISC[0].c;
