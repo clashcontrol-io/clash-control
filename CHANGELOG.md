@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.29 (2026-03-28)
+- fix: correct _getIfcAPI typo to getIfcAPI in loadIFCMetadataOnly
+
 ## v3.3.28 (2026-03-28)
 - fix: remove strikethrough on completed roadmap item, add launch date Mar 27 2026
 
