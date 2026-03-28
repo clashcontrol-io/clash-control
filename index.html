@@ -5999,7 +5999,7 @@ function startApp() {
             ${ep.workset && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Workset</span><span style=${{color:'var(--text-primary)'}}>${ep.workset}</span></div>`}
             ${ep.designOption && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Design Option</span><span style=${{color:'var(--text-primary)'}}>${ep.designOption}</span></div>`}
             ${ep.hostId && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Host</span><span style=${{color:'var(--text-primary)'}}>${ep.hostId}</span></div>`}
-            ${ep.layers && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Layers</span><span style=${{color:'var(--text-primary)',maxWidth:'55%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${Array.isArray(ep.layers)?ep.layers.join(', '):ep.layers}>${Array.isArray(ep.layers)?ep.layers.join(', '):ep.layers}</span></div>`}
+            ${ep.layers && html`<div style=${{...ROW,fontSize:'0.75rem'}}><span style=${{color:'var(--text-muted)'}}>Layers</span><span style=${{color:'var(--text-primary)',maxWidth:'55%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${Array.isArray(ep.layers)?ep.layers.map(function(l){return typeof l==='object'&&l!==null?([l.function,l.material,l.width!=null?l.width+'mm':null].filter(Boolean).join(' ')||JSON.stringify(l)):String(l);}).join(' | '):String(ep.layers)}>${Array.isArray(ep.layers)?ep.layers.map(function(l){return typeof l==='object'&&l!==null?([l.function,l.material,l.width!=null?l.width+'mm':null].filter(Boolean).join(' ')||JSON.stringify(l)):String(l);}).join(' | '):String(ep.layers)}</span></div>`}
           </div>`}
           <div style=${{marginTop:'.3rem',paddingTop:'.2rem',borderTop:'1px solid var(--border-subtle)',display:'flex',justifyContent:'space-between',fontSize:'0.63rem',color:'var(--text-faint)',marginBottom:'.35rem'}}>
             <span>${ep&&ep.ifcType||''}</span>
@@ -7311,6 +7311,11 @@ function startApp() {
                     ? (grp.ifcmeta ? 'GLB+props+meta' : 'GLB+props')
                     : (ifcMeta ? (grp.ifcmeta ? 'GLB+IFC+meta' : 'GLB+IFC') : 'GLB+meta');
                   result.stats.loadType = _loadType;
+                  var totalSize = grp.glb.size;
+                  if (grp.ifc) totalSize += grp.ifc.size;
+                  if (grp.ifcmeta) totalSize += grp.ifcmeta.size;
+                  if (grp.ifcprops) totalSize += grp.ifcprops.size;
+                  result.stats.fileSize = totalSize;
                   // Console profiler (matches IFC load profile output)
                   (function() {
                     var ph = _phases, prev = 0, total = result.stats.loadTime;
@@ -7328,11 +7333,6 @@ function startApp() {
                     console.table(rows);
                     console.groupEnd();
                   }());
-                  var totalSize = grp.glb.size;
-                  if (grp.ifc) totalSize += grp.ifc.size;
-                  if (grp.ifcmeta) totalSize += grp.ifcmeta.size;
-                  if (grp.ifcprops) totalSize += grp.ifcprops.size;
-                  result.stats.fileSize = totalSize;
                   var disc = detectDiscipline(result.elements);
                   var dObj = DISC.find(function(x){return x.id===disc;});
                   var col = dObj ? dObj.c : DISC[0].c;
