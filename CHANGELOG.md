@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.42 (2026-03-28)
+- Hide GLB+sidecar import UI until Ifc2Ifc is fully released
+
 ## v3.3.41 (2026-03-28)
 - Prefer sidecar relatedPairs over IFC STEP pairs in joinGLBWithIFC; document expressId in .ifcprops
 
