@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.34 (2026-03-28)
+- Skip IFC STEP parsing when .ifcmeta or .ifcprops is present
+
 ## v3.3.33 (2026-03-28)
 - Add .ifcprops fast-loading path (replaces IFC STEP parsing)
 
