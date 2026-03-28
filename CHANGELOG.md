@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.22 (2026-03-28)
+- Support GLB+IFC+ifcmeta triple file loading
+
 ## v3.3.21 (2026-03-28)
 - Add background dismiss (click outside to close) for Settings modal and chatbox
 
