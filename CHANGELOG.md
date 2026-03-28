@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.3.23 (2026-03-28)
+- Add GLB+IFC+ifcmeta info to import tooltip and chatbox welcome message
+
+## v3.3.22 (2026-03-28)
+- Support GLB+IFC+ifcmeta triple file loading
+
+## v3.3.21 (2026-03-28)
+- Add background dismiss (click outside to close) for Settings modal and chatbox
+
+## v3.3.20 (2026-03-28)
+- Fix mobile logo popup visibility (z-index and positioning)
+
 ## v3.3.19 (2026-03-28)
 - Add tour/version popup on mobile logo tap and project collaboration tour step
 
