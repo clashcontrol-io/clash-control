@@ -7235,10 +7235,10 @@ function startApp() {
                   // Console profiler (matches IFC load profile output)
                   (function() {
                     var ph = _phases, prev = 0, total = result.stats.loadTime;
-                    var phaseOrder = ['GLB read','GLB parse','IFC file read','IFC metadata','Sidecar','Join'];
+                    var phaseOrder = Object.keys(ph).filter(function(k){return typeof ph[k]==='number';});
+                    phaseOrder.sort(function(a,b){return ph[a]-ph[b];});
                     var rows = [];
                     phaseOrder.forEach(function(name) {
-                      if (ph[name] == null) return;
                       var cum = Math.round(ph[name]), dt = Math.round(ph[name] - prev);
                       rows.push({Phase:name, Time:dt+'ms', Pct:Math.round(dt/total*100)+'%', Cumulative:cum+'ms'});
                       prev = ph[name];
@@ -7660,11 +7660,9 @@ function startApp() {
           var ph = m.stats.phases;
           var total = m.stats.loadTime;
           // Determine phase order based on load type
-          var IFC_PHASES = ['WASM ready','Model open','Property maps','Geometry stream','Element processing','Scene build'];
-          var GLB_PHASES = ['GLB read','GLB parse','IFC file read','IFC metadata','Sidecar','Join'];
-          var ordered = (m.stats.loadType === 'IFC' ? IFC_PHASES : GLB_PHASES).filter(function(n){ return ph[n] != null; });
-          // Fallback: sort by cumulative time
-          if (!ordered.length) { ordered = Object.keys(ph).filter(function(k){return typeof ph[k]==='number';}); ordered.sort(function(a,b){return ph[a]-ph[b];}); }
+          // Sort by actual completion time (cumulative from t0) so parallel phases stay positive
+          var ordered = Object.keys(ph).filter(function(k){return typeof ph[k]==='number';});
+          ordered.sort(function(a,b){return ph[a]-ph[b];});
           var prev = 0;
           var rows = ordered.map(function(name) {
             var dt = Math.round(ph[name] - prev);
