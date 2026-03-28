@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.40 (2026-03-28)
+- feat: GLB+meta pipeline — revitId, host-child hierarchy, opening suppression, relatedPairs
+
 ## v3.3.39 (2026-03-28)
 - Remove incorrect Z-up→Y-up rotation from GLB loader
 
