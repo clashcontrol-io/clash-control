@@ -6564,8 +6564,8 @@ function startApp() {
       text:'ClashControl is a free, open-source IFC clash detection tool that runs entirely in your browser. No installs, no licenses, no subscriptions — just open and go.'},
     {sel:'.cc-left-rail', title:'Left Sidebar',
       text:'Your main navigation. Load models, switch projects, save your session, import/export BCF files, and access settings — all from here.'},
-    {sel:'.cc-ifc-load-btn', title:'Load IFC / GLB / .ifcprops',
-      text:'Click to load an IFC model. For near-instant Revit loading, drop a GLB + .ifcprops bundle (skips slow IFC parsing). Also supports GLB + IFC + .ifcmeta. Create bundles with Ifc2Ifc.'},
+    {sel:'.cc-ifc-load-btn', title:'Load IFC',
+      text:'Click to load an IFC model.'},
     {sel:'.cc-bcf-actions', title:'Save, Share & BCF',
       text:'Save your entire session (clashes, issues, viewpoints) as a .ccproject file to share with teammates. Import/Export BCF for interoperability with Revit, Navisworks, and Solibri.'},
     {sel:'.cc-right-rail', title:'Right Panel',
@@ -7663,7 +7663,7 @@ function startApp() {
           <span style=${{fontSize:'0.8rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Models</span>
           <span style=${{fontSize:'0.8rem',color:'var(--text-faint)'}}>${s.models.length} loaded</span>
         </div>
-        <input ref=${fileRef} type="file" accept=".ifc,.glb,.gltf,.ifcmeta,.ifcprops" multiple style=${{display:'none'}} onChange=${onFiles} />
+        <input ref=${fileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${onFiles} />
         <input ref=${file2dRef} type="file" accept=".dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${onFiles} />
         <button class="cc-tip cc-tip-left" data-tip=${dragging?'Drop to load':'Add IFC / GLB / DXF / PDF'} title=${'Load IFC, GLB, DXF, or PDF.\n\nFor fast Revit import: drop IFC + GLB + .ifcmeta together.\n• GLB = pre-tessellated geometry (fast)\n• IFC = properties, storeys, spatial hierarchy\n• .ifcmeta = Revit data (phase, workset, design option, layers, constraints)\n\nCreate bundles with Ifc2Ifc:\ngithub.com/thomhoffer-arch/Ifc2Ifc'} onClick=${function(){setErr('');fileRef.current&&fileRef.current.click()}} disabled=${loading}
           style=${{...S_BTN,width:'100%',background:dragging?'#1e3a5f':'var(--bg-secondary)',color:dragging?'#93c5fd':'var(--text-secondary)',border:dragging?'2px dashed #3b82f6':'1px dashed var(--border)',display:'flex',alignItems:'center',justifyContent:'center',gap:'.3rem',transition:'all .15s'}}>
@@ -13309,7 +13309,7 @@ function startApp() {
     window._ccNLOpen = function(){ setOpen(true); if(inputRef.current) setTimeout(function(){inputRef.current&&inputRef.current.focus();},50); };
     window._ccNLSetInput = function(text){ setInput(text); };
     window._ccNLSetStatus = function(status, back){ setLLMStatus(status); setBackend(back); };
-    var stMsgs = useState([{role:'assistant', text:'Control ClashControl with plain English — try "load ifc", "load ifc + glb + ifcmeta", "structural vs MEP", "switch to light", "analyze clashes", or "help" for all commands.'}]);
+    var stMsgs = useState([{role:'assistant', text:'Control ClashControl with plain English — try "load ifc", "structural vs MEP", "switch to light", "analyze clashes", or "help" for all commands.'}]);
     var msgs = stMsgs[0], setMsgs = stMsgs[1];
     var stInput = useState(''), input = stInput[0], setInput = stInput[1];
     var stLoading = useState(false), loading = stLoading[0], setLoading = stLoading[1];
@@ -13966,7 +13966,7 @@ function startApp() {
           if(window._ccOpenIFC) window._ccOpenIFC();
         },
         html`<span style=${{fontWeight:700,fontSize:'0.8rem',letterSpacing:'.03em'}}>IFC</span>`,
-        'Load IFC model\nTip: drop GLB + .ifcprops for fast loading (skips IFC parsing)\nOr GLB + .ifcmeta for geometry + Revit metadata')}</div>
+        'Load IFC model')}</div>
       ${iconBtn(function(){
           if(window._ccOpen2D) window._ccOpen2D();
         },
@@ -14357,13 +14357,13 @@ function startApp() {
                 </div>
                 <div style=${{fontSize:'0.75rem',color:'var(--text-faint)',marginLeft:'1.3rem',lineHeight:1.5,marginTop:'.15rem'}}>Publish the full source code on GitHub. Free for everyone to use, inspect, and contribute to. No sign-up, no paywall \u2014 just open your browser and start clashing.</div>
               </div>
-              <div>
+              ${/* Faster model loading (GLB+sidecar) — hidden until Ifc2Ifc is fully released */ false && html`<div>
                 <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
                   <span style=${{color:'#a78bfa',fontSize:'0.9rem',animation:'roadmapGlow 2s ease-in-out infinite'}}>◉</span>
                   <span style=${{color:'var(--text-primary)',fontWeight:600}}>Faster model loading</span>
                 </div>
                 <div style=${{fontSize:'0.75rem',color:'var(--text-muted)',marginLeft:'1.3rem',lineHeight:1.5,marginTop:'.15rem'}}>Load Revit models near-instantly using GLB + IFC + .ifcmeta bundles — no heavy IFC geometry parsing. Create bundles with <a href="https://github.com/thomhoffer-arch/Ifc2Ifc" target="_blank" rel="noopener" style=${{color:'#60a5fa'}}>Ifc2Ifc</a>.</div>
-              </div>
+              </div>`}
               <div>
                 <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
                   <span style=${{color:'#a78bfa',fontSize:'0.9rem',animation:'roadmapGlow 2s ease-in-out infinite'}}>◉</span>
@@ -15239,7 +15239,7 @@ function startApp() {
 
     var is2D = s.underlayMode === 'view2d' || s.underlayMode === 'compare';
     return html`<div style=${{height:'100vh',display:'flex',flexDirection:'row',overflow:'hidden'}}>
-      <input ref=${_gFileRef} type="file" accept=".ifc,.glb,.gltf,.ifcmeta" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
+      <input ref=${_gFileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <input ref=${_gFile2dRef} type="file" accept=".dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <${LeftRail} s=${s} d=${d} />
       <div style=${{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',minWidth:0}}>
