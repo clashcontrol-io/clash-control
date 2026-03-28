@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.17 (2026-03-28)
+- Add BCF export with version choice to Tools panel
+
 ## v3.3.16 (2026-03-28)
 - Hide Developer/Fine-Tuning section from settings on mobile
 

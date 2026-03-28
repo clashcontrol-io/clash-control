@@ -260,7 +260,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.3.16',hash:'0005824',date:'2026-03-28T04:31:43Z'};
+  var CC_VERSION = {v:'3.3.17',hash:'45a6b1c',date:'2026-03-28T04:33:10Z'};
 
   // ── GoatCounter event helper (no-op if GoatCounter not configured) ──
   function _gcEvent(name, title) {
@@ -14079,6 +14079,19 @@ function startApp() {
     var SEC={fontSize:'0.86rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em',display:'block',marginBottom:'.4rem'};
     var sectionActive = s.sectionAxis || s.sectionCustom || (s.sectionBox && s.sectionBox.enabled);
     return html`<div style=${{display:'flex',flexDirection:'column',gap:0,overflowY:'auto',flex:1}}>
+
+      <!-- Project -->
+      <div style=${{padding:'.75rem',borderBottom:'1px solid var(--border-subtle)'}}>
+        <span style=${SEC}>Project</span>
+        <div style=${{display:'flex',gap:'.2rem'}}>
+          <button onClick=${function(){loadProject(d);}}
+            style=${{...S_BTN,flex:1,padding:'.3rem',fontSize:'0.8rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>Import Project</button>
+          <button onClick=${function(){saveProject(s);}}
+            disabled=${!s.models.length&&!s.clashes.length&&!s.issues.length}
+            style=${{...S_BTN,flex:1,padding:'.3rem',fontSize:'0.8rem',background:s.models.length||s.clashes.length||s.issues.length?'var(--accent)':'var(--bg-secondary)',color:s.models.length||s.clashes.length||s.issues.length?'#fff':'var(--text-faint)'}}>Save Project</button>
+        </div>
+        <span style=${{fontSize:'0.63rem',color:'var(--text-faint)',display:'block',marginTop:'.15rem'}}>Save/load clashes, issues, viewpoints, and settings as a .ccproject file</span>
+      </div>
 
       <!-- Section / Clipping -->
       <div style=${{padding:'.75rem',borderBottom:'1px solid var(--border-subtle)'}}>
