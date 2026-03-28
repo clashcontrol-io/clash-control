@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.27 (2026-03-28)
+- feat: move info btn to top of left rail, update roadmap
+
 ## v3.3.26 (2026-03-28)
 - feat: export/import clash rules, fix + New theme, speed tip LLM line, REVIT guide link
 
