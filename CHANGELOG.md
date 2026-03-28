@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.37 (2026-03-28)
+- Remove element data panel from model card UI (console-only)
+
 ## v3.3.36 (2026-03-28)
 - Add data quality checker + OmniClass LLM suggestion to model card
 
