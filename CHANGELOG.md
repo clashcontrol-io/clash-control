@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.15 (2026-03-28)
+- Increase chatbox bottom offset on mobile to clear nav tabs
+
 ## v3.3.14 (2026-03-28)
 - Add GLB+IFC paired loading for fast Revit model import
 

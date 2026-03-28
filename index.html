@@ -187,6 +187,8 @@
       .cc-overlay-top button{font-size:0.67rem!important;padding:.2rem .35rem!important}
       /* Tooltips: hide on touch */
       .cc-tip::after{display:none!important}
+      /* Generic mobile-hide utility */
+      .cc-hide-mobile{display:none!important}
       /* Header actions: allow wrapping on mobile */
       .cc-header-actions{flex-wrap:wrap!important;overflow:visible!important}
     }
@@ -258,7 +260,7 @@ window.onload = function() {
 
 function startApp() {
   // ── Version (auto-updated by pre-commit hook) ──
-  var CC_VERSION = {v:'3.3.14',hash:'9fd4582',date:'2026-03-28T04:27:23Z'};
+  var CC_VERSION = {v:'3.3.15',hash:'8372e5e',date:'2026-03-28T04:29:33Z'};
 
   // ── GoatCounter event helper (no-op if GoatCounter not configured) ──
   function _gcEvent(name, title) {
@@ -10348,8 +10350,10 @@ function startApp() {
               <option value="design">Design</option><option value="coordination">Coordination</option><option value="constructability">Constructability</option><option value="safety">Safety</option><option value="code_compliance">Code Compliance</option><option value="other">Other</option>
             </select></div>
         </div>
-        <div style=${SEC}>Developer / Fine-Tuning</div>
-        <${DevTrainingSection} models=${models} />
+        <div class="cc-hide-mobile">
+          <div style=${SEC}>Developer / Fine-Tuning</div>
+          <${DevTrainingSection} models=${models} />
+        </div>
       </div>`}
       ${settingsTab==='advanced' && html`<${AdvancedSettingsTab} d=${d} prefs=${p} models=${models} rules=${rules} SEC=${SEC} TROW=${TROW} TLBL=${TLBL} TSUB=${TSUB} LBL=${LBL} />`}
     </div></div>`;
