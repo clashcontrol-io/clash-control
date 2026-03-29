@@ -378,7 +378,8 @@ function startApp() {
     defaultMaxGap:_ccLoadPref('defaultMaxGap',50), resetFiltersOnRun:_ccLoadPref('resetFiltersOnRun',true),
     defaultTolerances:(function(){try{return JSON.parse(localStorage.getItem('cc_defaultTolerances'))||{};}catch(e){return {};}}()),
     theme:(function(){ try { return localStorage.getItem('cc_theme')||'dark'; } catch(e){ return 'dark'; } })(),
-    renderStyle:_ccLoadPref('renderStyle','standard') // 'standard','shaded','rendered','wireframe'
+    renderStyle:_ccLoadPref('renderStyle','standard'), // 'standard','shaded','rendered','wireframe'
+    ollamaEnabled:_ccLoadPref('ollamaEnabled',false) // off by default — enable in Settings to use local Ollama
   };
   var INIT = {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:null,
@@ -11164,6 +11165,12 @@ function startApp() {
           <${Toggle} on=${p.resetFiltersOnRun!==false} onToggle=${tog('resetFiltersOnRun')} />
         </div>
 
+        <div style=${SEC}>AI / Natural Language</div>
+        <div style=${TROW}>
+          <div><div style=${TLBL}>Use Ollama (local AI)</div><div style=${TSUB}>Connect to a locally running Ollama instance for faster, offline NL commands. Requires Ollama installed and a model pulled (e.g. qwen2.5:7b).</div></div>
+          <${Toggle} on=${!!p.ollamaEnabled} onToggle=${tog('ollamaEnabled')} />
+        </div>
+
         <div style=${SEC}>Issue Defaults</div>
         <div style=${{display:'flex',gap:'.5rem',padding:'.5rem 0'}}>
           <div style=${{flex:1}}><label style=${LBL}>Default Priority</label>
@@ -12648,8 +12655,8 @@ function startApp() {
       .replace('{{HARD}}', !!r.hard)
       .replace('{{MODEL_A}}', r.modelA || 'all').replace('{{MODEL_B}}', r.modelB || 'all');
 
-    // 3. Try Ollama first (local, fast, bigger model)
-    if (_ollamaAvailable) {
+    // 3. Try Ollama first (local, fast, bigger model) — only if user enabled it in Settings
+    if (_ollamaAvailable && s.prefs && s.prefs.ollamaEnabled) {
       _resetIdleTimer();
       return callOllama(prompt, raw)
         .then(function(text) { return _captureNL(text ? dispatchLLMAction(text, s, d) : null, 'ollama'); })
@@ -13650,25 +13657,26 @@ function startApp() {
       return function() { window.removeEventListener('keydown', onKey); };
     }, []);
 
-    // On first open: check Ollama → fallback to browser LLM
+    // On first open: check Ollama (if enabled in settings) → fallback to browser LLM
     useEffect(function() {
       if (!open) return;
       // Sync state
       setLLMStatus(_nlModelStatus);
       setBackend(_nlBackend);
       if (_nlBackend === 'ollama' || _nlModelStatus === 'ready') return;
-      // Check for Ollama
       var listener = function(st, pct) {
         setLLMStatus(st); setBackend(_nlBackend);
         if (typeof pct === 'number') setLLMProgress(pct);
       };
       _nlModelListeners.push(listener);
-      checkOllama().then(function(hasOllama) {
+      // Only probe Ollama when the user has explicitly enabled it in Settings
+      var _ollamaOn = s.prefs && s.prefs.ollamaEnabled;
+      (_ollamaOn ? checkOllama() : Promise.resolve(false)).then(function(hasOllama) {
         setBackend(_nlBackend);
         setLLMStatus(_nlModelStatus);
         if (!hasOllama) {
-          // Show Ollama tip, then start loading browser LLM
-          setShowOllamaTip(true);
+          // Show Ollama tip only when Ollama is enabled but not found
+          if (_ollamaOn) setShowOllamaTip(true);
           if (_nlModelStatus === 'idle') getNLPipeline().catch(function(){});
         }
       });
