@@ -1640,6 +1640,19 @@ function startApp() {
         }
       });
 
+      // Filter IfcOpeningElement (void cutter shapes — render as plugs in wall openings, not useful standalone)
+      // Consistent with GLB paths which call filterOpeningElements()
+      var _openingEids = {};
+      rawElements = rawElements.filter(function(el) {
+        if (el.props.ifcType === 'IfcOpeningElement') { _openingEids[el.expressId] = true; return false; }
+        return true;
+      });
+      var _openingCount = Object.keys(_openingEids).length;
+      if (_openingCount > 0) {
+        meshes = meshes.filter(function(m) { return !_openingEids[m.userData.expressId]; });
+        console.log('%c[IFC] Filtered ' + _openingCount + ' IfcOpeningElement (void cutters)', 'color:#94a3b8');
+      }
+
       // IfcSpace: include even when no geometry (Revit often exports rooms as spatial containers only)
       var _rawEids = {};
       rawElements.forEach(function(e) { _rawEids[e.expressId] = true; });
@@ -7075,9 +7088,11 @@ function startApp() {
         if (el.meshes && el.meshes.length) hasGLBGeom++;
       }
     });
+    var openingCount = Object.keys(openingEids).length;
     if (hasGLBGeom > 0)
       console.warn('%c[GLB+IFC] ' + (fileName||'') + ': ' + hasGLBGeom + ' IfcOpeningElement meshes in GLB — exporter should suppress these', 'color:#f59e0b;font-weight:bold');
-    if (!Object.keys(openingEids).length) return {elements: elements, meshes: meshes};
+    if (!openingCount) return {elements: elements, meshes: meshes};
+    console.log('%c[GLB+IFC] Filtered ' + openingCount + ' IfcOpeningElement (void cutters)', 'color:#94a3b8');
     return {
       elements: elements.filter(function(el) { return !openingEids[el.expressId]; }),
       meshes: meshes.filter(function(m) { return !openingEids[m.userData.expressId]; })
@@ -14940,8 +14955,11 @@ function startApp() {
       }
       var shared = a.elements.length - onlyInA.length;
       console.log('%c✓ Shared elements (matched by GlobalId): '+shared+' / '+Math.max(a.elements.length,b.elements.length), 'color:#94a3b8');
-      var spaceCount = onlyInA.concat(onlyInB).filter(function(e){return (e.props.ifcType||'')==='IfcSpace';}).length;
+      var unmatched = onlyInA.concat(onlyInB);
+      var spaceCount = unmatched.filter(function(e){return (e.props.ifcType||'')==='IfcSpace';}).length;
       if (spaceCount > 0) console.log('%cℹ '+spaceCount+' IfcSpace mismatch(es) expected — Revit Room GlobalIds differ from IFC export GlobalIds by design', 'color:#94a3b8;font-style:italic');
+      var openingCount = unmatched.filter(function(e){return (e.props.ifcType||'')==='IfcOpeningElement';}).length;
+      if (openingCount > 0) console.log('%cℹ '+openingCount+' IfcOpeningElement in diff — ClashControl filters these from element list; IFC traces may still count them', 'color:#94a3b8;font-style:italic');
       console.groupEnd();
     };
     // Apply theme to document and persist to localStorage
