@@ -35,7 +35,7 @@ ClashControl uses the following open source libraries and components:
 
 | Tool | Link | Purpose |
 |------|------|---------|
-| Ifc2Ifc | [thomhoffer-arch/Ifc2Ifc](https://github.com/thomhoffer-arch/Ifc2Ifc) | Converts IFC files into the GLB + IFC + `.ifcmeta` bundle format that ClashControl uses for fast model loading |
+| Ifc2Ifc | [clashcontrol-io/Ifc2Ifc](https://github.com/clashcontrol-io/Ifc2Ifc) | Converts IFC files into the GLB + IFC + `.ifcmeta` bundle format that ClashControl uses for fast model loading |
 
 ## Notes
 
