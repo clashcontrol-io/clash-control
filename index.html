@@ -6865,19 +6865,21 @@ function startApp() {
           var gid = child.name || '';
           // Ensure proper material for ClashControl rendering
           var rawMat = Array.isArray(child.material) ? child.material[0] : child.material;
-          var col;
-          // If glTF uses vertex colors (COLOR_0), sample the first vertex color as the element color
-          if (rawMat && rawMat.vertexColors && child.geometry.attributes.color) {
-            var vc = child.geometry.attributes.color;
-            col = new THREE.Color(vc.getX(0), vc.getY(0), vc.getZ(0));
+          var hasVertexColors = !!(child.geometry.attributes.color);
+          var col, opacity;
+          opacity = rawMat && rawMat.opacity != null ? rawMat.opacity : 1;
+          if (hasVertexColors) {
+            // Vertex colors carry per-element color — keep white base so they show through unmodified
+            col = new THREE.Color(1, 1, 1);
           } else {
             col = rawMat && rawMat.color ? rawMat.color.clone() : new THREE.Color(0.65, 0.65, 0.65);
+            // Fall back to visible gray if color is near-black (unset / default material)
+            if (col.r < 0.05 && col.g < 0.05 && col.b < 0.05) col.set(0.65, 0.65, 0.65);
           }
-          // Fall back to visible gray if color is near-black (unset / default material)
-          if (col.r < 0.05 && col.g < 0.05 && col.b < 0.05) col.set(0.65, 0.65, 0.65);
-          var opacity = rawMat && rawMat.opacity != null ? rawMat.opacity : 1;
           var mat = new THREE.MeshPhongMaterial({
-            color: col, opacity: opacity,
+            color: col,
+            vertexColors: hasVertexColors ? THREE.VertexColors : THREE.NoColors,
+            opacity: opacity,
             transparent: opacity < 0.99,
             side: THREE.DoubleSide // FrontSide once Ifc2Ifc winding fix is confirmed correct
           });
