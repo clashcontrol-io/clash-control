@@ -6897,6 +6897,16 @@ function startApp() {
           }
           meshes.push(m);
         });
+        // Second pass: collect named non-mesh nodes (empty GLB nodes — e.g. stair flights,
+        // landings, ramp flights that have metadata but no geometry in this export).
+        // IFC GlobalIds are always 22 base64 characters.
+        gltf.scene.traverse(function(child) {
+          if (child.isMesh) return; // already handled above
+          var gid = child.name || '';
+          if (gid.length === 22 && !meshByGid[gid]) {
+            meshByGid[gid] = []; // empty entry — metadata-only, no geometry
+          }
+        });
         if (onProgress) onProgress(meshes.length + ' meshes from GLB');
         // glTF 2.0 spec mandates Y-up, so a well-formed GLB already uses Y-up.
         // IFC loaded via web-ifc also produces Y-up geometry (flatTransformation
@@ -7150,12 +7160,15 @@ function startApp() {
       });
     });
 
-    // Also include IFC elements that weren't in the GLB (metadata-only, no geometry)
-    // These won't be visible but their properties are available for queries
+    // IFC-only elements: in IFC metadata but not as any GLB node (rooms, grids, spatial refs)
+    var ifcOnly = 0;
     if (ifcMeta.propsByGlobalId) {
       Object.keys(ifcMeta.propsByGlobalId).forEach(function(gid) {
         if (processedGids[gid]) return;
-        // Skip elements with no geometry representation in GLB
+        var props = ifcMeta.propsByGlobalId[gid];
+        var eid = props.expressId || elements.length + 1;
+        elements.push({expressId: eid, meshes: [], box: new THREE.Box3(), props: props});
+        ifcOnly++;
       });
     }
 
@@ -7164,7 +7177,7 @@ function startApp() {
       var _sampleUnmatched = Object.keys(meshByGid).filter(function(gid){ return !ifcMeta.propsByGlobalId[gid]; }).slice(0,3);
       console.warn('%c[GLB+IFC] ' + fileName + ': ' + unmatched + ' unmatched GlobalIds — check exporter version or GUID stability. Samples: ' + _sampleUnmatched.join(', '), 'color:#f59e0b;font-weight:bold');
     }
-    console.log('%c[GLB+IFC] ' + fileName + ': ' + matched + ' matched, ' + unmatched + ' unmatched (' + joinRate + '% join rate)', 'color:#22c55e;font-weight:bold');
+    console.log('%c[GLB+IFC] ' + fileName + ': ' + matched + ' matched, ' + unmatched + ' unmatched (' + joinRate + '% join rate)' + (ifcOnly ? ', ' + ifcOnly + ' IFC-only' : ''), 'color:#22c55e;font-weight:bold');
     if (onProgress) onProgress('Joined: ' + matched + '/' + (matched + unmatched) + ' elements (' + joinRate + '%)');
 
     // Filter IfcOpeningElement (defensive — exporter should suppress these from GLB)
@@ -7239,6 +7252,34 @@ function startApp() {
       elements.push({expressId: props.expressId, meshes: elMeshes, box: box, props: props});
     });
 
+    // Sidecar-only elements: in .ifcmeta but not as any GLB node (rooms, grids, etc.)
+    Object.keys(elementMeta).forEach(function(gid) {
+      if (meshByGid[gid] !== undefined) return;
+      var sc = elementMeta[gid] || {};
+      var props2 = {
+        expressId: sc.expressId || elements.length + 1,
+        globalId: gid,
+        ifcType: sc.ifcType || sc.category || 'Element',
+        name: sc.name || gid,
+        description: sc.description || '',
+        objectType: sc.objectType || '',
+        storey: sc.storey || '',
+        material: sc.material || '',
+        quantities: sc.quantities || {},
+        psets: sc.psets || {}
+      };
+      if (sc.revitId || sc.revit_element_id) props2.revitId = sc.revitId || sc.revit_element_id;
+      if (sc.phase) props2.phase = sc.phase;
+      if (sc.workset) props2.workset = sc.workset;
+      if (sc.designOption) props2.designOption = sc.designOption;
+      if (sc.hostId || sc.host_global_id) props2.hostId = sc.hostId || sc.host_global_id;
+      if (sc.layers) props2.layers = sc.layers;
+      if (sc.flipState) props2.flipState = sc.flipState;
+      if (sc.constraints) props2.constraints = sc.constraints;
+      if (sc.hostRelationships) props2.hostRelationships = sc.hostRelationships;
+      elements.push({expressId: props2.expressId, meshes: [], box: new THREE.Box3(), props: props2});
+    });
+
     // Filter IfcOpeningElement + resolve GlobalId relatedPairs from sidecar
     var _ofilt = filterOpeningElements(elements, glbResult.meshes, '');
     var _rp = resolveGlobalIdPairs(meta.relatedPairs, _ofilt.elements);
@@ -7308,12 +7349,43 @@ function startApp() {
       elements.push({expressId: props.expressId, meshes: elMeshes, box: box, props: props});
     });
 
+    // Props-only elements: exist in .ifcprops but not as any GLB node (rooms, grids, etc.)
+    var propsOnly = 0;
+    Object.keys(elementMeta).forEach(function(gid) {
+      if (meshByGid[gid] !== undefined) return; // already handled above
+      var ep = elementMeta[gid];
+      var sc = sidecarMeta[gid] || {};
+      var props2 = {
+        expressId: ep.expressId || sc.expressId || elements.length + 1,
+        globalId: gid,
+        ifcType: ep.category || sc.ifcType || 'Element',
+        name: ep.name || sc.name || gid,
+        description: ep.description || sc.description || '',
+        objectType: ep.type || sc.objectType || '',
+        storey: ep.level || sc.storey || '',
+        material: Array.isArray(ep.materials) ? ep.materials.join(', ') : (ep.materials || sc.material || ''),
+        quantities: ep.quantities || sc.quantities || {},
+        psets: ep.parameters || ep.psets || sc.psets || {}
+      };
+      if (sc.revitId || sc.revit_element_id) props2.revitId = sc.revitId || sc.revit_element_id;
+      if (sc.phase) props2.phase = sc.phase;
+      if (sc.workset) props2.workset = sc.workset;
+      if (sc.designOption) props2.designOption = sc.designOption;
+      if (sc.hostId || sc.host_global_id) props2.hostId = sc.hostId || sc.host_global_id;
+      if (sc.layers) props2.layers = sc.layers;
+      if (sc.flipState) props2.flipState = sc.flipState;
+      if (sc.constraints) props2.constraints = sc.constraints;
+      if (sc.hostRelationships) props2.hostRelationships = sc.hostRelationships;
+      elements.push({expressId: props2.expressId, meshes: [], box: new THREE.Box3(), props: props2});
+      propsOnly++;
+    });
+
     var joinRate = matched + unmatched > 0 ? Math.round(matched / (matched + unmatched) * 100) : 0;
     if (unmatched > 0) {
       var _sampleUnmatched2 = Object.keys(meshByGid).filter(function(gid){ return !elementMeta[gid]; }).slice(0,3);
       console.warn('%c[GLB+props] ' + fileName + ': ' + unmatched + ' unmatched GlobalIds — check exporter version or GUID stability. Samples: ' + _sampleUnmatched2.join(', '), 'color:#f59e0b;font-weight:bold');
     }
-    console.log('%c[GLB+props] ' + fileName + ': ' + matched + ' matched, ' + unmatched + ' unmatched (' + joinRate + '% join rate)', 'color:#a78bfa;font-weight:bold');
+    console.log('%c[GLB+props] ' + fileName + ': ' + matched + ' matched, ' + unmatched + ' unmatched (' + joinRate + '% join rate)' + (propsOnly ? ', ' + propsOnly + ' props-only' : ''), 'color:#a78bfa;font-weight:bold');
     if (onProgress) onProgress('Joined: ' + matched + '/' + (matched + unmatched) + ' elements (' + joinRate + '%)');
 
     // Filter IfcOpeningElement + resolve GlobalId relatedPairs (sidecar preferred over props)
