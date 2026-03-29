@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.3.53 (2026-03-29)
+- Ollama off by default — enable via Settings > AI / Natural Language
+
 ## v3.3.52 (2026-03-29)
 - Add GLB sidecar UX: standalone warnings, unmatched element feedback, and metadata attach
 
