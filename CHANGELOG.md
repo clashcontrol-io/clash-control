@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.4.2 (2026-03-30)
+- Re-enable PWA, add GLB Worker geometry extraction, IFC2IFC promotion
+
 ## v3.4.1 (2026-03-30)
 - Fix crash: pass _wlAdd to makeOrbit to fix scope error
 
