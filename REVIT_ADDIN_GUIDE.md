@@ -716,4 +716,691 @@ public class ElementGeometry
     [JsonProperty("normals")] public string Normals { get; set; }       // base64 Float32Array
     [JsonProperty("color")] public float[] Color { get; set; }          // [r, g, b, a] 0-1
 }
+
+---
+
+## WebSocket Server
+
+Uses built-in `System.Net.HttpListener` with WebSocket upgrade. No third-party dependencies needed.
+
+```csharp
+public class WsServer : IDisposable
+{
+    private HttpListener _listener;
+    private CancellationTokenSource _cts;
+    private WebSocket _client;          // single client at a time
+    private readonly object _lock = new object();
+    private readonly int _port;
+
+    public bool IsClientConnected => _client?.State == WebSocketState.Open;
+
+    public event Action<string> OnMessage;  // fires on background thread
+
+    public WsServer(int port = 19780)
+    {
+        _port = port;
+    }
+
+    public void Start()
+    {
+        _cts = new CancellationTokenSource();
+        _listener = new HttpListener();
+        _listener.Prefixes.Add($"http://localhost:{_port}/");
+        _listener.Start();
+        Task.Run(() => AcceptLoop(_cts.Token));
+        Debug.WriteLine($"[CC] WebSocket server started on ws://localhost:{_port}");
+    }
+
+    private async Task AcceptLoop(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var context = await _listener.GetContextAsync();
+
+                if (!context.Request.IsWebSocketRequest)
+                {
+                    context.Response.StatusCode = 400;
+                    context.Response.Close();
+                    continue;
+                }
+
+                var wsContext = await context.AcceptWebSocketAsync(null);
+
+                // Close previous client if any
+                lock (_lock)
+                {
+                    if (_client?.State == WebSocketState.Open)
+                    {
+                        try { _client.CloseAsync(WebSocketCloseStatus.NormalClosure, "New client", CancellationToken.None).Wait(1000); }
+                        catch { }
+                    }
+                    _client = wsContext.WebSocket;
+                }
+
+                Debug.WriteLine("[CC] Client connected");
+                await ReceiveLoop(wsContext.WebSocket, ct);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                Debug.WriteLine($"[CC] Accept error: {ex.Message}");
+                await Task.Delay(1000, ct);
+            }
+        }
+    }
+
+    private async Task ReceiveLoop(WebSocket ws, CancellationToken ct)
+    {
+        var buffer = new byte[1024 * 64]; // 64KB buffer
+        try
+        {
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+            {
+                var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                    break;
+                }
+
+                if (result.MessageType == WebSocketMessageType.Text)
+                {
+                    // Handle fragmented messages
+                    var ms = new MemoryStream();
+                    ms.Write(buffer, 0, result.Count);
+                    while (!result.EndOfMessage)
+                    {
+                        result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
+                        ms.Write(buffer, 0, result.Count);
+                    }
+
+                    var text = Encoding.UTF8.GetString(ms.ToArray());
+                    OnMessage?.Invoke(text);
+                }
+            }
+        }
+        catch (WebSocketException) { }
+        catch (OperationCanceledException) { }
+
+        Debug.WriteLine("[CC] Client disconnected");
+    }
+
+    public async Task SendAsync(string json)
+    {
+        WebSocket ws;
+        lock (_lock) { ws = _client; }
+        if (ws?.State != WebSocketState.Open) return;
+
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        // For large messages, send in 64KB frames
+        int offset = 0;
+        while (offset < bytes.Length)
+        {
+            int chunkSize = Math.Min(bytes.Length - offset, 64 * 1024);
+            bool isLast = (offset + chunkSize) >= bytes.Length;
+            await ws.SendAsync(
+                new ArraySegment<byte>(bytes, offset, chunkSize),
+                WebSocketMessageType.Text,
+                isLast,
+                CancellationToken.None);
+            offset += chunkSize;
+        }
+    }
+
+    public void Stop()
+    {
+        _cts?.Cancel();
+        lock (_lock)
+        {
+            try { _client?.CloseAsync(WebSocketCloseStatus.NormalClosure, "Server stopping", CancellationToken.None).Wait(1000); }
+            catch { }
+            _client = null;
+        }
+        try { _listener?.Stop(); _listener?.Close(); }
+        catch { }
+        Debug.WriteLine("[CC] WebSocket server stopped");
+    }
+
+    public void Dispose() => Stop();
+}
+```
+
+---
+
+## App.cs — Entry Point
+
+```csharp
+public class App : IExternalApplication
+{
+    private static WsServer _server;
+    private static UIControlledApplication _uiApp;
+    private static ExternalEvent _externalEvent;
+    private static RevitCommandHandler _commandHandler;
+
+    public static WsServer Server => _server;
+
+    public Result OnStartup(UIControlledApplication application)
+    {
+        _uiApp = application;
+
+        // Register ExternalEvent for thread marshalling
+        _commandHandler = new RevitCommandHandler();
+        _externalEvent = ExternalEvent.Create(_commandHandler);
+        RevitCommandHandler.Event = _externalEvent;
+
+        // Start WebSocket server
+        _server = new WsServer(19780);
+        _server.OnMessage += HandleMessage;
+        _server.Start();
+
+        // Listen for document changes (live updates)
+        application.ControlledApplication.DocumentChanged += OnDocumentChanged;
+        application.ControlledApplication.DocumentOpened += OnDocumentOpened;
+        application.ControlledApplication.DocumentClosing += OnDocumentClosing;
+
+        // Create ribbon tab & button
+        try
+        {
+            application.CreateRibbonTab("ClashControl");
+            var panel = application.CreateRibbonPanel("ClashControl", "Connector");
+
+            var buttonData = new PushButtonData(
+                "ClashControlToggle",
+                "ClashControl\nConnector",
+                Assembly.GetExecutingAssembly().Location,
+                typeof(ToggleCommand).FullName);
+
+            buttonData.ToolTip = "Toggle ClashControl live connection (ws://localhost:19780)";
+            // buttonData.LargeImage = new BitmapImage(new Uri("pack://...icon.png"));
+
+            panel.AddItem(buttonData);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[CC] Ribbon error: {ex.Message}");
+        }
+
+        return Result.Succeeded;
+    }
+
+    public Result OnShutdown(UIControlledApplication application)
+    {
+        application.ControlledApplication.DocumentChanged -= OnDocumentChanged;
+        application.ControlledApplication.DocumentOpened -= OnDocumentOpened;
+        application.ControlledApplication.DocumentClosing -= OnDocumentClosing;
+        _server?.Stop();
+        return Result.Succeeded;
+    }
+
+    private static void HandleMessage(string json)
+    {
+        try
+        {
+            var msg = JObject.Parse(json);
+            var type = msg["type"]?.ToString();
+
+            switch (type)
+            {
+                case "ping":
+                    _ = _server.SendAsync("{\"type\":\"pong\"}");
+                    break;
+
+                case "export":
+                    var categories = msg["categories"]?.ToObject<List<string>>() ?? new List<string> { "all" };
+                    RevitCommandHandler.Enqueue(app => ExportModel(app, categories));
+                    break;
+
+                case "highlight":
+                    var globalIds = msg["globalIds"]?.ToObject<List<string>>() ?? new List<string>();
+                    RevitCommandHandler.Enqueue(app => HighlightElements(app, globalIds));
+                    break;
+
+                case "push-clashes":
+                    var clashes = msg["clashes"]?.ToObject<List<JObject>>() ?? new List<JObject>();
+                    RevitCommandHandler.Enqueue(app => HandlePushClashes(app, clashes));
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _ = _server.SendAsync(JsonConvert.SerializeObject(new { type = "error", message = ex.Message }));
+        }
+    }
+
+    // ── Export ─────────────────────────────────────────────────
+
+    private static void ExportModel(UIApplication uiApp, List<string> categoryFilter)
+    {
+        var doc = uiApp.ActiveUIDocument?.Document;
+        if (doc == null)
+        {
+            _ = _server.SendAsync("{\"type\":\"error\",\"message\":\"No document open in Revit\"}");
+            return;
+        }
+
+        // Collect elements
+        var collector = new FilteredElementCollector(doc)
+            .WhereElementIsNotElementType()
+            .WhereElementIsViewIndependent();
+
+        var elements = collector
+            .Where(e => e.Category != null && ShouldExport(e.Category, categoryFilter))
+            .Where(e => !IsSkippedCategory(e.Category))
+            .ToList();
+
+        // Build relationships
+        var (hostIds, hostRelationships, relatedPairs) =
+            RelationshipExporter.BuildRelationships(elements, doc);
+
+        // Send model-start
+        _ = _server.SendAsync(JsonConvert.SerializeObject(new
+        {
+            type = "model-start",
+            name = doc.Title + ".rvt",
+            elementCount = elements.Count
+        }));
+
+        // Send element batches (50 per batch)
+        int batchSize = 50;
+        int expressId = 1;
+
+        for (int i = 0; i < elements.Count; i += batchSize)
+        {
+            var batch = new List<ElementData>();
+
+            for (int j = i; j < Math.Min(i + batchSize, elements.Count); j++)
+            {
+                try
+                {
+                    var el = elements[j];
+                    var data = PropertyExporter.ExtractProperties(el, doc);
+                    data.ExpressId = expressId++;
+                    data.Geometry = GeometryExporter.ExtractGeometry(el)?.ToData();
+
+                    // Attach host relationship info
+                    if (hostIds.TryGetValue(data.GlobalId, out var hid))
+                        data.HostId = hid;
+                    if (hostRelationships.TryGetValue(data.GlobalId, out var hrels))
+                        data.HostRelationships = hrels;
+
+                    // Get element color from material
+                    data.Geometry ??= new ElementGeometry();
+                    data.Geometry.Color = GetElementColor(el, doc);
+
+                    batch.Add(data);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[CC] Skip element {elements[j].Id}: {ex.Message}");
+                }
+            }
+
+            _ = _server.SendAsync(JsonConvert.SerializeObject(new
+            {
+                type = "element-batch",
+                elements = batch
+            }));
+        }
+
+        // Collect storeys
+        var levels = new FilteredElementCollector(doc)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .OrderBy(l => l.Elevation)
+            .ToList();
+
+        var storeys = levels.Select(l => l.Name).ToList();
+        var storeyData = levels.Select(l => new
+        {
+            name = l.Name,
+            elevation = Math.Round(l.Elevation * 304.8, 1) // feet → mm
+        }).ToList();
+
+        // Send model-end
+        _ = _server.SendAsync(JsonConvert.SerializeObject(new
+        {
+            type = "model-end",
+            storeys,
+            storeyData,
+            relatedPairs
+        }));
+    }
+
+    private static float[] GetElementColor(Element element, Document doc)
+    {
+        var matIds = element.GetMaterialIds(false);
+        if (matIds.Count == 0) return new float[] { 0.65f, 0.65f, 0.65f, 1.0f };
+
+        var mat = doc.GetElement(matIds.First()) as Material;
+        if (mat == null) return new float[] { 0.65f, 0.65f, 0.65f, 1.0f };
+
+        var color = mat.Color;
+        return new float[]
+        {
+            color.Red / 255f,
+            color.Green / 255f,
+            color.Blue / 255f,
+            1.0f - (mat.Transparency / 100f)
+        };
+    }
+
+    // ── Highlight ─────────────────────────────────────────────
+
+    private static void HighlightElements(UIApplication uiApp, List<string> globalIds)
+    {
+        var uidoc = uiApp.ActiveUIDocument;
+        if (uidoc == null) return;
+        var doc = uidoc.Document;
+
+        // Build GlobalId → ElementId lookup
+        var elementIds = new List<ElementId>();
+        var allElements = new FilteredElementCollector(doc)
+            .WhereElementIsNotElementType()
+            .WhereElementIsViewIndependent();
+
+        foreach (var el in allElements)
+        {
+            var gid = GlobalIdEncoder.FromElement(el);
+            if (globalIds.Contains(gid))
+                elementIds.Add(el.Id);
+        }
+
+        if (elementIds.Count == 0) return;
+
+        // Select elements in Revit
+        uidoc.Selection.SetElementIds(elementIds);
+
+        // Color them red in the active view
+        using (var t = new Transaction(doc, "ClashControl Highlight"))
+        {
+            t.Start();
+            var ogs = new OverrideGraphicSettings();
+            ogs.SetProjectionLineColor(new Color(239, 68, 68));  // red
+            ogs.SetSurfaceForegroundPatternColor(new Color(239, 68, 68));
+            ogs.SetSurfaceTransparency(0);
+
+            var view = doc.ActiveView;
+            foreach (var eid in elementIds)
+                view.SetElementOverrides(eid, ogs);
+
+            t.Commit();
+        }
+    }
+
+    // ── Push Clashes Handler ──────────────────────────────────
+
+    private static void HandlePushClashes(UIApplication uiApp, List<JObject> clashes)
+    {
+        var uidoc = uiApp.ActiveUIDocument;
+        if (uidoc == null) return;
+        var doc = uidoc.Document;
+
+        // Build revitId → ElementId lookup for fast resolution
+        var revitIdLookup = new Dictionary<int, ElementId>();
+        var allElements = new FilteredElementCollector(doc)
+            .WhereElementIsNotElementType()
+            .WhereElementIsViewIndependent();
+
+        foreach (var el in allElements)
+            revitIdLookup[el.Id.IntegerValue] = el.Id;
+
+        using (var t = new Transaction(doc, "ClashControl: Mark Clashes"))
+        {
+            t.Start();
+
+            var hardOgs = new OverrideGraphicSettings();
+            hardOgs.SetProjectionLineColor(new Color(239, 68, 68));      // red
+            hardOgs.SetSurfaceForegroundPatternColor(new Color(239, 68, 68));
+
+            var clearanceOgs = new OverrideGraphicSettings();
+            clearanceOgs.SetProjectionLineColor(new Color(245, 158, 11));   // amber
+            clearanceOgs.SetSurfaceForegroundPatternColor(new Color(245, 158, 11));
+
+            var view = doc.ActiveView;
+
+            foreach (var clash in clashes)
+            {
+                var clashType = clash["type"]?.ToString() ?? "hard";
+                var ogs = clashType == "clearance" ? clearanceOgs : hardOgs;
+
+                // Color element A
+                var revitIdA = clash["elementA"]?["revitId"]?.ToObject<int?>() ?? 0;
+                if (revitIdA > 0 && revitIdLookup.TryGetValue(revitIdA, out var eidA))
+                    view.SetElementOverrides(eidA, ogs);
+
+                // Color element B
+                var revitIdB = clash["elementB"]?["revitId"]?.ToObject<int?>() ?? 0;
+                if (revitIdB > 0 && revitIdLookup.TryGetValue(revitIdB, out var eidB))
+                    view.SetElementOverrides(eidB, ogs);
+            }
+
+            t.Commit();
+        }
+
+        Debug.WriteLine($"[CC] Highlighted {clashes.Count} clashes in Revit");
+    }
+
+    // ── Live Updates (DocumentChanged) ────────────────────────
+
+    private static void OnDocumentChanged(object sender, DocumentChangedEventArgs e)
+    {
+        if (!_server.IsClientConnected) return;
+
+        var doc = e.GetDocument();
+
+        // Deleted elements
+        var deletedIds = e.GetDeletedElementIds();
+        if (deletedIds.Count > 0)
+        {
+            // We can't resolve GlobalIds for deleted elements (they're gone),
+            // so send the Revit ElementIds and let ClashControl match by revitId
+            var deletedRevitIds = deletedIds.Select(id => id.IntegerValue).ToList();
+            _ = _server.SendAsync(JsonConvert.SerializeObject(new
+            {
+                type = "element-update",
+                action = "deleted",
+                revitIds = deletedRevitIds
+            }));
+        }
+
+        // Modified + Added elements
+        var modifiedIds = e.GetModifiedElementIds()
+            .Concat(e.GetAddedElementIds())
+            .ToList();
+
+        if (modifiedIds.Count > 0)
+        {
+            var elements = modifiedIds
+                .Select(id => doc.GetElement(id))
+                .Where(el => el?.Category != null && !IsSkippedCategory(el.Category))
+                .ToList();
+
+            if (elements.Count == 0) return;
+
+            var batch = new List<ElementData>();
+            foreach (var el in elements)
+            {
+                try
+                {
+                    var data = PropertyExporter.ExtractProperties(el, doc);
+                    data.Geometry = GeometryExporter.ExtractGeometry(el)?.ToData();
+                    data.Geometry ??= new ElementGeometry();
+                    data.Geometry.Color = GetElementColor(el, doc);
+                    batch.Add(data);
+                }
+                catch { }
+            }
+
+            if (batch.Count > 0)
+            {
+                _ = _server.SendAsync(JsonConvert.SerializeObject(new
+                {
+                    type = "element-update",
+                    action = "modified",
+                    elements = batch
+                }));
+            }
+        }
+    }
+
+    private static void OnDocumentOpened(object sender, DocumentOpenedEventArgs e)
+    {
+        if (!_server.IsClientConnected) return;
+        _ = _server.SendAsync(JsonConvert.SerializeObject(new
+        {
+            type = "status",
+            connected = true,
+            documentName = e.Document.Title + ".rvt"
+        }));
+    }
+
+    private static void OnDocumentClosing(object sender, DocumentClosingEventArgs e)
+    {
+        if (!_server.IsClientConnected) return;
+        _ = _server.SendAsync(JsonConvert.SerializeObject(new
+        {
+            type = "status",
+            connected = true,
+            documentName = ""
+        }));
+    }
+
+    // ── Category Filters ──────────────────────────────────────
+
+    private static readonly HashSet<BuiltInCategory> ExportCategories = new HashSet<BuiltInCategory>
+    {
+        BuiltInCategory.OST_Walls,
+        BuiltInCategory.OST_Floors,
+        BuiltInCategory.OST_Roofs,
+        BuiltInCategory.OST_Ceilings,
+        BuiltInCategory.OST_Doors,
+        BuiltInCategory.OST_Windows,
+        BuiltInCategory.OST_Columns,
+        BuiltInCategory.OST_StructuralColumns,
+        BuiltInCategory.OST_StructuralFraming,
+        BuiltInCategory.OST_StructuralFoundation,
+        BuiltInCategory.OST_Stairs,
+        BuiltInCategory.OST_StairsRailing,
+        BuiltInCategory.OST_Ramps,
+        BuiltInCategory.OST_CurtainWallPanels,
+        BuiltInCategory.OST_CurtainWallMullions,
+        BuiltInCategory.OST_GenericModel,
+        BuiltInCategory.OST_DuctCurves,
+        BuiltInCategory.OST_PipeCurves,
+        BuiltInCategory.OST_FlexDuctCurves,
+        BuiltInCategory.OST_FlexPipeCurves,
+        BuiltInCategory.OST_DuctFitting,
+        BuiltInCategory.OST_PipeFitting,
+        BuiltInCategory.OST_DuctAccessory,
+        BuiltInCategory.OST_PipeAccessory,
+        BuiltInCategory.OST_MechanicalEquipment,
+        BuiltInCategory.OST_PlumbingFixtures,
+        BuiltInCategory.OST_ElectricalEquipment,
+        BuiltInCategory.OST_ElectricalFixtures,
+        BuiltInCategory.OST_CableTray,
+        BuiltInCategory.OST_Conduit,
+        BuiltInCategory.OST_LightingFixtures,
+        BuiltInCategory.OST_FireAlarmDevices,
+        BuiltInCategory.OST_Sprinklers,
+        BuiltInCategory.OST_Furniture,
+        BuiltInCategory.OST_FurnitureSystems,
+    };
+
+    private static readonly HashSet<BuiltInCategory> SkipCategories = new HashSet<BuiltInCategory>
+    {
+        BuiltInCategory.OST_Rooms,             // IfcSpace — solid volumes, not physical
+        BuiltInCategory.OST_Areas,              // Area boundaries
+        BuiltInCategory.OST_Grids,              // Reference grids
+        BuiltInCategory.OST_Levels,             // Level datums
+        BuiltInCategory.OST_ReferencePlanes,    // Reference planes
+        BuiltInCategory.OST_DetailComponents,   // 2D detail items
+        BuiltInCategory.OST_Lines,              // Model/detail lines
+    };
+
+    private static bool ShouldExport(Category cat, List<string> filter)
+    {
+        if (filter.Contains("all")) return ExportCategories.Contains((BuiltInCategory)cat.Id.IntegerValue);
+        return filter.Any(f => cat.Name.Equals(f, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsSkippedCategory(Category cat)
+    {
+        return SkipCategories.Contains((BuiltInCategory)cat.Id.IntegerValue);
+    }
+}
+```
+
+---
+
+## ToggleCommand (Ribbon Button)
+
+```csharp
+[Transaction(TransactionMode.Manual)]
+public class ToggleCommand : IExternalCommand
+{
+    public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+    {
+        if (App.Server == null)
+        {
+            TaskDialog.Show("ClashControl", "Connector is not initialized.");
+            return Result.Failed;
+        }
+
+        if (App.Server.IsClientConnected)
+        {
+            TaskDialog.Show("ClashControl",
+                "ClashControl Connector is running on ws://localhost:19780\n\n" +
+                "A browser client is connected.\n" +
+                "Open ClashControl and click 'Connect to Revit' in the Revit Bridge panel.");
+        }
+        else
+        {
+            TaskDialog.Show("ClashControl",
+                "ClashControl Connector is running on ws://localhost:19780\n\n" +
+                "No browser client connected.\n" +
+                "Open ClashControl and click 'Connect to Revit' in the Revit Bridge panel.\n\n" +
+                "Port: 19780 (default)");
+        }
+
+        return Result.Succeeded;
+    }
+}
+```
+
+---
+
+## Error Handling Rules
+
+1. **No document open**: Send `{"type":"error","message":"No document open in Revit"}`
+2. **Element export fails**: Skip the element, log warning, continue with next element. Do NOT abort the entire export.
+3. **WebSocket disconnects**: Keep the server running. Accept new connections. Do not crash.
+4. **Large models**: Use batched sending (50 elements per `element-batch`). This prevents WebSocket frame size issues and lets ClashControl show progress.
+5. **Thread safety violations**: ALWAYS use `RevitCommandHandler.Enqueue()` for any Revit API call from the WebSocket message handler. Direct calls from background threads WILL crash Revit.
+
+---
+
+## Testing
+
+1. Build the project in Visual Studio (Release mode)
+2. Copy `ClashControlConnector.dll`, `ClashControlConnector.addin`, and `Newtonsoft.Json.dll` to `%APPDATA%\Autodesk\Revit\Addins\2024\` (or your Revit version)
+3. Open Revit — the plugin auto-starts the WebSocket server
+4. Open ClashControl in a browser
+5. Click the Revit Bridge button (lightning bolt) in the left sidebar
+6. Under "Direct Connection (Live Link)", click **Connect**
+7. Click **Pull Model** — the model should stream into ClashControl
+8. Run clash detection in ClashControl
+9. Click **Push Clashes** — clashing elements should highlight in Revit
+10. Click a clash in ClashControl — the two elements should auto-highlight in Revit
+
+### Quick WebSocket Test (without ClashControl)
+Open browser console and run:
+```javascript
+var ws = new WebSocket('ws://localhost:19780');
+ws.onopen = () => { ws.send('{"type":"ping"}'); };
+ws.onmessage = (e) => { console.log(JSON.parse(e.data)); };
+```
+You should see `{type: "status", connected: true, documentName: "..."}` followed by `{type: "pong"}`.
 ```
