@@ -3809,7 +3809,7 @@ function startApp() {
   var _needsRender = 2; // start with a couple frames to initialize
   function invalidate(frames) { _needsRender = Math.max(_needsRender, frames||2); }
 
-  function makeOrbit(camera, el) {
+  function makeOrbit(camera, el, _wlAdd) {
     var target = new THREE.Vector3();
     var sph = { r:60, phi:Math.PI/4, theta:Math.PI/4 };
     var dragging=false, panning=false, lx=0, ly=0;
@@ -4041,7 +4041,7 @@ function startApp() {
       S.renderer = renderer;
       window._ccState3d = S;
 
-      S.orbit = makeOrbit(camera, renderer.domElement);
+      S.orbit = makeOrbit(camera, renderer.domElement, _wlAdd);
       S.orbit.apply(); // ensure camera looks at orbit target on init
 
       // ── Animated fly-to system ─────────────────────────────────────
@@ -14555,51 +14555,53 @@ function startApp() {
     var limitMB = mem.jsHeapSizeLimit ? Math.round(mem.jsHeapSizeLimit / 1048576) : 0;
     var inclNames = useState(true), includeNames=inclNames[0], setIncludeNames=inclNames[1];
     var inclBrowser = useState(true), includeBrowser=inclBrowser[0], setIncludeBrowser=inclBrowser[1];
+    var msgSt = useState(''), userMsg=msgSt[0], setUserMsg=msgSt[1];
 
-    function buildReport() {
+    var totalElements = 0, totalMeshes = 0;
+    (s.models||[]).forEach(function(m){ totalElements += (m.elements||[]).length; totalMeshes += (m.meshes||[]).length; });
+
+    function onSend() {
       var lines = [];
-      lines.push('ClashControl Memory Report');
-      lines.push('Version: ' + CC_VERSION.v);
-      lines.push('Date: ' + new Date().toISOString());
+      lines.push('## Memory Report');
       lines.push('');
-      lines.push('--- Memory ---');
+      if (userMsg.trim()) { lines.push('### What were you doing?'); lines.push(userMsg.trim()); lines.push(''); }
+      lines.push('### Memory');
       if (hasMem) {
-        lines.push('Used JS Heap: ' + (usedMB / 1024).toFixed(2) + ' GB (' + usedMB + ' MB)');
-        lines.push('Total JS Heap: ' + (totalMB / 1024).toFixed(2) + ' GB (' + totalMB + ' MB)');
-        if (limitMB) lines.push('Heap Limit: ' + (limitMB / 1024).toFixed(2) + ' GB');
+        lines.push('- **Used JS Heap**: ' + (usedMB / 1024).toFixed(2) + ' GB (' + usedMB + ' MB)');
+        lines.push('- **Total JS Heap**: ' + (totalMB / 1024).toFixed(2) + ' GB (' + totalMB + ' MB)');
+        if (limitMB) lines.push('- **Heap Limit**: ' + (limitMB / 1024).toFixed(2) + ' GB');
       } else {
         lines.push('Memory stats not available (browser does not support performance.memory)');
       }
       lines.push('');
-      lines.push('--- Models (' + (s.models||[]).length + ') ---');
+      lines.push('### Models (' + (s.models||[]).length + ') — ' + totalElements + ' total elements, ' + totalMeshes + ' total meshes');
       (s.models||[]).forEach(function(m, i) {
         var elCount = (m.elements||[]).length;
         var meshCount = (m.meshes||[]).length;
         var sizeMB = m.stats && m.stats.fileSize ? (m.stats.fileSize/1048576).toFixed(1) + ' MB' : 'unknown size';
         var loadType = m.stats && m.stats.loadType ? m.stats.loadType : '?';
         var name = includeNames ? m.name : 'Model ' + (i+1);
-        lines.push('  [' + (i+1) + '] ' + name + ' — ' + elCount + ' elements, ' + meshCount + ' meshes, ' + sizeMB + ', type: ' + loadType);
+        lines.push('- ' + name + ' — ' + elCount + ' elements, ' + meshCount + ' meshes, ' + sizeMB + ', type: ' + loadType);
       });
       lines.push('');
-      lines.push('--- Clashes (' + (s.clashes||[]).length + ' total) ---');
+      lines.push('### Clashes (' + (s.clashes||[]).length + ' total)');
       var byStatus = {};
       (s.clashes||[]).forEach(function(c){ byStatus[c.status]=(byStatus[c.status]||0)+1; });
-      Object.keys(byStatus).forEach(function(k){ lines.push('  ' + k + ': ' + byStatus[k]); });
+      Object.keys(byStatus).forEach(function(k){ lines.push('- ' + k + ': ' + byStatus[k]); });
       lines.push('');
-      lines.push('--- Issues (' + (s.issues||[]).length + ') ---');
+      lines.push('### Issues: ' + (s.issues||[]).length);
       if (includeBrowser) {
         lines.push('');
-        lines.push('--- Browser ---');
-        lines.push(navigator.userAgent);
+        lines.push('### Browser');
+        lines.push('`' + navigator.userAgent + '`');
       }
-      return lines.join('\n');
-    }
-
-    function onSend() {
-      var body = buildReport();
-      var subject = 'ClashControl Memory Report — ' + (usedMB/1024).toFixed(1) + ' GB';
-      var mailto = 'mailto:clashcontrol.io@gmail.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-      window.open(mailto, '_blank');
+      lines.push('');
+      lines.push('### Environment');
+      lines.push('- **ClashControl version**: ' + CC_VERSION.v);
+      lines.push('- **Date**: ' + new Date().toISOString());
+      var body = lines.join('\n');
+      var title = '[Memory] ' + (hasMem ? (usedMB/1024).toFixed(1) + ' GB — ' : '') + totalElements + ' elements across ' + (s.models||[]).length + ' model' + ((s.models||[]).length!==1?'s':'');
+      window.open('https://github.com/clashcontrol-io/clash-control/issues/new?template=memory_report.md&title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body), '_blank');
     }
 
     return html`<div onClick=${function(e){if(e.target===e.currentTarget)onDismiss()}} style=${{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:'2rem',backdropFilter:'blur(4px)'}}>
@@ -14621,7 +14623,12 @@ function startApp() {
           </div>
         </div>
         <div style=${{background:'rgba(248,113,113,.07)',border:'1px solid rgba(248,113,113,.2)',borderRadius:8,padding:'.75rem',marginBottom:'1rem',fontSize:'0.83rem',color:'var(--text-secondary)',lineHeight:1.6}}>
-          <b style=${{color:'var(--text-primary)'}}>Help us improve ClashControl</b> by sending a short diagnostic report. This helps identify what causes high memory usage so we can fix it in future versions.
+          <b style=${{color:'var(--text-primary)'}}>Help us improve ClashControl</b> by sending a short diagnostic report. Clicking "Send Report" opens a pre-filled GitHub issue where you can review the data before submitting.
+        </div>
+        <div style=${{marginBottom:'.75rem'}}>
+          <label style=${{fontSize:'0.78rem',color:'var(--text-muted)',fontWeight:600,display:'block',marginBottom:'.25rem'}}>What were you doing? (optional)</label>
+          <textarea value=${userMsg} onInput=${function(e){setUserMsg(e.target.value)}} placeholder="e.g. Loaded 3 large Revit models and ran clash detection…" rows="3"
+            style=${{width:'100%',padding:'.4rem .6rem',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-secondary)',color:'var(--text-primary)',fontSize:'0.83rem',fontFamily:'inherit',resize:'vertical',boxSizing:'border-box'}} />
         </div>
         <div style=${{fontSize:'0.85rem',color:'var(--text-secondary)',marginBottom:'.75rem',fontWeight:600}}>Data that will be included:</div>
         <div style=${{display:'flex',flexDirection:'column',gap:'.4rem',marginBottom:'1rem',fontSize:'0.83rem',color:'var(--text-secondary)'}}>
@@ -14631,7 +14638,7 @@ function startApp() {
           </label>
           <label style=${{display:'flex',alignItems:'center',gap:'.5rem',cursor:'pointer'}}>
             <input type="checkbox" checked disabled style=${{accentColor:'var(--accent)'}} />
-            <span>Model count, element counts, mesh counts, file sizes, load type</span>
+            <span>${(s.models||[]).length} model${(s.models||[]).length!==1?'s':''}, <b>${totalElements}</b> total elements, ${totalMeshes} meshes</span>
           </label>
           <label style=${{display:'flex',alignItems:'center',gap:'.5rem',cursor:'pointer'}}>
             <input type="checkbox" checked disabled style=${{accentColor:'var(--accent)'}} />
@@ -14645,9 +14652,6 @@ function startApp() {
             <input type="checkbox" checked=${includeBrowser} onChange=${function(){}} style=${{accentColor:'var(--accent)'}} />
             <span>Browser / platform info</span>
           </label>
-        </div>
-        <div style=${{fontSize:'0.75rem',color:'var(--text-faint)',marginBottom:'1rem',lineHeight:1.5}}>
-          Clicking "Send Report" opens your email client with a pre-filled message. Nothing is sent automatically — you review it first.
         </div>
         <div style=${{display:'flex',gap:'.6rem'}}>
           <button onClick=${onSend}
@@ -14762,7 +14766,31 @@ function startApp() {
 
           <!-- Feedback & links -->
           <div style=${{borderTop:'1px solid var(--border-subtle)',marginTop:'.8rem',paddingTop:'.8rem',display:'flex',gap:'.5rem',flexWrap:'wrap'}}>
-            <a href="https://github.com/clashcontrol-io/clash-control/issues/new?template=bug_report.md" target="_blank" rel="noopener"
+            <a href="#" onClick=${function(e){
+              e.preventDefault();
+              var _s = window._ccLatestState || s;
+              var models = _s.models || [];
+              var totalEls = 0, totalMeshes = 0;
+              models.forEach(function(m){ totalEls += (m.elements||[]).length; totalMeshes += (m.meshes||[]).length; });
+              var memStr = performance.memory ? (performance.memory.usedJSHeapSize/1073741824).toFixed(1) + ' GB' : 'N/A';
+              var env = [];
+              env.push('- **ClashControl version**: ' + CC_VERSION.v);
+              env.push('- **Browser**: ' + navigator.userAgent);
+              env.push('- **Models loaded**: ' + models.length);
+              env.push('- **Total elements**: ' + totalEls + ' (' + totalMeshes + ' meshes)');
+              env.push('- **Memory usage**: ' + memStr);
+              if (models.length) {
+                env.push('- **Model details**:');
+                models.forEach(function(m, i){
+                  var elC = (m.elements||[]).length, mC = (m.meshes||[]).length;
+                  var sz = m.stats && m.stats.fileSize ? (m.stats.fileSize/1048576).toFixed(1)+'MB' : '?';
+                  var lt = m.stats && m.stats.loadType ? m.stats.loadType : '?';
+                  env.push('  - ' + m.name + ': ' + elC + ' elements, ' + mC + ' meshes, ' + sz + ', ' + lt);
+                });
+              }
+              var body = '## Describe the bug\n\n\n## Steps to reproduce\n1. \n2. \n3. \n\n## Expected behavior\n\n\n## Screenshots\n\n\n## Environment\n' + env.join('\n');
+              window.open('https://github.com/clashcontrol-io/clash-control/issues/new?template=bug_report.md&body=' + encodeURIComponent(body), '_blank');
+            }} target="_blank" rel="noopener"
               style=${{...S_BTN,flex:1,padding:'.4rem .6rem',borderRadius:6,fontSize:'0.8rem',fontWeight:600,
                 background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',
                 textDecoration:'none',textAlign:'center',cursor:'pointer'}}>Report a Bug</a>
