@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.3.0 (2026-03-31)
+- Add addon registry system and PWA addon
+
 ## v4.0.1 (2026-03-31)
 - v4.0.0: Add local clash engine integration and new first-run setup popup
 
