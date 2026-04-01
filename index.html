@@ -9231,6 +9231,67 @@ function startApp() {
   }
 
   // ── Clash Stats Bar ──────────────────────────────────────────
+  // ── AI Summary Card ───────────────────────────────────────
+  function ClashAISummary(props) {
+    var items = props.items;
+    var _cs = React.useState(false), collapsed = _cs[0], setCollapsed = _cs[1];
+    var toggle = function(){ setCollapsed(!collapsed); };
+    // Count by severity
+    var counts = {critical:0, major:0, minor:0, info:0};
+    var byStorey = {};
+    var clusters = {};
+    items.forEach(function(c){
+      if (!c.aiSeverity) return;
+      counts[c.aiSeverity] = (counts[c.aiSeverity]||0) + 1;
+      // Track critical per storey
+      if (c.aiSeverity === 'critical' || c.aiSeverity === 'major') {
+        var st = c.elemAStorey || c.elemBStorey || 'Unknown';
+        byStorey[st] = (byStorey[st]||0) + 1;
+      }
+      // Track clusters
+      if (c._clusterGroup != null) {
+        if (!clusters[c._clusterGroup]) clusters[c._clusterGroup] = {count:0, storey:'', typePair:''};
+        clusters[c._clusterGroup].count++;
+        clusters[c._clusterGroup].storey = c.elemAStorey || c.elemBStorey || '';
+        clusters[c._clusterGroup].typePair = (c.elemAType||'')+ ' / ' +(c.elemBType||'');
+      }
+    });
+    var hasAny = counts.critical + counts.major + counts.minor + counts.info > 0;
+    if (!hasAny) return null;
+    // Find worst storey
+    var worstStorey = '', worstCount = 0;
+    Object.keys(byStorey).forEach(function(k){ if (byStorey[k] > worstCount) { worstStorey = k; worstCount = byStorey[k]; } });
+    // Find largest cluster
+    var bigCluster = null, bigClusterSize = 0;
+    Object.keys(clusters).forEach(function(k){ if (clusters[k].count > bigClusterSize) { bigCluster = clusters[k]; bigClusterSize = clusters[k].count; } });
+
+    var SEV_CHIP = function(label, n, bg, fg) {
+      if (!n) return null;
+      return html`<span style=${{fontSize:'0.67rem',padding:'1px 5px',borderRadius:99,background:bg,color:fg,fontWeight:600,whiteSpace:'nowrap'}}>${n} ${label}</span>`;
+    };
+
+    return html`<div style=${{padding:'.4rem .55rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,background:'linear-gradient(135deg,#0f172a 0%,#1a1033 100%)'}}>
+      <div style=${{display:'flex',alignItems:'center',gap:'.3rem',cursor:'pointer'}} onClick=${toggle}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.11-2 4-.6.89-1 1.5-1 3m0 0a4 4 0 0 0-4-4c-1.95 0-3.11 1.4-4 2M12 13v4m-2 3h4"/>
+          <circle cx="12" cy="22" r="1"/>
+        </svg>
+        <span style=${{fontSize:'0.72rem',fontWeight:700,color:'#c4b5fd',flex:1}}>AI Analysis</span>
+        <span style=${{fontSize:'0.63rem',color:'var(--text-faint)',transform:collapsed?'rotate(-90deg)':'rotate(0)',transition:'transform .2s'}}>▼</span>
+      </div>
+      ${!collapsed && html`<div style=${{marginTop:'.35rem'}}>
+        <div style=${{display:'flex',gap:'.25rem',flexWrap:'wrap',alignItems:'center',marginBottom:'.25rem'}}>
+          ${SEV_CHIP('critical', counts.critical, '#7f1d1d', '#fca5a5')}
+          ${SEV_CHIP('major', counts.major, '#78350f', '#fcd34d')}
+          ${SEV_CHIP('minor', counts.minor, '#1e3a5f', '#93c5fd')}
+          ${SEV_CHIP('likely false positive', counts.info, '#1e293b', '#94a3b8')}
+        </div>
+        ${bigClusterSize >= 3 && html`<p style=${{fontSize:'0.69rem',color:'#fbbf24',margin:'.15rem 0',lineHeight:1.3}}>⚠ ${bigClusterSize} clustered clashes${bigCluster.storey ? ' on '+bigCluster.storey : ''} (${bigCluster.typePair})</p>`}
+        ${worstCount >= 2 && html`<p style=${{fontSize:'0.69rem',color:'#a78bfa',margin:'.15rem 0',lineHeight:1.3}}>→ Recommend reviewing ${worstStorey} first (${worstCount} critical/major)</p>`}
+      </div>`}
+    </div>`;
+  }
+
   function ClashStatsBar(props) {
     var items = props.items, isClash = props.isClash, delta = props.delta;
     if (!items.length) return null;
@@ -9724,6 +9785,7 @@ function startApp() {
           </button>`})}
       </div>`}
 
+      ${isClashTab && rawItems.length > 0 && rawItems.some(function(c){return c.aiSeverity;}) && html`<${ClashAISummary} items=${rawItems} />`}
       ${!isExplorerTab && !isStandardsTab && rawItems.length > 0 && html`<${ClashStatsBar} items=${rawItems} isClash=${isClashTab} delta=${isClashTab ? s.lastDeltaSummary : null} />`}
 
       ${s.tab==='navigator' && html`<${NavigatorPanel} s=${s} d=${d} />`}
