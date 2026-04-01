@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.10 (2026-04-01)
+- chore: bump version to 4.6.9
+
 ## v4.6.9 (2026-04-01)
 - Add storey auto-detection for 2D floor plan imports
 
