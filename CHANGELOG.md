@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.5.2 (2026-04-01)
+- Fix crash: guard _checkLocalEngine, _loadSharedHandle, _revitWs
+
 ## v4.5.1 (2026-04-01)
 - Fix crash: guard undefined addon state (revitDirect, revitBridge, pwa)
 
