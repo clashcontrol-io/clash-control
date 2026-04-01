@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.5.1 (2026-04-01)
+- Fix crash: guard undefined addon state (revitDirect, revitBridge, pwa)
+
 ## v4.4.0 (2026-04-01)
 - Add donation/support link in Settings panel
 
