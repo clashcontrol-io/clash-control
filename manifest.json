@@ -3,6 +3,7 @@
   "short_name": "ClashControl",
   "description": "Free, open-source IFC clash detection web app",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",

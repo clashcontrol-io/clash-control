@@ -66,7 +66,7 @@
           });
         }).catch(function(err) {
           console.warn('[PWA] Service worker registration failed:', err);
-          dispatch({t:'UPD_PWA', u:{swRegistered:false, swError:true}});
+          dispatch({t:'UPD_PWA', u:{swRegistered:false, swError:true, swErrorMsg:err.message || String(err)}});
         });
       }
 
@@ -93,7 +93,7 @@
       var swColor = swStatus === 'active' ? '#22c55e' : swStatus === 'registered' ? '#eab308' : '#64748b';
       var swText = swStatus === 'active' ? 'Service worker active'
         : swStatus === 'registered' ? 'Service worker installed — will activate on next reload'
-        : swStatus === 'error' ? 'Service worker failed — requires HTTPS or localhost'
+        : swStatus === 'error' ? 'Service worker error: ' + (pwa.swErrorMsg || 'registration failed')
         : !('serviceWorker' in navigator) ? 'Service workers not supported'
         : 'Service worker not active';
 

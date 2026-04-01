@@ -16,7 +16,13 @@ var PRECACHE = [
 self.addEventListener('install', function(e) {
   e.waitUntil(
     caches.open(CACHE).then(function(cache) {
-      return cache.addAll(PRECACHE);
+      // Cache each resource individually — don't let one CDN failure block the entire SW install.
+      // Failed resources will be cached on first use via the fetch handler's cache-on-response strategy.
+      return Promise.all(PRECACHE.map(function(url) {
+        return cache.add(url).catch(function(err) {
+          console.warn('[SW] Failed to precache (will cache on first use):', url, err.message || err);
+        });
+      }));
     }).then(function() {
       return self.skipWaiting();
     })
