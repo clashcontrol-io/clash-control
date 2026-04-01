@@ -26,6 +26,11 @@ jobs:
           BRANCHES=$(git branch -r | grep 'origin/claude/' | sed 's|[[:space:]]*origin/||')
           for branch in $BRANCHES; do
             echo "── $branch ──"
+            # Skip branches that are already merged into main
+            if git merge-base --is-ancestor "origin/$branch" origin/main; then
+              echo "⏭ already merged into main, skipping"
+              continue
+            fi
             git checkout -B "$branch" "origin/$branch"
             if git rebase origin/main; then
               git push --force-with-lease origin "$branch"
