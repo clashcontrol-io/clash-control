@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.1 (2026-04-01)
+- Fix local engine install text spacing and polling loop
+
 ## v4.6.0 (2026-04-01)
 - Local engine: one-click Enable & Install with auto-connect
 
