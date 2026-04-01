@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.6 (2026-04-01)
+- Fix install command for Windows, add browser top border separator
+
 ## v4.6.5 (2026-04-01)
 - Extend NL regex parser for more natural, conversational commands
 
