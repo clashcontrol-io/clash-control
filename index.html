@@ -11825,6 +11825,14 @@ function startApp() {
           Cloud API enables more capable NL commands. Your key is stored locally and never sent to ClashControl servers.
           ${p.nlProvider !== 'ollama_only' && p.nlProvider !== 'browser_only' && p.nlApiKey && html`<span style=${{color:'#4ade80',marginLeft:'.3rem'}}>✓ Key set</span>`}
         </div>
+        <div style=${{padding:'.3rem 0 .4rem',display:'flex',alignItems:'center',gap:'.4rem'}}>
+          <span style=${{fontSize:'0.72rem',color:'var(--text-faint)'}}>♥</span>
+          <span style=${{fontSize:'0.69rem',color:'var(--text-secondary)',lineHeight:1.4}}>
+            ClashControl is free and open-source.
+            <a href="https://github.com/sponsors/clashcontrol-io" target="_blank" rel="noopener"
+              style=${{color:'#c4b5fd',textDecoration:'underline'}}>Support the project</a> to help keep it running.
+          </span>
+        </div>
 
         <div style=${SEC}>Issue Defaults</div>
         <div style=${{display:'flex',gap:'.5rem',padding:'.5rem 0'}}>
