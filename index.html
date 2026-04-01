@@ -14658,19 +14658,7 @@ function startApp() {
         ${tabBtn('issues',  SVG_ISSUES,  'Issues',   issueN)}
         ${tabBtn('navigator',SVG_EXPLORE, 'Navigator', 0)}
         ${tabBtn('standards',SVG_STANDARDS,'Standards',0)}
-        <button class="cc-tip" data-tip="AI Chat" onClick=${function(){d({t:A.TAB,v:s.tab==='ai'?null:'ai'});}}
-          style=${{width:'100%',height:40,background:s.tab==='ai'?'rgba(124,58,237,.15)':'none',border:'none',
-            cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',
-            borderRight:s.tab==='ai'?'3px solid #a78bfa':'3px solid transparent',
-            color:s.tab==='ai'?'#a78bfa':'var(--text-muted)',transition:'background .15s,color .15s'}}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:SVG_AI_CHAT}}></svg>
-          ${_aiDotCol && s.tab!=='ai' && html`<span style=${{position:'absolute',bottom:6,right:8,width:6,height:6,borderRadius:'50%',background:_aiDotCol,
-            boxShadow:'0 0 4px '+_aiDotCol,pointerEvents:'none'}}></span>`}
-        </button>
       </div>
-      ${iconBtn(function(){if(window._ccToggleTutorial)window._ccToggleTutorial();},
-        html`<span style=${{fontSize:'0.92rem',fontWeight:700}}>ⓘ</span>`,
-        'Quick start guide')}
       <!-- Project switcher -->
       <div style=${{position:'relative'}}>
         <button onClick=${function(){setProjOpen(!projOpen)}}
@@ -14776,6 +14764,9 @@ function startApp() {
       ${iconBtn(function(){d({t:A.SETTINGS,v:true});},
         html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:SVG_GEAR}}></svg>`,
         'Settings')}
+      ${iconBtn(function(){if(window._ccToggleTutorial)window._ccToggleTutorial();},
+        html`<span style=${{fontSize:'0.92rem',fontWeight:700}}>ⓘ</span>`,
+        'Quick start guide')}
     </div>`;
   }
 
