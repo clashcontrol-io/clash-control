@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.11 (2026-04-01)
+- Review, debug and simplify: fix dead code, logic bugs, and addon issues
+
 ## v4.6.10 (2026-04-01)
 - chore: bump version to 4.6.9
 
