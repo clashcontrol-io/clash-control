@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.12 (2026-04-01)
+- Deduplicate: extract shared resize handler and IndexedDB helper
+
 ## v4.6.11 (2026-04-01)
 - Review, debug and simplify: fix dead code, logic bugs, and addon issues
 
