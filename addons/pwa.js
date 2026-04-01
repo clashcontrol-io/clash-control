@@ -11,7 +11,9 @@
   window._ccRegisterAddon({
     id: 'pwa',
     name: 'Progressive Web App',
-    description: 'Offline support, install-as-app, and automatic updates via service worker.',
+    description: window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+      ? 'Offline support and automatic updates for your installed app.'
+      : 'Offline support, install-as-app, and automatic updates via service worker.',
     autoActivate: true, // PWA should be active by default
     icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
 
@@ -32,7 +34,18 @@
     init: function(dispatch, getState) {
       // Register service worker
       if ('serviceWorker' in navigator) {
+        // Listen for controller change — fires when SW calls clients.claim()
+        // This updates the status from "registered" to "active" without needing a reload
+        navigator.serviceWorker.addEventListener('controllerchange', function() {
+          dispatch({t:'UPD_PWA', u:{swActive:true}});
+        });
+        // If already controlled (e.g. return visit), mark active immediately
+        if (navigator.serviceWorker.controller) {
+          dispatch({t:'UPD_PWA', u:{swActive:true}});
+        }
+
         navigator.serviceWorker.register('sw.js').then(function(reg) {
+          dispatch({t:'UPD_PWA', u:{swRegistered:true}});
           // Check for updates periodically (every 60 min)
           _updateCheckTimer = setInterval(function(){ reg.update(); }, 3600000);
 
@@ -51,6 +64,9 @@
               if (nw.state === 'installed' && navigator.serviceWorker.controller) _swReady(nw);
             });
           });
+        }).catch(function(err) {
+          console.warn('[PWA] Service worker registration failed:', err);
+          dispatch({t:'UPD_PWA', u:{swRegistered:false, swError:true}});
         });
       }
 
@@ -72,11 +88,19 @@
       var pwa = s.pwa || {};
       var hasUpdate = pwa.updateAvailable;
       var canInstall = pwa.installAvailable && _ccInstallPrompt;
+      var swActive = pwa.swActive || (navigator.serviceWorker && navigator.serviceWorker.controller);
+      var swStatus = swActive ? 'active' : pwa.swError ? 'error' : pwa.swRegistered ? 'registered' : 'inactive';
+      var swColor = swStatus === 'active' ? '#22c55e' : swStatus === 'registered' ? '#eab308' : '#64748b';
+      var swText = swStatus === 'active' ? 'Service worker active'
+        : swStatus === 'registered' ? 'Service worker installed — will activate on next reload'
+        : swStatus === 'error' ? 'Service worker failed — requires HTTPS or localhost'
+        : !('serviceWorker' in navigator) ? 'Service workers not supported'
+        : 'Service worker not active';
 
       return html`<div style=${{padding:'.5rem 0',fontSize:'0.78rem',color:'var(--text-secondary)',lineHeight:1.7}}>
         <div style=${{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.4rem'}}>
-          <span style=${{width:7,height:7,borderRadius:'50%',background:navigator.serviceWorker&&navigator.serviceWorker.controller?'#22c55e':'#64748b',display:'inline-block'}}></span>
-          <span>${navigator.serviceWorker&&navigator.serviceWorker.controller?'Service worker active':'Service worker not active'}</span>
+          <span style=${{width:7,height:7,borderRadius:'50%',background:swColor,display:'inline-block'}}></span>
+          <span>${swText}</span>
         </div>
         ${hasUpdate && html`<button onClick=${function(){
           navigator.serviceWorker.getRegistration().then(function(r){
