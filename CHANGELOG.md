@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.4 (2026-04-01)
+- Improve Local Clash Engine addon UX and status clarity
+
 ## v4.6.3 (2026-04-01)
 - Fix CSP blocking service worker registration
 
