@@ -15578,7 +15578,7 @@ function startApp() {
                     if (leState.available) return html`<span style=${{fontSize:'0.58rem',fontWeight:600,padding:'1px 5px',borderRadius:4,
                       background:'rgba(34,197,94,.12)',color:'var(--pill-green)'}}>CONNECTED</span>`;
                     return html`<span style=${{fontSize:'0.58rem',fontWeight:600,padding:'1px 5px',borderRadius:4,
-                      background:'rgba(234,179,8,.12)',color:'#eab308'}}>SERVER NOT RUNNING</span>`;
+                      background:'rgba(234,179,8,.12)',color:'#eab308'}}>COMING SOON</span>`;
                   }
                   return html`<span style=${{fontSize:'0.58rem',fontWeight:600,padding:'1px 5px',borderRadius:4,
                     background:active?'rgba(34,197,94,.12)':'var(--tag-bg)',
@@ -15589,7 +15589,7 @@ function startApp() {
               ${function(){
                 var isLocalEngine = id==='local-engine';
                 var le = isLocalEngine ? (s.localEngine||{}) : null;
-                var needsInstall = isLocalEngine && !active && !le.available;
+                var needsInstall = false; // Local engine not yet released — disable install flow
                 // PWA addon: hide Disable button when running as installed PWA
                 var isPwaInstalled = id==='pwa' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
                 if (isPwaInstalled && active) {
@@ -15821,7 +15821,7 @@ function startApp() {
                                : 'Optional Python server for faster, exact clash detection. Not required \u2014 the built-in browser engine works fine for most projects.'}
                 </div>
                 ${!engineAvail && html`<div style=${{fontSize:'0.65rem',color:'var(--text-faint)',marginTop:'.25rem',lineHeight:1.5}}>
-                  Install later: <code style=${{fontSize:'0.63rem',background:'var(--tag-bg)',padding:'1px 4px',borderRadius:3}}>pip install clashcontrol-engine</code>${' then run '}<code style=${{fontSize:'0.63rem',background:'var(--tag-bg)',padding:'1px 4px',borderRadius:3}}>clashcontrol-engine</code>
+                  Coming soon. The built-in browser engine works for most projects.
                 </div>`}
               </div>
             </div>
