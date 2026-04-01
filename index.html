@@ -162,8 +162,8 @@
 
     /* ── Responsive / Mobile ───────────────────────────────── */
     @media(max-width:768px){
-      /* Hide rails on tablet/mobile — replaced by bottom nav */
-      .cc-left-rail,.cc-right-rail{display:none!important}
+      /* Hide rail on tablet/mobile — replaced by bottom nav */
+      .cc-left-rail{display:none!important}
       /* Side panel becomes full-width overlay, leaving room for bottom nav */
       .cc-side-panel{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:56px!important;width:100%!important;z-index:1040!important;border:none!important}
       /* Bottom mobile nav bar — above side panel */
@@ -13545,7 +13545,7 @@ function startApp() {
   function NLCommandPanel(props) {
     var s = props.s, d = props.d;
     var stOpen = useState(false), open = stOpen[0], setOpen = stOpen[1];
-    window._ccNLOpen = function(){ setOpen(true); if(inputRef.current) setTimeout(function(){inputRef.current&&inputRef.current.focus();},50); };
+    window._ccNLOpen = function(){ if(window._ccDispatch) window._ccDispatch({t:'TAB',v:'ai'}); else setOpen(true); if(inputRef.current) setTimeout(function(){inputRef.current&&inputRef.current.focus();},50); };
     window._ccNLSetInput = function(text){ setInput(text); };
     window._ccNLSetStatus = function(status, back){ setLLMStatus(status); setBackend(back); };
     var stMsgs = useState([{role:'assistant', text:'Control ClashControl with plain English — try "load ifc", "structural vs MEP", "switch to light", "analyze clashes", or "help" for all commands.'}]);
@@ -13903,7 +13903,12 @@ function startApp() {
     var aiBubbleBg = 'var(--card-bg)';
 
     var isDetecting = s.detecting;
-    if (!open) {
+    var isDocked = !!props.docked;
+    var backendLabel = window._ccTourActive ? 'AI loaded' : backend === 'ollama' ? 'Ollama (' + _ollamaModel + ')' : backend === 'browser' ? 'In-browser (0.5B)' : null;
+    var backendColor = window._ccTourActive ? '#a78bfa' : backend === 'ollama' ? '#22c55e' : backend === 'browser' ? '#f59e0b' : mutedCol;
+
+    // ── Closed-state pill (only when NOT docked and not open) ──
+    if (!isDocked && !open) {
       var closedGlow = modelLoading || isDetecting;
       var closedAnim = closedGlow ? 'nlBorderPulse 2s ease-in-out infinite' : 'none';
       var closedBorder = closedGlow ? '1px solid rgba(96,165,250,.5)' : '1px solid ' + borderCol;
@@ -13928,11 +13933,147 @@ function startApp() {
       </button>`;
     }
 
+    // ── Shared content: header bar, messages area, input ──
     var panelGlow = modelLoading || llmStatus === 'loading' || isDetecting;
+
+    var nlHeaderBar = html`<div style=${{
+      display:'flex', alignItems:'center', padding:'.45rem .65rem',
+      borderBottom:'1px solid '+borderCol, gap:'.4rem', flexShrink:0
+    }}>
+      ${llmStatus === 'loading' && html`<span style=${{fontSize:'0.69rem', color:'#60a5fa', display:'flex', alignItems:'center', gap:'.25rem'}}>
+        <span class="spin" style=${{display:'inline-block', width:'.55rem', height:'.55rem', borderRadius:'50%', border:'1.5px solid rgba(96,165,250,.3)', borderTopColor:'#60a5fa'}}></span>
+        AI ${llmProgress}%
+      </span>`}
+      ${llmStatus === 'ready' && backendLabel && html`<span style=${{fontSize:'0.63rem', color:backendColor, display:'flex', alignItems:'center', gap:'.2rem'}}>
+        <span style=${{width:'.4rem', height:'.4rem', borderRadius:'50%', background:backendColor, display:'inline-block'}}></span>
+        ${backendLabel}
+      </span>`}
+      <div style=${{flex:1}}></div>
+      <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:A.TRAINING_MODE});}} style=${{
+        background:s.trainingMode?'rgba(124,58,237,.85)':'none', border:'1px solid '+(s.trainingMode?'#a78bfa':'var(--border)'),
+        borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', gap:'.25rem',
+        padding:'.15rem .45rem', color:s.trainingMode?'#e9d5ff':mutedCol, fontSize:'0.69rem', whiteSpace:'nowrap',
+        transition:'background .15s, border-color .15s'
+      }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93V12h3.5a2.25 2.25 0 0 1 0 4.5h-3.5v1.25A3.25 3.25 0 0 1 9.5 21 3.25 3.25 0 0 1 6.25 17.75V14.5h-1A2.25 2.25 0 0 1 3 12.25 2.25 2.25 0 0 1 5.25 10h3.5V9.93A4 4 0 0 1 12 2z"/>
+        </svg>
+        ${s.trainingMode?'Training On':'Training'}
+      </button>
+      ${!isDocked && html`<button onClick=${function(){ setOpen(false); }} style=${{
+        background:'none', border:'none', cursor:'pointer',
+        color:mutedCol, fontSize:'1.26rem', lineHeight:1, padding:'0 .1rem'
+      }}>×</button>`}
+    </div>`;
+
+    var ollamaTipBar = showOllamaTip && backend !== 'ollama' ? html`<div style=${{
+      padding:'.4rem .65rem', borderBottom:'1px solid '+borderCol,
+      background: 'var(--accent-bg)',
+      fontSize:'0.72rem', color:mutedCol, display:'flex', alignItems:'center', gap:'.5rem', flexShrink:0
+    }}>
+      <span style=${{flex:1, lineHeight:1.5}}>
+        <strong style=${{color:textCol}}>Speed tip:</strong> Install <a href="https://ollama.com" target="_blank" rel="noopener"
+          style=${{color:'#60a5fa', textDecoration:'underline'}}>Ollama</a> and run
+        <code style=${{background:'var(--tag-bg)', padding:'.1rem .25rem', borderRadius:3, fontSize:'0.67rem'}}>ollama pull qwen2.5:7b</code>
+        for faster local AI.<br/>
+        <span style=${{color:mutedCol}}>Or connect your own API key in Settings → AI.</span>
+      </span>
+      <button onClick=${function(){ setShowOllamaTip(false); }} style=${{
+        background:'none', border:'none', cursor:'pointer', color:mutedCol, fontSize:'0.92rem', padding:'0 .1rem', lineHeight:1
+      }}>×</button>
+    </div>` : null;
+
+    // ── Docked mode: render inline as side panel content ──
+    if (isDocked) {
+      return html`<div style=${{display:'flex',flexDirection:'column',flex:1,overflow:'hidden'}}>
+        ${nlHeaderBar}
+        ${ollamaTipBar}
+        <div style=${{
+          overflowY:'auto', padding:'.7rem .65rem',
+          display:'flex', flexDirection:'column', gap:'.55rem',
+          flex:1, minHeight:0
+        }}>
+        ${msgs.map(function(m, i) {
+          var isUser = m.role === 'user';
+          if (m.setup) return html`<${ClashSetupCard} key=${i} setup=${m.setup} s=${s} d=${d} onRun=${executeDetection} setMsgs=${setMsgs} idx=${i} />`;
+          if (m.detecting) return null;
+          return html`<div key=${i} style=${{display:'flex', justifyContent: isUser?'flex-end':'flex-start'}}>
+            <div style=${{
+              maxWidth:'85%', padding:'.45rem .7rem',
+              borderRadius: isUser ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
+              background: isUser ? 'var(--accent)' : aiBubbleBg,
+              color: isUser ? '#fff' : textCol,
+              fontSize:'0.87rem', lineHeight:1.55, wordBreak:'break-word'
+            }}>
+              ${m.text}
+            </div>
+          </div>`;
+        })}
+        ${loading && html`<div style=${{display:'flex'}}>
+          <div style=${{
+            padding:'.4rem .65rem', borderRadius:'12px 12px 12px 3px',
+            background:aiBubbleBg, color:mutedCol, fontSize:'0.84rem'
+          }}>…</div>
+        </div>`}
+        <div ref=${bottomRef}></div>
+      </div>
+
+      ${(isDetecting || modelLoading) ? html`<div style=${{
+        padding:'.55rem .65rem', borderTop:'1px solid '+borderCol,
+        display:'flex', alignItems:'center', gap:'.45rem', flexShrink:0
+      }}>
+        <div style=${{
+          flex:1, display:'flex', alignItems:'center', gap:'.45rem',
+          background:isDetecting && detectPct>0 ? 'linear-gradient(90deg, rgba(37,99,235,.25) '+detectPct+'%, '+inputBg+' '+detectPct+'%)' : inputBg,
+          border:'1px solid rgba(96,165,250,.35)',
+          borderRadius:8, padding:'.5rem .65rem',
+          transition:'background .3s',
+          animation:(!isDetecting||detectPct===0)?'nlBorderPulse 2s ease-in-out infinite':'none'
+        }}>
+          <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
+          <span style=${{fontSize:'0.85rem',color:'#60a5fa',fontWeight:500}}>${isDetecting ? (function(){
+            var p=detectPct, t=detectElapsed;
+            if(t>=240) return 'So… what movie are you watching?'+(p>0?' — '+p+'%':'')+'…';
+            if(t>=180) return 'Still going… maybe grab a coffee'+(p>0?' — '+p+'%':'')+'…';
+            if(t>=120) return 'This is a big one, hang in there'+(p>0?' — '+p+'%':'')+'…';
+            var msg;
+            if(t<10) msg='Running clash detection';
+            else if(t<30) msg=p<50?'Running clash detection':p<93?'Working hard':'Almost done';
+            else msg=p===0?'Running clash detection':p<15?'Running clash detection':p<30?'Crunching triangles':p<45?'Working hard':p<60?'Running as fast as I can':p<75?'Almost halfway… just kidding, past it':p<85?'So many clashes to check':p<93?'Wrapping things up':'Final stretch';
+            return msg+(p>0?' — '+p+'%':'')+'…';
+          }()) : (modelLoadMsg || 'Model loading…')}</span>
+        </div>
+      </div>` : html`<div style=${{
+        padding:'.55rem .65rem', borderTop:'1px solid '+borderCol,
+        display:'flex', gap:'.45rem', alignItems:'flex-end', flexShrink:0
+      }}>
+        <textarea
+          ref=${inputRef}
+          value=${input}
+          onInput=${function(e){ setInput(e.target.value); }}
+          onKeyDown=${onKeyDown}
+          placeholder="e.g. structural vs MEP with 50mm gap"
+          rows=${isDocked ? '3' : '2'}
+          style=${{
+            flex:1, resize:'none', background:inputBg, border:'1px solid '+borderCol,
+            borderRadius:8, padding:'.4rem .6rem', color:textCol,
+            fontSize:'0.87rem', lineHeight:1.5, outline:'none', fontFamily:'inherit',
+            transition:'border-color .15s'
+          }}
+        ></textarea>
+        <button onClick=${send} disabled=${!input.trim()||loading} style=${{
+          background:'var(--accent)', color:'#fff', border:'none', borderRadius:8,
+          padding:'.4rem .7rem', cursor:'pointer', fontSize:'0.87rem', fontWeight:500,
+          opacity:(!input.trim()||loading)?0.45:1, alignSelf:'flex-end',
+          transition:'opacity .15s'
+        }}>Send</button>
+      </div>`}
+    </div>`;
+    }
+
+    // ── Floating mode (original overlay behavior) ──
     var panelAnimation = panelGlow ? 'nlBorderPulse 2s ease-in-out infinite' : 'none';
     var panelBorderCol = panelGlow ? 'rgba(96,165,250,.5)' : borderCol;
-    var backendLabel = window._ccTourActive ? 'AI loaded' : backend === 'ollama' ? 'Ollama (' + _ollamaModel + ')' : backend === 'browser' ? 'In-browser (0.5B)' : null;
-    var backendColor = window._ccTourActive ? '#a78bfa' : backend === 'ollama' ? '#22c55e' : backend === 'browser' ? '#f59e0b' : mutedCol;
     return html`<div style=${{position:'fixed',inset:0,zIndex:1199}} onClick=${function(){setOpen(false);}}><div class="cc-nlpanel" onClick=${function(e){e.stopPropagation();}} style=${{
       position:'fixed', bottom:'1rem', left:'50%', transform:'translateX(-50%)',
       zIndex:1200, width:'min('+panelW+'px, calc(100% - 2rem))',
@@ -13944,55 +14085,8 @@ function startApp() {
       <div onMouseDown=${function(e){onResizeStart(e,'n')}} style=${{
         height:4, cursor:'ns-resize', flexShrink:0
       }}></div>
-      <div style=${{
-        display:'flex', alignItems:'center', padding:'0 .8rem .55rem',
-        borderBottom:'1px solid '+borderCol, gap:'.5rem'
-      }}>
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style=${{flexShrink:0}}>
-          <path d="M2 4h12M2 8h8M2 12h10" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round"/>
-        </svg>
-        <span style=${{fontSize:'0.87rem', fontWeight:600, color:textCol, flex:1}}>ClashControl</span>
-        ${llmStatus === 'loading' && html`<span style=${{fontSize:'0.69rem', color:'#60a5fa', display:'flex', alignItems:'center', gap:'.25rem'}}>
-          <span class="spin" style=${{display:'inline-block', width:'.55rem', height:'.55rem', borderRadius:'50%', border:'1.5px solid rgba(96,165,250,.3)', borderTopColor:'#60a5fa'}}></span>
-          AI ${llmProgress}%
-        </span>`}
-        ${llmStatus === 'ready' && backendLabel && html`<span style=${{fontSize:'0.63rem', color:backendColor, display:'flex', alignItems:'center', gap:'.2rem'}}>
-          <span style=${{width:'.4rem', height:'.4rem', borderRadius:'50%', background:backendColor, display:'inline-block'}}></span>
-          ${backendLabel}
-        </span>`}
-        <button onClick=${function(){if(window._ccToggleTraining)window._ccToggleTraining();else d({t:A.TRAINING_MODE});}} style=${{
-          background:s.trainingMode?'rgba(124,58,237,.85)':'none', border:'1px solid '+(s.trainingMode?'#a78bfa':'var(--border)'),
-          borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', gap:'.25rem',
-          padding:'.15rem .45rem', color:s.trainingMode?'#e9d5ff':mutedCol, fontSize:'0.69rem', whiteSpace:'nowrap',
-          transition:'background .15s, border-color .15s'
-        }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93V12h3.5a2.25 2.25 0 0 1 0 4.5h-3.5v1.25A3.25 3.25 0 0 1 9.5 21 3.25 3.25 0 0 1 6.25 17.75V14.5h-1A2.25 2.25 0 0 1 3 12.25 2.25 2.25 0 0 1 5.25 10h3.5V9.93A4 4 0 0 1 12 2z"/>
-          </svg>
-          ${s.trainingMode?'Training On':'Training'}
-        </button>
-        <button onClick=${function(){ setOpen(false); }} style=${{
-          background:'none', border:'none', cursor:'pointer',
-          color:mutedCol, fontSize:'1.26rem', lineHeight:1, padding:'0 .1rem'
-        }}>×</button>
-      </div>
-
-      ${showOllamaTip && backend !== 'ollama' && html`<div style=${{
-        padding:'.4rem .8rem', borderBottom:'1px solid '+borderCol,
-        background: 'var(--accent-bg)',
-        fontSize:'0.72rem', color:mutedCol, display:'flex', alignItems:'center', gap:'.5rem'
-      }}>
-        <span style=${{flex:1, lineHeight:1.5}}>
-          <strong style=${{color:textCol}}>Speed tip:</strong> Install <a href="https://ollama.com" target="_blank" rel="noopener"
-            style=${{color:'#60a5fa', textDecoration:'underline'}}>Ollama</a> and run
-          <code style=${{background:'var(--tag-bg)', padding:'.1rem .25rem', borderRadius:3, fontSize:'0.67rem'}}>ollama pull qwen2.5:7b</code>
-          for a faster, smarter local AI — no cloud, runs on your machine.<br/>
-          <span style=${{color:mutedCol}}>Or connect your own API key (Anthropic, OpenAI, Google) in the AI settings panel above.</span>
-        </span>
-        <button onClick=${function(){ setShowOllamaTip(false); }} style=${{
-          background:'none', border:'none', cursor:'pointer', color:mutedCol, fontSize:'0.92rem', padding:'0 .1rem', lineHeight:1
-        }}>×</button>
-      </div>`}
+      ${nlHeaderBar}
+      ${ollamaTipBar}
 
       <div style=${{
         overflowY:'auto', padding:'.7rem .8rem',
@@ -14039,13 +14133,9 @@ function startApp() {
           <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
           <span style=${{fontSize:'0.85rem',color:'#60a5fa',fontWeight:500}}>${isDetecting ? (function(){
             var p=detectPct, t=detectElapsed;
-            // Time-based overrides for very long runs
             if(t>=240) return 'So… what movie are you watching?'+(p>0?' — '+p+'%':'')+'…';
             if(t>=180) return 'Still going… maybe grab a coffee'+(p>0?' — '+p+'%':'')+'…';
             if(t>=120) return 'This is a big one, hang in there'+(p>0?' — '+p+'%':'')+'…';
-            // Fast detection (<10s): just show base message
-            // Moderate (10-30s): 2 messages
-            // Slow (30s+): full message variety
             var msg;
             if(t<10) msg='Running clash detection';
             else if(t<30) msg=p<50?'Running clash detection':p<93?'Working hard':'Almost done';
@@ -14117,6 +14207,31 @@ function startApp() {
     var SVG_EXPORT = '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>';
     var SVG_GEAR   = '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>';
 
+    // ── Tab buttons (merged from RightRail) ──
+    var clashN=s.clashes.filter(function(c){var st=c.status||'new';return st!=='resolved'&&st!=='denied';}).length;
+    var issueN=s.issues.filter(function(i){var st=i.status||'open';return st!=='resolved'&&st!=='closed';}).length;
+    function tabBtn(id, svgPath, title, badge) {
+      var active=s.tab===id;
+      return html`<button class="cc-tip" data-tip=${title} onClick=${function(){d({t:A.TAB,v:s.tab===id?null:id});}}
+        style=${{width:'100%',height:40,background:active?'rgba(37,99,235,.12)':'none',border:'none',
+          cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',
+          borderRight:active?'3px solid #3b82f6':'3px solid transparent',
+          color:active?'#60a5fa':'var(--text-muted)',transition:'background .15s,color .15s'}}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:svgPath}}></svg>
+        ${badge>0 && html`<span style=${{position:'absolute',top:4,right:6,background:'#ef4444',color:'#fff',
+          fontSize:'0.6rem',fontWeight:600,padding:'0 3px',borderRadius:99,lineHeight:1.3,minWidth:13,textAlign:'center',
+          pointerEvents:'none',boxShadow:'0 1px 3px rgba(0,0,0,.3)'}}>${badge>99?'99+':badge}</span>`}
+      </button>`;
+    }
+    var SVG_MODELS  = '<path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M12 2L2 7l10 5 10-5-10-5z"/>';
+    var SVG_CLASHES = '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>';
+    var SVG_ISSUES  = '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>';
+    var SVG_EXPLORE = '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>';
+    var SVG_STANDARDS = '<path d="M4 7h16M4 12h10M4 17h13"/><path d="M20 12l-3-3v6z"/>';
+    var SVG_AI_CHAT = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>';
+    // AI backend status dot color
+    var _aiDotCol = _nlBackend==='ollama' ? '#22c55e' : _nlBackend==='browser' ? '#f59e0b' : null;
+
     return html`<div class="cc-left-rail" style=${{
       width:48,flexShrink:0,background:'var(--bg-primary)',
       borderRight:'1px solid var(--border-subtle)',
@@ -14129,6 +14244,22 @@ function startApp() {
             display:'flex',alignItems:'center',justifyContent:'center',cursor:'default'}}>
           <span style=${{color:'#fff',fontWeight:900,fontSize:11}}>CC</span>
         </div>
+      </div>
+      <div class="cc-rail-tabs" style=${{display:'flex',flexDirection:'column',borderBottom:'1px solid var(--border-subtle)'}}>
+        ${tabBtn('models',  SVG_MODELS,  'Models',   s.models.length)}
+        ${tabBtn('clashes', SVG_CLASHES, 'Clashes',  clashN)}
+        ${tabBtn('issues',  SVG_ISSUES,  'Issues',   issueN)}
+        ${tabBtn('navigator',SVG_EXPLORE, 'Navigator', 0)}
+        ${tabBtn('standards',SVG_STANDARDS,'Standards',0)}
+        <button class="cc-tip" data-tip="AI Chat" onClick=${function(){d({t:A.TAB,v:s.tab==='ai'?null:'ai'});}}
+          style=${{width:'100%',height:40,background:s.tab==='ai'?'rgba(124,58,237,.15)':'none',border:'none',
+            cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',
+            borderRight:s.tab==='ai'?'3px solid #a78bfa':'3px solid transparent',
+            color:s.tab==='ai'?'#a78bfa':'var(--text-muted)',transition:'background .15s,color .15s'}}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:SVG_AI_CHAT}}></svg>
+          ${_aiDotCol && s.tab!=='ai' && html`<span style=${{position:'absolute',bottom:6,right:8,width:6,height:6,borderRadius:'50%',background:_aiDotCol,
+            boxShadow:'0 0 4px '+_aiDotCol,pointerEvents:'none'}}></span>`}
+        </button>
       </div>
       ${iconBtn(function(){if(window._ccToggleTutorial)window._ccToggleTutorial();},
         html`<span style=${{fontSize:'0.92rem',fontWeight:700}}>ⓘ</span>`,
@@ -14924,7 +15055,7 @@ function startApp() {
     if (!tab) return null;
     var projects=s.projectList||[];
     var activeProj=projects.find(function(p){return p.id===s.activeProject;})||projects[0]||{name:'Default'};
-    var TITLES={models:'Models',clashes:'Clashes',issues:'Issues',navigator:'Navigator',tools:'Tools',addons:'Addons'};
+    var TITLES={models:'Models',clashes:'Clashes',issues:'Issues',navigator:'Navigator',tools:'Tools',addons:'Addons',ai:'AI Chat'};
     function onResizeDown(e){
       e.preventDefault();
       dragRef.current={startX:e.clientX,startW:panelW};
@@ -14959,6 +15090,7 @@ function startApp() {
       ${tab==='standards' && html`<${StandardsPanel} s=${s} d=${d} />`}
       ${tab==='tools'    && html`<${ToolsPanel} s=${s} d=${d} />`}
       ${tab==='addons'   && html`<${AddonsPanel} s=${s} d=${d} />`}
+      ${tab==='ai'       && html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
     </div>`;
   }
 
@@ -15220,7 +15352,7 @@ function startApp() {
       ${navBtn('clashes','<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>','Clashes',clashN)}
       ${navBtn('issues','<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>','Issues',issueN)}
       ${navBtn('navigator','<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>','Navigator',0)}
-      ${navBtn('tools','<circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/>','Tools',0)}
+      ${navBtn('ai','<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>','AI Chat',0)}
     </nav>`;
   }
 
@@ -15736,10 +15868,9 @@ function startApp() {
         <${Header} s=${s} d=${d} />
         ${is2D ? html`<${View2D} s=${s} d=${d} />` : html`<${Viewer} s=${s} d=${d} />`}
         ${is2D && html`<${ExportBar} s=${s} d=${d} />`}
-        <${NLCommandPanel} s=${s} d=${d} />
+        ${s.tab !== 'ai' && html`<${NLCommandPanel} s=${s} d=${d} />`}
       </div>
       <${SidePanel} s=${s} d=${d} />
-      <${RightRail} s=${s} d=${d} />
       ${s.showModal && html`<${NewIssueModal} d=${d} el=${s.modalElement} prefs=${s.prefs} clashes=${s.clashes} activeId=${s.activeId} />`}
       ${s.showSettings && html`<${SettingsModal} d=${d} s=${s} prefs=${s.prefs} models=${s.models} rules=${s.rules} />`}
       ${s.showRevitBridge && html`<${RevitBridgePanel} s=${s} d=${d} />`}
