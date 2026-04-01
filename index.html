@@ -166,6 +166,7 @@
       .cc-left-rail{display:none!important}
       /* Side panel becomes full-width overlay, leaving room for bottom nav */
       .cc-side-panel{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:56px!important;width:100%!important;z-index:1040!important;border:none!important}
+      .cc-left-panel{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:56px!important;width:100%!important;z-index:1040!important;border:none!important}
       /* Bottom mobile nav bar — above side panel */
       .cc-mobile-nav{display:flex!important;z-index:1050!important}
       /* Header: compact */
@@ -15425,26 +15426,67 @@ function startApp() {
     </div>`;
   }
 
-  // ── Side Panel ─────────────────────────────────────────────────
+  // ── Left Panel (Models, Clashes, Issues, etc.) ─────────────────
 
-  function SidePanel(props) {
+  function LeftPanel(props) {
     var s=props.s, d=props.d;
     var tab=s.tab;
-    // Hooks MUST be called unconditionally (before any early return)
     var widthSt=useState(300), panelW=widthSt[0], setPanelW=widthSt[1];
     var dragRef=useRef(null);
-    var showAI = !tab;
-    var activeTab = tab || 'ai';
+    if (!tab) return null;
     var projects=s.projectList||[];
     var activeProj=projects.find(function(p){return p.id===s.activeProject;})||projects[0]||{name:'Default'};
-    var TITLES={models:'Models',clashes:'Clashes',issues:'Issues',navigator:'Navigator',tools:'Tools',addons:'Addons',ai:'AI Chat'};
+    var TITLES={models:'Models',clashes:'Clashes',issues:'Issues',navigator:'Navigator',tools:'Tools',addons:'Addons',standards:'Standards'};
+    function onResizeDown(e){
+      e.preventDefault();
+      dragRef.current={startX:e.clientX,startW:panelW};
+      function onMove(ev){
+        if(!dragRef.current) return;
+        var dx=ev.clientX-dragRef.current.startX;
+        setPanelW(Math.max(200,Math.min(600,dragRef.current.startW+dx)));
+      }
+      function onUp(){dragRef.current=null;window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);}
+      window.addEventListener('mousemove',onMove);
+      window.addEventListener('mouseup',onUp);
+    }
+    return html`<div class="cc-left-panel" style=${{
+      width:panelW,flexShrink:0,display:'flex',flexDirection:'column',overflow:'hidden',
+      background:'var(--bg-primary)',borderRight:'1px solid var(--border-subtle)',position:'relative'
+    }}>
+      <div onMouseDown=${onResizeDown} style=${{position:'absolute',right:0,top:0,bottom:0,width:8,cursor:'col-resize',zIndex:10,
+        background:'transparent',transition:'background .15s'}} onMouseEnter=${function(e){e.currentTarget.style.background='rgba(59,130,246,0.3)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
+      <div style=${{display:'flex',alignItems:'center',padding:'.6rem .85rem',
+        borderBottom:'1px solid var(--border-subtle)',flexShrink:0,gap:'.5rem'}}>
+        <span style=${{fontWeight:600,fontSize:'.82rem',flex:1,color:'var(--text-primary)'}}>${TITLES[tab]||''}</span>
+        ${tab==='models' && html`<span style=${{fontSize:'.68rem',color:'var(--text-muted)',overflow:'hidden',
+          textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:140}} title=${activeProj.name}>📁 ${activeProj.name}</span>`}
+        <button onClick=${function(){d({t:A.TAB,v:null});}}
+          style=${{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',
+            fontSize:'1.1rem',lineHeight:1,padding:'2px 4px',borderRadius:4}} title="Close panel">×</button>
+      </div>
+      ${tab==='models'   && html`<${ModelSidebar}  s=${s} d=${d} />`}
+      ${tab==='clashes'  && html`<${IssuePanel} key="clashes" s=${s} d=${d} hideTabBar=${true} />`}
+      ${tab==='issues'   && html`<${IssuePanel} key="issues" s=${s} d=${d} hideTabBar=${true} />`}
+      ${tab==='navigator' && html`<${IssuePanel} key="navigator" s=${s} d=${d} hideTabBar=${true} />`}
+      ${tab==='standards' && html`<${StandardsPanel} s=${s} d=${d} />`}
+      ${tab==='tools'    && html`<${ToolsPanel} s=${s} d=${d} />`}
+      ${tab==='addons'   && html`<${AddonsPanel} s=${s} d=${d} />`}
+    </div>`;
+  }
+
+  // ── AI Chat Panel (always visible, right side) ────────────────
+
+  function AIChatPanel(props) {
+    var s=props.s, d=props.d;
+    var widthSt=useState(320), panelW=widthSt[0], setPanelW=widthSt[1];
+    var dragRef=useRef(null);
     function onResizeDown(e){
       e.preventDefault();
       dragRef.current={startX:e.clientX,startW:panelW};
       function onMove(ev){
         if(!dragRef.current) return;
         var dx=dragRef.current.startX-ev.clientX;
-        setPanelW(Math.max(200,Math.min(600,dragRef.current.startW+dx)));
+        setPanelW(Math.max(250,Math.min(600,dragRef.current.startW+dx)));
       }
       function onUp(){dragRef.current=null;window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);}
       window.addEventListener('mousemove',onMove);
@@ -15456,23 +15498,7 @@ function startApp() {
     }}>
       <div onMouseDown=${onResizeDown} style=${{position:'absolute',left:0,top:0,bottom:0,width:8,cursor:'col-resize',zIndex:10,
         background:'transparent',transition:'background .15s'}} onMouseEnter=${function(e){e.currentTarget.style.background='rgba(59,130,246,0.3)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
-      <div style=${{display:'flex',alignItems:'center',padding:'.6rem .85rem',
-        borderBottom:'1px solid var(--border-subtle)',flexShrink:0,gap:'.5rem'}}>
-        <span style=${{fontWeight:600,fontSize:'.82rem',flex:1,color:'var(--text-primary)'}}>${TITLES[activeTab]||''}</span>
-        ${activeTab==='models' && html`<span style=${{fontSize:'.68rem',color:'var(--text-muted)',overflow:'hidden',
-          textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:140}} title=${activeProj.name}>📁 ${activeProj.name}</span>`}
-        ${!showAI && html`<button onClick=${function(){d({t:A.TAB,v:null});}}
-          style=${{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',
-            fontSize:'1.1rem',lineHeight:1,padding:'2px 4px',borderRadius:4}} title="Close panel">×</button>`}
-      </div>
-      ${activeTab==='models'   && html`<${ModelSidebar}  s=${s} d=${d} />`}
-      ${activeTab==='clashes'  && html`<${IssuePanel} key="clashes" s=${s} d=${d} hideTabBar=${true} />`}
-      ${activeTab==='issues'   && html`<${IssuePanel} key="issues" s=${s} d=${d} hideTabBar=${true} />`}
-      ${activeTab==='navigator' && html`<${IssuePanel} key="navigator" s=${s} d=${d} hideTabBar=${true} />`}
-      ${activeTab==='standards' && html`<${StandardsPanel} s=${s} d=${d} />`}
-      ${activeTab==='tools'    && html`<${ToolsPanel} s=${s} d=${d} />`}
-      ${activeTab==='addons'   && html`<${AddonsPanel} s=${s} d=${d} />`}
-      ${activeTab==='ai'       && html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
+      <${NLCommandPanel} s=${s} d=${d} docked=${true} />
     </div>`;
   }
 
@@ -16246,12 +16272,13 @@ function startApp() {
       <input ref=${_gFileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <input ref=${_gFile2dRef} type="file" accept=".dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <${LeftRail} s=${s} d=${d} />
+      <${LeftPanel} s=${s} d=${d} />
       <div style=${{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',minWidth:0}}>
         <${Header} s=${s} d=${d} />
         ${is2D ? html`<${View2D} s=${s} d=${d} />` : html`<${Viewer} s=${s} d=${d} />`}
         ${is2D && html`<${ExportBar} s=${s} d=${d} />`}
       </div>
-      <${SidePanel} s=${s} d=${d} />
+      <${AIChatPanel} s=${s} d=${d} />
       ${s.showModal && html`<${NewIssueModal} d=${d} el=${s.modalElement} prefs=${s.prefs} clashes=${s.clashes} activeId=${s.activeId} />`}
       ${s.showSettings && html`<${SettingsModal} d=${d} s=${s} prefs=${s.prefs} models=${s.models} rules=${s.rules} />`}
       ${s.showRevitBridge && html`<${RevitBridgePanel} s=${s} d=${d} />`}
