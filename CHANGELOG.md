@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.9 (2026-04-01)
+- Add storey auto-detection for 2D floor plan imports
+
 ## v4.6.6 (2026-04-01)
 - Fix install command for Windows, add browser top border separator
 
