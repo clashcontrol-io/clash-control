@@ -15516,7 +15516,7 @@ function startApp() {
     var stEngineChecking = useState(true), engineChecking = stEngineChecking[0], setEngineChecking = stEngineChecking[1];
     useEffect(function(){
       if(!show) return;
-      _checkLocalEngine(null).then(function(ready){setEngineAvail(ready);setEngineChecking(false);});
+      if (window._checkLocalEngine) window._checkLocalEngine(null).then(function(ready){setEngineAvail(ready);setEngineChecking(false);}); else setEngineChecking(false);
     },[show]);
     function dismiss() {
       setVis(false);
@@ -16051,7 +16051,8 @@ function startApp() {
     // ── Sync clash selection to Revit Direct Connector ──
     useEffect(function(){
       if (!s.revitDirect || !s.revitDirect.connected) return;
-      if (!_revitWs || _revitWs.readyState !== 1) return;
+      var ws = window._revitGetWs && window._revitGetWs();
+      if (!ws || ws.readyState !== 1) return;
       if (!s.activeId) return;
       var item = s.clashes.find(function(c){return c.id===s.activeId;}) || s.issues.find(function(i){return i.id===s.activeId;});
       if (!item) return;
@@ -16060,7 +16061,7 @@ function startApp() {
       s.models.forEach(function(m){ (m.elements||[]).forEach(function(el){
         if (eids.indexOf(el.expressId) >= 0 && el.props.globalId) gids.push(el.props.globalId);
       }); });
-      if (gids.length) _revitWs.send(JSON.stringify({type:'highlight', globalIds:gids}));
+      if (gids.length) ws.send(JSON.stringify({type:'highlight', globalIds:gids}));
     }, [s.activeId, s.revitDirect && s.revitDirect.connected]);
     // ── Clean up 3D state when switching tabs ──
     useEffect(function(){
@@ -16198,22 +16199,20 @@ function startApp() {
     useEffect(function(){
       // Restore opt-in from localStorage
       try { if (localStorage.getItem('cc_local_engine')==='1') d({t:A.UPD_LOCAL_ENGINE, u:{active:true}}); } catch(e){}
-      _checkLocalEngine(d);
+      if (window._checkLocalEngine) window._checkLocalEngine(d);
     }, []);
     // ── Shared project auto-reconnect on startup ──
     useEffect(function(){
-      _loadSharedHandle(function(saved) {
+      if (!window._loadSharedHandle) return;
+      window._loadSharedHandle(function(saved) {
         if (!saved || !saved.dirHandle) return;
-        // Verify permission is still granted
         saved.dirHandle.queryPermission({mode:'readwrite'}).then(function(perm) {
           if (perm === 'granted') {
-            _sharedDirHandle = saved.dirHandle;
-            d({t:A.UPD_SHARED_PROJECT, u:{enabled:true, folderName:saved.dirHandle.name, fileName:saved.fileName||'project.ccproject'}});
-            _startSharedSync(d);
+            d({t:'UPD_SHARED_PROJECT', u:{enabled:true, folderName:saved.dirHandle.name, fileName:saved.fileName||'project.ccproject'}});
+            if (window._startSharedSync) window._startSharedSync(d);
           }
         }).catch(function(){});
       });
-      return function(){ if(_sharedSyncTimer){clearInterval(_sharedSyncTimer);_sharedSyncTimer=null;} };
     }, []);
     var _memWarnFiredRef = useRef(false);
     useEffect(function(){
