@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.2 (2026-04-01)
+- PWA addon: auto-enabled in installed app, context-aware UI
+
 ## v4.6.1 (2026-04-01)
 - Fix local engine install text spacing and polling loop
 
