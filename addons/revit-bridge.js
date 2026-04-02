@@ -39,7 +39,7 @@
   // Camera sync state
   var _cameraSyncEnabled = false;
   var _cameraSyncThrottleTimer = null;
-  var _selectionSyncEnabled = false;
+  var _selectionSyncEnabled = true;
 
   // Last synced timestamp for live update indicator
   var _lastElementSync = 0;
@@ -860,7 +860,7 @@
         lastPushAckTs: null,
         lastElementSync: 0,
         cameraSyncEnabled: false,
-        selectionSyncEnabled: false,
+        selectionSyncEnabled: true,
         revitSelectedElement: null
       }
     },
