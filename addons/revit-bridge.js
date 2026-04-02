@@ -85,18 +85,8 @@
       d({t:'UPD_REVIT_DIRECT', u:{connected:true, reconnecting:false}});
       d({t:'BRIDGE_LOG', logType:'info', text:wasReconnect ? 'Reconnected to Revit plugin.' : 'Connected to Revit plugin.'});
       _revitWs.send(JSON.stringify({type:'ping'}));
-      // On reconnect, prompt user instead of auto-exporting
-      if (wasReconnect) {
-        // Try session resumption first if we have cached hashes
-        var hasHashes = Object.keys(_elementHashCache).length > 0;
-        if (hasHashes) {
-          d({t:'BRIDGE_LOG', logType:'info', text:'Reconnected. Attempting session resumption...'});
-          _revitWs.send(JSON.stringify({type:'resume-session', knownElements:_elementHashCache}));
-        } else {
-          d({t:'UPD_REVIT_DIRECT', u:{reconnectPrompt:true}});
-          d({t:'BRIDGE_LOG', logType:'info', text:'Reconnected to Revit. Pull model again?'});
-        }
-      }
+      // Let the connector decide what to sync — ClashControl is the passive receiver.
+      // On reconnect, just notify readiness; the connector will push data if needed.
     };
 
     _revitWs.onclose = function() {
@@ -294,10 +284,9 @@
           // If we have a buffer (sync arrived after model-start + batches), finalize it.
           _finalizeModel(msg, d);
         } else {
-          // No buffer — sync notification without preceding export.
-          // Auto-request a fresh export so the model updates.
-          d({t:'BRIDGE_LOG', logType:'pull', text:'Revit synced to central. Re-exporting model...'});
-          _revitDirectExport(['all']);
+          // No buffer — the connector notified us of a sync but didn't send data.
+          // Don't auto-request export; the connector decides what to push.
+          d({t:'BRIDGE_LOG', logType:'info', text:'Revit synced to central. Waiting for connector to push updates...'});
         }
         break;
 
@@ -336,9 +325,8 @@
         break;
 
       case 'session-expired':
-        // Plugin has no cache — fall back to full export prompt
-        d({t:'UPD_REVIT_DIRECT', u:{reconnectPrompt:true}});
-        d({t:'BRIDGE_LOG', logType:'info', text:'Session expired on Revit side. Full re-export needed.'});
+        // Connector reports session expired — it will re-push a full model when ready
+        d({t:'BRIDGE_LOG', logType:'info', text:'Session expired on Revit side. Connector will re-export when ready.'});
         break;
 
       case 'error':
