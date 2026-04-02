@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.7.4 (2026-04-02)
+- fix: mobile chat close button + make AI responses feel human
+
 ## v4.7.3 (2026-04-02)
 - feat: redesign clash detection setup with natural language options
 
