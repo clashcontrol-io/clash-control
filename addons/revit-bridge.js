@@ -291,9 +291,9 @@
           // If we have a buffer (sync arrived after model-start + batches), finalize it.
           _finalizeModel(msg, d);
         } else {
-          // No buffer — the connector notified us of a sync but didn't send data.
-          // Don't auto-request export; the connector decides what to push.
-          d({t:'BRIDGE_LOG', logType:'info', text:'Revit synced to central. Waiting for connector to push updates...'});
+          // No buffer — connector notified us of a sync. Request updated model.
+          d({t:'BRIDGE_LOG', logType:'pull', text:'Revit synced to central. Pulling updated model...'});
+          _revitDirectExport(['all']);
         }
         break;
 
