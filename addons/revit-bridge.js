@@ -18,6 +18,7 @@
   var _revitLastPort = 19780;
   var _revitLastDispatch = null;
   var _revitUserDisconnected = false; // true when user clicks Disconnect
+  var _pullOnConnect = false; // true when user-initiated connect should auto-pull
   // Track which CC model ID corresponds to which Revit document name
   // so re-exports update the existing model instead of adding a duplicate.
   var _revitModelMap = {}; // {documentName_modelName: ccModelId}
@@ -85,8 +86,14 @@
       d({t:'UPD_REVIT_DIRECT', u:{connected:true, reconnecting:false}});
       d({t:'BRIDGE_LOG', logType:'info', text:wasReconnect ? 'Reconnected to Revit plugin.' : 'Connected to Revit plugin.'});
       _revitWs.send(JSON.stringify({type:'ping'}));
-      // Let the connector decide what to sync — ClashControl is the passive receiver.
-      // On reconnect, just notify readiness; the connector will push data if needed.
+      // Auto-pull on first user-initiated connect
+      if (_pullOnConnect || window._ccPullOnConnect) {
+        _pullOnConnect = false;
+        window._ccPullOnConnect = false;
+        d({t:'BRIDGE_LOG', logType:'pull', text:'Auto-pulling model...'});
+        setTimeout(function(){ _revitDirectExport(['all']); }, 300);
+      }
+      // On reconnect, let the connector decide what to sync.
     };
 
     _revitWs.onclose = function() {
@@ -855,21 +862,23 @@
 
     reducerCases: {
       'UPD_BRIDGE': function(s, a) {
-        return Object.assign({}, s, {revitBridge: Object.assign({}, s.revitBridge, a.u)});
+        return Object.assign({}, s, {revitBridge: Object.assign({}, s.revitBridge||{}, a.u)});
       },
       'BRIDGE_LOG': function(s, a) {
-        return Object.assign({}, s, {revitBridge: Object.assign({}, s.revitBridge, {
-          log: s.revitBridge.log.concat([{ts:Date.now(), type:a.logType||'info', text:a.text}]).slice(-100)
+        var br = s.revitBridge || {log:[]};
+        return Object.assign({}, s, {revitBridge: Object.assign({}, br, {
+          log: (br.log||[]).concat([{ts:Date.now(), type:a.logType||'info', text:a.text}]).slice(-100)
         })});
       },
       'CLEAR_BRIDGE_LOG': function(s) {
-        return Object.assign({}, s, {revitBridge: Object.assign({}, s.revitBridge, {log:[]})});
+        var br = s.revitBridge || {log:[]};
+        return Object.assign({}, s, {revitBridge: Object.assign({}, br, {log:[]})});
       },
       'REVIT_BRIDGE': function(s, a) {
         return Object.assign({}, s, {showRevitBridge: a.v});
       },
       'UPD_REVIT_DIRECT': function(s, a) {
-        return Object.assign({}, s, {revitDirect: Object.assign({}, s.revitDirect, a.u)});
+        return Object.assign({}, s, {revitDirect: Object.assign({}, s.revitDirect||{}, a.u)});
       }
     },
 
