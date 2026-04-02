@@ -879,8 +879,8 @@
     },
 
     init: function(dispatch, getState) {
-      // Auto-detect Revit on page load (non-intrusive probe)
-      setTimeout(function() { _autoDetectRevit(dispatch); }, 1000);
+      // Auto-detect disabled — HTTP probe to a WebSocket port causes 400 errors.
+      // User connects manually via the Revit Bridge panel.
     },
 
     destroy: function() {
