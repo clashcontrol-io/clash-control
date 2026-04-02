@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.6.15 (2026-04-02)
+- feat: implement Revit Connector integration improvements
+
 ## v4.6.13 (2026-04-01)
 - Complete Revit connector integration to match ClashControlConnector protocol
 
