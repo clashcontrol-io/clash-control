@@ -15788,9 +15788,6 @@ function startApp() {
 
         <div style=${{padding:'1rem',overflowY:'auto',flex:1}}>
           ${tab==='direct' && html`<div style=${{display:'flex',flexDirection:'column',gap:'.75rem'}}>
-            ${(function(){var p=(s.projectList||[]).find(function(pp){return pp.id===s.activeProject;}); return p&&p.sourceType==='ifc'&&!rd.connected;}()) && html`<div style=${{fontSize:'0.72rem',color:'#fbbf24',background:'#422006',padding:'.35rem .5rem',borderRadius:6}}>
-              This project uses IFC import. Connect Revit to a Revit Live Link project instead.
-            </div>`}
             <div>
               <div style=${S_LBL}>WebSocket Port</div>
               <div style=${{display:'flex',gap:'.4rem'}}>
@@ -15798,10 +15795,7 @@ function startApp() {
                   style=${{...S_INP,flex:1}} />
                 ${rd.connected ? html`<button onClick=${function(){if(window._revitDirectDisconnect) window._revitDirectDisconnect(d)}}
                   style=${{...S_BTN2,background:'#7f1d1d',color:'#fca5a5'}}>Disconnect</button>`
-                : html`<button onClick=${function(){
-                    var p2=(s.projectList||[]).find(function(pp){return pp.id===s.activeProject;});
-                    if(p2&&p2.sourceType==='ifc'){alert('This is an IFC project. Create a Revit Live Link project to connect.');return;}
-                    if(window._saveDirectPort) window._saveDirectPort(port); if(window._revitDirectConnect) window._revitDirectConnect(port,d);}}
+                : html`<button onClick=${function(){if(window._saveDirectPort) window._saveDirectPort(port); if(window._revitDirectConnect) window._revitDirectConnect(port,d)}}
                   style=${{...S_BTN2,background:'var(--accent)',color:'#fff'}}>Connect</button>`}
               </div>
             </div>
@@ -15866,10 +15860,6 @@ function startApp() {
               <div style=${{display:'flex',gap:'.3rem'}}>
                 <button onClick=${function(){d({t:'UPD_REVIT_DIRECT',u:{exportError:null,exportErrorElementsSent:0}}); if(window._revitDirectExport) window._revitDirectExport(['all']);}}
                   style=${{...S_BTN2,background:'#1e3a5f',color:'#93c5fd',fontSize:'0.7rem',padding:'.25rem .5rem'}}>Retry</button>
-                ${rd.exportErrorElementsSent > 0 && html`<button onClick=${function(){d({t:'UPD_REVIT_DIRECT',u:{exportError:null,exportErrorElementsSent:0}}); if(window._revitKeepPartialModel) window._revitKeepPartialModel(d);}}
-                  style=${{...S_BTN2,background:'#052e16',color:'#4ade80',fontSize:'0.7rem',padding:'.25rem .5rem'}}>Keep ${rd.exportErrorElementsSent} elements</button>`}
-                ${rd.exportErrorElementsSent > 0 && html`<button onClick=${function(){if(window._revitDiscardPartialModel) window._revitDiscardPartialModel(d);}}
-                  style=${{...S_BTN2,background:'var(--bg-tertiary)',color:'var(--text-muted)',fontSize:'0.7rem',padding:'.25rem .5rem'}}>Discard</button>`}
               </div>
             </div>`}
 
@@ -15891,9 +15881,6 @@ function startApp() {
                   onChange=${function(e){var v=e.target.checked; d({t:'UPD_REVIT_DIRECT',u:{cameraSyncEnabled:v}}); if(window._revitSetCameraSync) window._revitSetCameraSync(v);}} />
                 Sync camera to Revit
               </label>
-              ${rd.lastElementSync > 0 && html`<div style=${{fontSize:'0.63rem',color:'var(--text-faint)'}}>
-                Last synced: ${(function(){var ago=Math.round((Date.now()-rd.lastElementSync)/1000); return ago<5?'just now':ago<60?ago+'s ago':Math.round(ago/60)+'m ago';}())}
-              </div>`}
             </div>`}
 
             <div style=${{fontSize:'0.69rem',color:'var(--text-faint)',lineHeight:1.6,padding:'.4rem .5rem',background:'var(--bg-primary)',borderRadius:6}}>
