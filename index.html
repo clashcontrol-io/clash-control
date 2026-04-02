@@ -8391,25 +8391,6 @@ function startApp() {
   function ModelCard(props) {
     var m=props.m, d=props.d, s=props.s;
     var op=useState(false), open=op[0], setOpen=op[1];
-    var qcSt=useState(null), qc=qcSt[0], setQc=qcSt[1];
-    var qcExpSt=useState({}), qcExp=qcExpSt[0], setQcExp=qcExpSt[1];
-    var aiSugSt=useState({}), aiSug=aiSugSt[0], setAiSug=aiSugSt[1];
-    var aiLoadSt=useState({}), aiLoad=aiLoadSt[0], setAiLoad=aiLoadSt[1];
-    function runQC() { setQc(runDataQualityChecks(m.elements||[])); setQcExp({}); setAiSug({}); setAiLoad({}); }
-    // Auto-run quality check on first expand
-    useEffect(function(){ if(open && !qc && m.elements && m.elements.length>0) runQC(); }, [open]);
-    function toggleQcSection(key) { setQcExp(function(p){var n=Object.assign({},p);n[key]=!n[key];return n;}); }
-    function doSuggest(key, item) {
-      var gid = item.gid||item.name;
-      setAiLoad(function(p){var n=Object.assign({},p);n[key+':'+gid]=true;return n;});
-      suggestOmniClass(s&&s.bridge, item.el).then(function(txt) {
-        setAiSug(function(p){var n=Object.assign({},p);n[key+':'+gid]=txt;return n;});
-      }).catch(function(e) {
-        setAiSug(function(p){var n=Object.assign({},p);n[key+':'+gid]='Error: '+e.message;return n;});
-      }).finally(function() {
-        setAiLoad(function(p){var n=Object.assign({},p);n[key+':'+gid]=false;return n;});
-      });
-    }
     return html`<div style=${{background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden'}}>
       <div style=${{display:'flex',alignItems:'center',gap:'.35rem',padding:'.35rem .5rem'}}>
         <span onClick=${function(){d({t:A.UPD_MODEL,id:m.id,u:{visible:!m.visible}})}}
@@ -8465,60 +8446,6 @@ function startApp() {
             <span style=${{width:8,height:8,borderRadius:'50%',background:'#334155',marginLeft:'.2rem'}}></span> Unchanged
           </div>
         </div>`}
-        <div style=${{borderTop:'1px solid var(--border)',paddingTop:'.35rem',marginTop:'.1rem'}}>
-          <div style=${{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.3rem'}}>
-            <span style=${{fontSize:'0.63rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.03em'}}>Data Quality</span>
-            <button onClick=${runQC} style=${{fontSize:'0.6rem',padding:'.15rem .4rem',background:'var(--bg-primary)',color:'var(--text-faint)',border:'1px solid var(--border)',borderRadius:3,cursor:'pointer'}}>
-              ${qc ? 'Re-check' : 'Check'}
-            </button>
-          </div>
-          ${qc && (function(){
-            var SEV = {error:'#ef4444', warn:'#f59e0b', info:'#60a5fa'};
-            var checks = ['guidCollision','noGlobalId','proxy','genericName','duplicateName','noMaterial','noStorey','emptyGeometry','zeroLayers','unhostedOpenings','noProperties','noDescription'];
-            var issues = checks.reduce(function(n,k){return n+(qc[k]?qc[k].count:0);},0);
-            var canSuggest = s&&s.bridge&&s.bridge.provider&&s.bridge.apiKey;
-            return html`<div>
-              <div style=${{fontSize:'0.6rem',color:issues===0?'#4ade80':'var(--text-faint)',marginBottom:'.35rem'}}>
-                ${issues===0?'✓ All checks passed for '+qc._total+' elements':issues+' issue'+(issues===1?'':'s')+' across '+qc._total+' elements'}
-              </div>
-              ${checks.map(function(key) {
-                var ch = qc[key]; if (!ch) return null;
-                var col = SEV[ch.sev]||'#60a5fa';
-                var expanded = qcExp[key];
-                var showSuggest = key==='proxy';
-                return html`<div key=${key} style=${{marginBottom:'.2rem'}}>
-                  <div onClick=${ch.count>0?function(){toggleQcSection(key);}:null}
-                    style=${{display:'flex',alignItems:'center',gap:'.3rem',cursor:ch.count>0?'pointer':'default',padding:'.15rem 0'}}>
-                    <span style=${{fontSize:'0.6rem',fontWeight:700,minWidth:20,textAlign:'right',color:ch.count===0?'#4ade80':col}}>${ch.count===0?'✓':ch.count}</span>
-                    <span style=${{fontSize:'0.63rem',color:ch.count===0?'var(--text-faint)':'var(--text-secondary)',flex:1}}>${ch.label}</span>
-                    ${ch.count>0 && html`<span style=${{fontSize:'0.57rem',color:'var(--text-faint)'}}>${expanded?'▲':'▼'}</span>`}
-                  </div>
-                  ${expanded && ch.count>0 && html`<div style=${{paddingLeft:'1.5rem',paddingBottom:'.2rem'}}>
-                    ${ch.ex.map(function(it) {
-                      var sid = key+':'+(it.gid||it.name);
-                      var sug = aiSug[sid], loading = aiLoad[sid];
-                      return html`<div key=${it.gid||it.name} style=${{marginBottom:'.25rem'}}>
-                        <div style=${{fontSize:'0.6rem',color:'var(--text-faint)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${it.name}>${it.name}</div>
-                        ${showSuggest && html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem',marginTop:'.1rem'}}>
-                          ${!sug && html`<button onClick=${function(){doSuggest(key,it);}}
-                            disabled=${loading}
-                            style=${{fontSize:'0.57rem',padding:'.1rem .3rem',background:'rgba(139,92,246,.12)',color:'#a78bfa',border:'1px solid rgba(139,92,246,.2)',borderRadius:3,cursor:loading?'default':'pointer'}}>
-                            ${loading?'…':'✦ Suggest OmniClass'}
-                          </button>`}
-                          ${!canSuggest && !sug && html`<span style=${{fontSize:'0.57rem',color:'var(--text-faint)',fontStyle:'italic'}}>Configure AI in Revit Bridge</span>`}
-                          ${sug && html`<span style=${{fontSize:'0.6rem',color:'#a78bfa',flex:1}}>${sug}</span>`}
-                          ${sug && html`<button onClick=${function(){navigator.clipboard&&navigator.clipboard.writeText(sug);}}
-                            style=${{fontSize:'0.57rem',padding:'.1rem .25rem',background:'none',color:'var(--text-faint)',border:'none',cursor:'pointer'}}>⎘</button>`}
-                        </div>`}
-                      </div>`;
-                    })}
-                    ${ch.count>ch.ex.length && html`<div style=${{fontSize:'0.57rem',color:'var(--text-faint)',fontStyle:'italic'}}>+${ch.count-ch.ex.length} more</div>`}
-                  </div>`}
-                </div>`;
-              })}
-            </div>`;
-          }())}
-        </div>
         ${m.storeys&&m.storeys.length>0 && html`<div style=${{fontSize:'0.63rem',color:'var(--text-faint)',borderTop:'1px solid var(--border)',paddingTop:'.25rem',marginTop:'.1rem'}}>
           ${m.storeys.length} level${m.storeys.length===1?'':'s'} — manage in Levels panel below
         </div>`}
@@ -10286,7 +10213,333 @@ function startApp() {
     URL.revokeObjectURL(a.href);
   }
 
-  // ── IDS Validation Panel (shown in Standards tab) ─────────────────
+  // ── Enhanced BIM Model Checks ──────────────────────────────────────
+
+  // Common Pset property names for each IFC type
+  var BIM_PSET_MAP = {
+    IfcWall:['Pset_WallCommon'], IfcWallStandardCase:['Pset_WallCommon'],
+    IfcSlab:['Pset_SlabCommon'], IfcRoof:['Pset_RoofCommon'],
+    IfcColumn:['Pset_ColumnCommon'], IfcBeam:['Pset_BeamCommon'],
+    IfcDoor:['Pset_DoorCommon'], IfcWindow:['Pset_WindowCommon'],
+    IfcCovering:['Pset_CoveringCommon'], IfcCurtainWall:['Pset_CurtainWallCommon'],
+    IfcPlate:['Pset_PlateCommon'], IfcMember:['Pset_MemberCommon'],
+    IfcRailing:['Pset_RailingCommon'], IfcStair:['Pset_StairCommon'],
+    IfcRamp:['Pset_RampCommon'], IfcSpace:['Pset_SpaceCommon']
+  };
+
+  function runBIMModelChecks(elements) {
+    var acc = {
+      noFireRating:[], noIsExternal:[], noLoadBearing:[], noAssemblyCode:[],
+      noClassification:[], thicknessMismatch:[], missingCommonPset:[],
+      duplicateGlobalId:[], noObjectType:[], noTypeAssignment:[],
+      invalidName:[], missingArea:[], missingVolume:[]
+    };
+    // Types where IsExternal is expected
+    var EXTERNAL_TYPES = {IfcWall:1,IfcWallStandardCase:1,IfcSlab:1,IfcRoof:1,IfcDoor:1,IfcWindow:1,IfcCurtainWall:1,IfcPlate:1};
+    // Types where LoadBearing is expected
+    var LOADBEARING_TYPES = {IfcWall:1,IfcWallStandardCase:1,IfcSlab:1,IfcColumn:1,IfcBeam:1,IfcMember:1};
+    // Types where FireRating is expected
+    var FIRE_TYPES = {IfcWall:1,IfcWallStandardCase:1,IfcSlab:1,IfcDoor:1,IfcColumn:1,IfcBeam:1,IfcCovering:1};
+    // Types where area/volume are expected
+    var QUANTITY_TYPES = {IfcWall:1,IfcWallStandardCase:1,IfcSlab:1,IfcRoof:1,IfcColumn:1,IfcBeam:1,IfcPlate:1,IfcCovering:1,IfcSpace:1};
+
+    // Thickness keywords in names
+    var THICKNESS_RE = /(\d+)\s*(mm|cm|m)\b/i;
+
+    (elements||[]).forEach(function(el) {
+      var p = el.props||{};
+      var it = {name:p.name||('#'+el.expressId), gid:p.globalId, ifcType:p.ifcType, el:el};
+      var psets = p.psets||{};
+      var quant = p.quantities||{};
+
+      // Find the common Pset for this type
+      var commonPsetNames = BIM_PSET_MAP[p.ifcType]||[];
+      var commonPset = null;
+      commonPsetNames.forEach(function(cn) {
+        Object.keys(psets).forEach(function(k) {
+          if (k.toLowerCase() === cn.toLowerCase()) commonPset = psets[k];
+        });
+      });
+
+      // Missing common Pset entirely
+      if (commonPsetNames.length > 0 && !commonPset) {
+        acc.missingCommonPset.push(Object.assign({}, it, {detail: commonPsetNames[0]}));
+      }
+
+      // FireRating check
+      if (FIRE_TYPES[p.ifcType]) {
+        var hasFire = false;
+        if (commonPset) {
+          Object.keys(commonPset).forEach(function(k) {
+            if (k.toLowerCase()==='firerating' && commonPset[k] && String(commonPset[k]).trim()) hasFire = true;
+          });
+        }
+        // Also check all psets for FireRating
+        if (!hasFire) {
+          Object.keys(psets).forEach(function(ps) {
+            Object.keys(psets[ps]||{}).forEach(function(k) {
+              if (k.toLowerCase()==='firerating' && psets[ps][k] && String(psets[ps][k]).trim()) hasFire = true;
+            });
+          });
+        }
+        if (!hasFire) acc.noFireRating.push(it);
+      }
+
+      // IsExternal check
+      if (EXTERNAL_TYPES[p.ifcType]) {
+        var hasExternal = false;
+        if (commonPset) {
+          Object.keys(commonPset).forEach(function(k) {
+            if (k.toLowerCase()==='isexternal') hasExternal = true;
+          });
+        }
+        if (!hasExternal) {
+          Object.keys(psets).forEach(function(ps) {
+            Object.keys(psets[ps]||{}).forEach(function(k) {
+              if (k.toLowerCase()==='isexternal') hasExternal = true;
+            });
+          });
+        }
+        if (!hasExternal) acc.noIsExternal.push(it);
+      }
+
+      // LoadBearing check
+      if (LOADBEARING_TYPES[p.ifcType]) {
+        var hasLB = false;
+        if (commonPset) {
+          Object.keys(commonPset).forEach(function(k) {
+            if (k.toLowerCase()==='loadbearing') hasLB = true;
+          });
+        }
+        if (!hasLB) {
+          Object.keys(psets).forEach(function(ps) {
+            Object.keys(psets[ps]||{}).forEach(function(k) {
+              if (k.toLowerCase()==='loadbearing') hasLB = true;
+            });
+          });
+        }
+        if (!hasLB) acc.noLoadBearing.push(it);
+      }
+
+      // Assembly code / classification check
+      var hasClassification = false;
+      Object.keys(psets).forEach(function(ps) {
+        var grp = psets[ps]||{};
+        Object.keys(grp).forEach(function(k) {
+          var kl = k.toLowerCase();
+          if (kl==='assemblycode'||kl==='assembly code'||kl==='assembly_code'||
+              kl==='classificationcode'||kl==='classification code'||kl==='classification'||
+              kl==='omniclass'||kl==='omniclassnumber'||kl==='uniclass'||kl==='uniformat'||kl==='masterformat') {
+            if (grp[k] && String(grp[k]).trim()) hasClassification = true;
+          }
+        });
+      });
+      if (p.objectType && /^\d{2}\s?\d{2}\s?\d{2}/.test(p.objectType)) hasClassification = true;
+      if (!hasClassification) acc.noClassification.push(it);
+
+      // ObjectType / type assignment check
+      if (!p.objectType || !p.objectType.trim()) acc.noObjectType.push(it);
+
+      // Thickness vs name mismatch
+      var nameMatch = THICKNESS_RE.exec(p.name||'');
+      if (nameMatch && quant) {
+        var nameThickMM = parseFloat(nameMatch[1]);
+        if (nameMatch[2].toLowerCase()==='cm') nameThickMM *= 10;
+        if (nameMatch[2].toLowerCase()==='m') nameThickMM *= 1000;
+        // Check quantities for width/thickness
+        var actualThick = null;
+        Object.keys(quant).forEach(function(qk) {
+          var ql = qk.toLowerCase();
+          if (ql==='width'||ql==='thickness'||ql==='depth') {
+            var v = parseFloat(quant[qk]);
+            if (!isNaN(v)) {
+              // IFC quantities in metres — convert to mm
+              if (v < 10) v *= 1000;
+              actualThick = v;
+            }
+          }
+        });
+        if (actualThick !== null && Math.abs(actualThick - nameThickMM) > nameThickMM * 0.15) {
+          acc.thicknessMismatch.push(Object.assign({}, it, {detail: 'Name says ' + nameThickMM + 'mm, actual ' + Math.round(actualThick) + 'mm'}));
+        }
+      }
+
+      // Invalid/placeholder names
+      if (p.name && /^[\d\-_\s]+$/.test(p.name.trim())) acc.invalidName.push(it);
+
+      // Missing area for relevant types
+      if (QUANTITY_TYPES[p.ifcType]) {
+        var hasArea = false;
+        Object.keys(quant).forEach(function(qk) {
+          if (qk.toLowerCase().indexOf('area') >= 0 && parseFloat(quant[qk]) > 0) hasArea = true;
+        });
+        if (!hasArea) acc.missingArea.push(it);
+      }
+
+      // Missing volume for relevant types
+      if (QUANTITY_TYPES[p.ifcType] && p.ifcType !== 'IfcSpace') {
+        var hasVol = false;
+        Object.keys(quant).forEach(function(qk) {
+          if (qk.toLowerCase().indexOf('volume') >= 0 && parseFloat(quant[qk]) > 0) hasVol = true;
+        });
+        if (!hasVol) acc.missingVolume.push(it);
+      }
+    });
+
+    return {
+      noFireRating:     {label:'Missing FireRating',                  sev:'warn', cat:'properties', count:acc.noFireRating.length,      ex:acc.noFireRating.slice(0,8)},
+      noIsExternal:     {label:'Missing IsExternal parameter',        sev:'warn', cat:'properties', count:acc.noIsExternal.length,      ex:acc.noIsExternal.slice(0,8)},
+      noLoadBearing:    {label:'Missing LoadBearing parameter',       sev:'warn', cat:'properties', count:acc.noLoadBearing.length,     ex:acc.noLoadBearing.slice(0,8)},
+      noClassification: {label:'No classification / assembly code',   sev:'warn', cat:'classification', count:acc.noClassification.length, ex:acc.noClassification.slice(0,8)},
+      noObjectType:     {label:'No ObjectType defined',               sev:'info', cat:'classification', count:acc.noObjectType.length,     ex:acc.noObjectType.slice(0,8)},
+      missingCommonPset:{label:'Missing common property set',         sev:'warn', cat:'properties', count:acc.missingCommonPset.length, ex:acc.missingCommonPset.slice(0,8)},
+      thicknessMismatch:{label:'Thickness ≠ name (>15% off)',         sev:'error',cat:'geometry',  count:acc.thicknessMismatch.length, ex:acc.thicknessMismatch.slice(0,8)},
+      invalidName:      {label:'Numeric/placeholder element names',   sev:'warn', cat:'naming',    count:acc.invalidName.length,       ex:acc.invalidName.slice(0,8)},
+      missingArea:      {label:'Missing area quantity',               sev:'info', cat:'quantities', count:acc.missingArea.length,       ex:acc.missingArea.slice(0,8)},
+      missingVolume:    {label:'Missing volume quantity',             sev:'info', cat:'quantities', count:acc.missingVolume.length,     ex:acc.missingVolume.slice(0,8)},
+      _total: (elements||[]).length
+    };
+  }
+
+  // ── Data Quality Panel (dedicated tab) ─────────────────────────────
+
+  function DataQualityPanel(props) {
+    var s = props.s, d = props.d;
+    var qcSt = useState(null), qc = qcSt[0], setQc = qcSt[1];
+    var bimSt = useState(null), bim = bimSt[0], setBim = bimSt[1];
+    var expSt = useState({}), expanded = expSt[0], setExpanded = expSt[1];
+    var selModel = useState('all'), selectedModel = selModel[0], setSelectedModel = selModel[1];
+    var running = useState(false), isRunning = running[0], setRunning = running[1];
+    var secSt = useState({general:true,bim:true,ids:true}), sections = secSt[0], setSections = secSt[1];
+
+    function toggleSection(key) { setSections(function(p){var n=Object.assign({},p);n[key]=!n[key];return n;}); }
+
+    function runChecks() {
+      setRunning(true);
+      setTimeout(function() {
+        var elements = [];
+        (s.models||[]).forEach(function(m) {
+          if (selectedModel !== 'all' && m.id !== selectedModel) return;
+          (m.elements||[]).forEach(function(el) { elements.push(el); });
+        });
+        setQc(runDataQualityChecks(elements));
+        setBim(runBIMModelChecks(elements));
+        setExpanded({});
+        setRunning(false);
+      }, 50);
+    }
+
+    function toggleExp(key) { setExpanded(function(p){var n=Object.assign({},p);n[key]=!n[key];return n;}); }
+
+    var hasModels = s.models && s.models.length > 0;
+    var totalIssues = 0;
+    var totalBim = 0;
+    if (qc) {
+      var qcKeys = Object.keys(qc).filter(function(k){return k!=='_total';});
+      qcKeys.forEach(function(k){totalIssues += qc[k].count||0;});
+    }
+    if (bim) {
+      var bimKeys = Object.keys(bim).filter(function(k){return k!=='_total';});
+      bimKeys.forEach(function(k){totalBim += bim[k].count||0;});
+    }
+
+    var SEV = {error:'#ef4444', warn:'#f59e0b', info:'#60a5fa'};
+    var SEC = {fontSize:'0.69rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.03em',padding:'.4rem .6rem',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-subtle)'};
+
+    function renderCheckGroup(checks, keys, title) {
+      var issues = 0;
+      keys.forEach(function(k){if(checks[k])issues+=checks[k].count;});
+      return html`<div>
+        ${keys.map(function(key) {
+          var ch = checks[key]; if (!ch) return null;
+          var col = SEV[ch.sev]||'#60a5fa';
+          var isExp = expanded[key];
+          return html`<div key=${key} style=${{borderBottom:'1px solid var(--border-subtle)'}}>
+            <div onClick=${ch.count>0?function(){toggleExp(key);}:null}
+              style=${{display:'flex',alignItems:'center',gap:'.35rem',cursor:ch.count>0?'pointer':'default',padding:'.3rem .6rem'}}>
+              <span style=${{fontSize:'0.69rem',fontWeight:700,minWidth:28,textAlign:'right',color:ch.count===0?'#4ade80':col}}>${ch.count===0?'✓':ch.count}</span>
+              <span style=${{fontSize:'0.72rem',color:ch.count===0?'var(--text-faint)':'var(--text-secondary)',flex:1}}>${ch.label}</span>
+              ${ch.count>0 && html`<span style=${{fontSize:'0.57rem',color:'var(--text-faint)'}}>${isExp?'▲':'▼'}</span>`}
+            </div>
+            ${isExp && ch.count>0 && html`<div style=${{padding:'.2rem .6rem .3rem 2.5rem',background:'var(--bg-primary)'}}>
+              ${ch.ex.map(function(it) {
+                return html`<div key=${it.gid||it.name} style=${{padding:'.15rem 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                  <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
+                    <span style=${{fontSize:'0.63rem',color:'#c084fc',flexShrink:0}}>${it.ifcType||''}</span>
+                    <span style=${{fontSize:'0.63rem',color:'var(--text-secondary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${it.name}>${it.name}</span>
+                    ${it.detail && html`<span style=${{fontSize:'0.57rem',color:'#fbbf24',flexShrink:0}}>${it.detail}</span>`}
+                  </div>
+                </div>`;
+              })}
+              ${ch.count>ch.ex.length && html`<div style=${{fontSize:'0.57rem',color:'var(--text-faint)',fontStyle:'italic',padding:'.2rem 0'}}>+${ch.count-ch.ex.length} more</div>`}
+            </div>`}
+          </div>`;
+        })}
+      </div>`;
+    }
+
+    return html`<div style=${{display:'flex',flexDirection:'column',flex:1,overflow:'hidden'}}>
+      <div style=${{padding:'.5rem .6rem',borderBottom:'1px solid var(--border-subtle)',display:'flex',flexDirection:'column',gap:'.4rem',flexShrink:0}}>
+        <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
+          <span style=${{fontSize:'0.83rem',fontWeight:600,color:'var(--text-primary)',flex:1}}>Data Quality</span>
+          ${qc && html`<span style=${{fontSize:'0.63rem',padding:'2px 6px',borderRadius:99,
+            background:totalIssues+totalBim===0?'#052e16':'#78350f',
+            color:totalIssues+totalBim===0?'#4ade80':'#fcd34d',fontWeight:600}}>
+            ${totalIssues+totalBim===0?'All passed':totalIssues+totalBim+' issues'}
+          </span>`}
+        </div>
+        <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
+          <select value=${selectedModel} onChange=${function(e){setSelectedModel(e.target.value);}}
+            style=${{flex:1,fontSize:'0.72rem',padding:'.25rem .4rem',background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:5,fontFamily:'inherit'}}>
+            <option value="all">All models</option>
+            ${(s.models||[]).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+          </select>
+          <button onClick=${runChecks} disabled=${isRunning || !hasModels}
+            style=${{padding:'.25rem .6rem',borderRadius:5,fontSize:'0.72rem',fontWeight:600,cursor:hasModels?'pointer':'not-allowed',border:'none',
+              background:isRunning?'var(--bg-tertiary)':'var(--accent)',color:isRunning?'var(--text-faint)':'#fff',fontFamily:'inherit',
+              opacity:hasModels?1:0.5}}>
+            ${isRunning ? 'Checking...' : qc ? 'Re-check' : 'Run Checks'}
+          </button>
+        </div>
+        ${!hasModels && html`<span style=${{fontSize:'0.69rem',color:'var(--text-faint)'}}>Load a model to run data quality checks.</span>`}
+      </div>
+
+      <div style=${{flex:1,overflowY:'auto'}}>
+        ${qc && html`<div>
+          <div onClick=${function(){toggleSection('general');}} style=${SEC}>
+            <span>General Checks</span>
+            <span style=${{fontSize:'0.57rem',color:'var(--text-faint)'}}>${sections.general?'▲':'▼'}</span>
+          </div>
+          ${sections.general && renderCheckGroup(qc, ['guidCollision','noGlobalId','proxy','genericName','duplicateName','noMaterial','noStorey','emptyGeometry','zeroLayers','unhostedOpenings','noProperties','noDescription'], 'General')}
+        </div>`}
+
+        ${bim && html`<div>
+          <div onClick=${function(){toggleSection('bim');}} style=${SEC}>
+            <span>BIM Model Checks</span>
+            <span style=${{fontSize:'0.57rem',color:'var(--text-faint)'}}>${sections.bim?'▲':'▼'}</span>
+          </div>
+          ${sections.bim && renderCheckGroup(bim, ['thicknessMismatch','noFireRating','noIsExternal','noLoadBearing','missingCommonPset','noClassification','noObjectType','invalidName','missingArea','missingVolume'], 'BIM')}
+        </div>`}
+
+        <div>
+          <div onClick=${function(){toggleSection('ids');}} style=${SEC}>
+            <span>IDS Validation</span>
+            <span style=${{fontSize:'0.57rem',color:'var(--text-faint)'}}>${sections.ids?'▲':'▼'}</span>
+          </div>
+          ${sections.ids && html`<${IDSValidationPanel} s=${s} d=${d} />`}
+        </div>
+
+        ${qc && html`<div style=${{padding:'.5rem .6rem',borderTop:'1px solid var(--border-subtle)'}}>
+          <div style=${{fontSize:'0.63rem',color:'var(--text-faint)',lineHeight:1.6}}>
+            Checked ${qc._total} elements across ${selectedModel==='all'?(s.models||[]).length:1} model${selectedModel==='all'&&(s.models||[]).length!==1?'s':''}.
+            General: ${totalIssues} issue${totalIssues!==1?'s':''}. BIM: ${totalBim} issue${totalBim!==1?'s':''}.
+          </div>
+        </div>`}
+      </div>
+    </div>`;
+  }
+
+  // ── IDS Validation Panel ─────────────────────────────────────────
 
   function IDSValidationPanel(props) {
     var s = props.s, d = props.d;
@@ -10701,9 +10954,6 @@ function startApp() {
           style=${{fontSize:'0.69rem',padding:'.3rem .5rem',background:'var(--bg-secondary)',color:'var(--text-faint)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer'}}>↑</button>
       </div>
 
-      ${s && d && html`<div style=${{borderTop:'2px solid var(--border)',paddingTop:'.8rem'}}>
-        <${IDSValidationPanel} s=${s} d=${d} />
-      </div>`}
     </div>`;
   }
 
@@ -14610,6 +14860,7 @@ function startApp() {
     var SVG_ISSUES  = '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>';
     var SVG_EXPLORE = '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>';
     var SVG_STANDARDS = '<path d="M4 7h16M4 12h10M4 17h13"/><path d="M20 12l-3-3v6z"/>';
+    var SVG_DATAQUALITY = '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>';
     var SVG_AI_CHAT = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>';
     // AI backend status dot color
     var _aiDotCol = _nlBackend==='ollama' ? '#22c55e' : _nlBackend==='browser' ? '#f59e0b' : null;
@@ -14631,6 +14882,7 @@ function startApp() {
         ${tabBtn('models',  SVG_MODELS,  'Models',   s.models.length)}
         ${tabBtn('clashes', SVG_CLASHES, 'Clashes',  clashN)}
         ${tabBtn('issues',  SVG_ISSUES,  'Issues',   issueN)}
+        ${tabBtn('dataquality',SVG_DATAQUALITY,'Data Quality',0)}
         ${tabBtn('navigator',SVG_EXPLORE, 'Navigator', 0)}
         ${tabBtn('standards',SVG_STANDARDS,'Standards',0)}
       </div>
@@ -15476,6 +15728,7 @@ function startApp() {
       ${tab==='models'   && html`<${ModelSidebar}  s=${s} d=${d} />`}
       ${tab==='clashes'  && html`<${IssuePanel} key="clashes" s=${s} d=${d} hideTabBar=${true} />`}
       ${tab==='issues'   && html`<${IssuePanel} key="issues" s=${s} d=${d} hideTabBar=${true} />`}
+      ${tab==='dataquality' && html`<${DataQualityPanel} s=${s} d=${d} />`}
       ${tab==='navigator' && html`<${IssuePanel} key="navigator" s=${s} d=${d} hideTabBar=${true} />`}
       ${tab==='standards' && html`<${StandardsPanel} s=${s} d=${d} />`}
       ${tab==='tools'    && html`<${ToolsPanel} s=${s} d=${d} />`}
