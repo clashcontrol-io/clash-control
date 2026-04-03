@@ -4260,7 +4260,7 @@ function startApp() {
 
       // Ghost: swap non-highlighted meshes to a ghostly grey material
       var _ghostedMeshes = [];
-      var _ghostMat = new THREE.MeshBasicMaterial({color:0x334155, transparent:true, opacity:0.15, depthWrite:false});
+      var _ghostMat = new THREE.MeshPhongMaterial({color:0x445566, transparent:true, opacity:0.12, depthWrite:false, shininess:10, flatShading:false});
       S._ghostMat = _ghostMat;
       function ghostOthers(targetExpressIds) {
         unghostAll();
