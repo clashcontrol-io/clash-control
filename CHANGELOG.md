@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.8.0 (2026-04-03)
+- fix: reactive AI Chat tab highlight on mobile nav
+
 ## v4.7.4 (2026-04-02)
 - fix: mobile chat close button + make AI responses feel human
 
