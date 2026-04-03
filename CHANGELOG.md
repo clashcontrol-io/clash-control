@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.9.2 (2026-04-03)
+- perf: skip soft clash tests when not explicitly requested
+
 ## v4.9.1 (2026-04-03)
 - style: use shaded ghost material instead of flat unlit
 
