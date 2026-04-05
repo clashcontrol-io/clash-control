@@ -381,9 +381,7 @@ function startApp() {
     defaultTolerances:(function(){try{return JSON.parse(localStorage.getItem('cc_defaultTolerances'))||{};}catch(e){return {};}}()),
     theme:(function(){ try { return localStorage.getItem('cc_theme')||'dark'; } catch(e){ return 'dark'; } })(),
     renderStyle:_ccLoadPref('renderStyle','standard'), // 'standard','shaded','rendered','wireframe'
-    ollamaEnabled:_ccLoadPref('ollamaEnabled',false), // off by default — enable in Settings to use local Ollama
-    nlProvider:_ccLoadPref('nlProvider','auto'), // 'auto'|'anthropic'|'openai'|'google'|'ollama_only'|'browser_only'
-    nlApiKey:(function(){try{return localStorage.getItem('cc_nlApiKey')||'';}catch(e){return '';}}())
+    // Old AI prefs removed: ollamaEnabled, nlProvider, nlApiKey (now server-side)
   };
   var INIT = {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:null,
@@ -714,7 +712,7 @@ function startApp() {
       case A.TRAINING_MODE: var tm=a.v!=null?!!a.v:!s.trainingMode;try{localStorage.setItem('cc_trainingMode',tm?'1':'0');}catch(e){}return Object.assign({},s,{trainingMode:tm});
       case A.UPD_PREFS:
         if(a.u&&a.u.defaultTolerances!==undefined){try{localStorage.setItem('cc_defaultTolerances',JSON.stringify(a.u.defaultTolerances));}catch(e){}}
-        if(a.u){var _pk=['autoFlyTo','autoHighlight','showGrid','showAxes','showMarkers','hoverHighlight','outlineSelected','defaultPriority','defaultCategory','defaultStatus','defaultMaxGap','resetFiltersOnRun','renderStyle','ollamaEnabled','nlProvider'];_pk.forEach(function(k){if(a.u[k]!==undefined){try{localStorage.setItem('cc_'+k,JSON.stringify(a.u[k]));}catch(e){}}});}
+        if(a.u){var _pk=['autoFlyTo','autoHighlight','showGrid','showAxes','showMarkers','hoverHighlight','outlineSelected','defaultPriority','defaultCategory','defaultStatus','defaultMaxGap','resetFiltersOnRun','renderStyle'];_pk.forEach(function(k){if(a.u[k]!==undefined){try{localStorage.setItem('cc_'+k,JSON.stringify(a.u[k]));}catch(e){}}});}
         return Object.assign({},s,{prefs:Object.assign({},s.prefs,a.u)});
       case A.MEASURE_MODE: return Object.assign({},s,{measureMode:a.v});
       case A.ADD_MEASUREMENT: _gcEvent('measurement', a.v&&a.v.type||'length'); return Object.assign({},s,{measurements:s.measurements.concat([a.v])});
@@ -14113,9 +14111,7 @@ function startApp() {
     var stLoading = useState(false), loading = stLoading[0], setLoading = stLoading[1];
     var stModelLoading = useState(!!window._ccModelLoading), modelLoading = stModelLoading[0], setModelLoading = stModelLoading[1];
     var stLLMStatus = useState(_nlModelStatus), llmStatus = stLLMStatus[0], setLLMStatus = stLLMStatus[1];
-    var stLLMProgress = useState(0), llmProgress = stLLMProgress[0], setLLMProgress = stLLMProgress[1];
     var stBackend = useState(_nlBackend), backend = stBackend[0], setBackend = stBackend[1];
-    var stShowOllamaTip = useState(false), showOllamaTip = stShowOllamaTip[0], setShowOllamaTip = stShowOllamaTip[1];
     var inputRef = useRef(null);
     var bottomRef = useRef(null);
     var detectMsgIdx = useRef(-1);
@@ -14225,29 +14221,19 @@ function startApp() {
       return function() { window.removeEventListener('keydown', onKey); };
     }, []);
 
-    // On first open: check Ollama (if enabled in settings) → fallback to browser LLM
+    // On first open: check server AI health
     useEffect(function() {
       if (!open) return;
-      // Sync state
       setLLMStatus(_nlModelStatus);
       setBackend(_nlBackend);
-      if (_nlBackend === 'ollama' || _nlModelStatus === 'ready') return;
-      var listener = function(st, pct) {
+      if (_nlBackend === 'server' || _nlModelStatus === 'ready') return;
+      var listener = function(st) {
         setLLMStatus(st); setBackend(_nlBackend);
-        if (typeof pct === 'number') setLLMProgress(pct);
       };
       _nlModelListeners.push(listener);
-      // Only probe Ollama when the user has explicitly enabled it in Settings
-      var _ollamaOn = s.prefs && s.prefs.ollamaEnabled;
-      if (_ollamaOn) setLLMStatus('loading');
-      (_ollamaOn ? checkOllama() : Promise.resolve(false)).then(function(hasOllama) {
+      checkServerAI().then(function() {
         setBackend(_nlBackend);
         setLLMStatus(_nlModelStatus);
-        if (!hasOllama) {
-          // Show Ollama tip only when Ollama is enabled but not found
-          if (_ollamaOn) setShowOllamaTip(true);
-          if (_nlModelStatus === 'idle') getNLPipeline().catch(function(){});
-        }
       });
     }, [open]);
 
@@ -14441,7 +14427,9 @@ function startApp() {
         return;
       }
       setLoading(true);
-      processNLCommandWithLLM(text, s, d).then(function(rawResult) {
+      var replyCtx = replyTo ? replyTo.text : null;
+      setReplyTo(null); // clear reply context after capture
+      processNLCommandWithLLM(text, s, d, replyCtx).then(function(rawResult) {
         // If it's a clash setup, run through conversation flow
         if (rawResult && rawResult._clashSetup) {
           var convResult = _clashConverse(text, rawResult);
@@ -14498,10 +14486,9 @@ function startApp() {
     var isDetecting = s.detecting;
     var _isMobile = window.innerWidth <= 768;
     var isDocked = !!props.docked && !_isMobile;
-    var _cloudConfigured = s.prefs && s.prefs.nlApiKey && s.prefs.nlProvider !== 'ollama_only' && s.prefs.nlProvider !== 'browser_only';
-    var _cloudName = _cloudConfigured ? ({anthropic:'Claude',openai:'GPT',google:'Gemini'}[s.prefs.nlProvider]||'Cloud API') : null;
-    var backendLabel = window._ccTourActive ? 'AI loaded' : _cloudConfigured ? _cloudName : backend === 'ollama' ? 'Ollama (' + _ollamaModel + ')' : backend === 'browser' ? 'In-browser (0.5B)' : null;
-    var backendColor = window._ccTourActive ? '#a78bfa' : _cloudConfigured ? '#22c55e' : backend === 'ollama' ? '#22c55e' : backend === 'browser' ? '#f59e0b' : mutedCol;
+    var _serverReady = _serverAIAvailable;
+    var backendLabel = window._ccTourActive ? 'AI loaded' : _serverReady ? 'Gemma 4' : backend === 'server' ? 'Gemma 4' : null;
+    var backendColor = window._ccTourActive ? '#a78bfa' : _serverReady ? '#22c55e' : mutedCol;
 
     // ── Closed-state pill (only when NOT docked and not open) ──
     if (!isDocked && !open) {
@@ -14527,6 +14514,46 @@ function startApp() {
         ${closedLabel}
         <span style=${{fontSize:'0.69rem', opacity:.5, marginLeft:'.15rem'}}>/</span>
       </button>`;
+    }
+
+    // ── Feedback state for AI messages ──
+    var stFeedback = useState({}), feedback = stFeedback[0], setFeedback = stFeedback[1];
+    var stReplyTo = useState(null), replyTo = stReplyTo[0], setReplyTo = stReplyTo[1];
+
+    function renderAIFeedback(msgIdx, msgText) {
+      var fb = feedback[msgIdx];
+      var thumbStyle = function(active, color) { return {
+        background:'none', border:'none', cursor:'pointer', fontSize:'0.78rem', padding:'.1rem .25rem',
+        borderRadius:4, opacity: active ? 1 : 0.4, color: active ? color : mutedCol,
+        transition:'opacity .15s'
+      }; };
+      var showCorrection = fb === 'down_expand';
+      return html`<div style=${{display:'flex', alignItems:'center', gap:'.25rem', marginTop:'.2rem'}}>
+        <button onClick=${function(){
+          setFeedback(function(prev){ var n=Object.assign({},prev); n[msgIdx]='up'; return n; });
+          _sendTrainingData({ type:'nl_command', input: msgs[msgIdx-1] ? msgs[msgIdx-1].text : '', matched: true,
+            feedbackType:'thumbs_up', action: msgText.substring(0,60), appVersion: CC_VERSION.v });
+        }} title="Good response" style=${thumbStyle(fb==='up','#4ade80')}>▲</button>
+        <button onClick=${function(){
+          setFeedback(function(prev){ var n=Object.assign({},prev); n[msgIdx] = fb==='down_expand' ? 'down' : 'down_expand'; return n; });
+          if (fb !== 'down_expand') {
+            _sendTrainingData({ type:'nl_command', input: msgs[msgIdx-1] ? msgs[msgIdx-1].text : '', matched: false,
+              feedbackType:'thumbs_down', action: msgText.substring(0,60), appVersion: CC_VERSION.v });
+          }
+        }} title="Wrong response" style=${thumbStyle(fb==='down'||fb==='down_expand','#f87171')}>▼</button>
+        <button onClick=${function(){ setReplyTo({idx:msgIdx, text:msgText}); if(inputRef.current) inputRef.current.focus(); }}
+          title="Reply to this message" style=${thumbStyle(false, mutedCol)}>↩</button>
+        ${showCorrection && html`<div style=${{display:'flex',gap:'.2rem',flex:1}}>
+          ${['Wrong models','Wrong gap','Wrong action','Gibberish'].map(function(label){
+            return html`<button key=${label} onClick=${function(){
+              _sendTrainingData({ type:'nl_command', input: msgs[msgIdx-1] ? msgs[msgIdx-1].text : '', matched: false,
+                feedbackType:'correction', correctionIntent: label, appVersion: CC_VERSION.v });
+              setFeedback(function(prev){ var n=Object.assign({},prev); n[msgIdx]='down'; return n; });
+            }} style=${{background:'var(--bg-secondary)',border:'1px solid '+borderCol,borderRadius:4,
+              padding:'.1rem .3rem',fontSize:'0.65rem',color:mutedCol,cursor:'pointer'}}>${label}</button>`;
+          })}
+        </div>`}
+      </div>`;
     }
 
     // ── Shared content: header bar, messages area, input ──
@@ -14570,22 +14597,7 @@ function startApp() {
       }}>×</button>`}
     </div>`;
 
-    var ollamaTipBar = showOllamaTip && backend !== 'ollama' ? html`<div style=${{
-      padding:'.4rem .65rem', borderBottom:'1px solid '+borderCol,
-      background: 'var(--accent-bg)',
-      fontSize:'0.72rem', color:mutedCol, display:'flex', alignItems:'center', gap:'.5rem', flexShrink:0
-    }}>
-      <span style=${{flex:1, lineHeight:1.5}}>
-        <strong style=${{color:textCol}}>Speed tip:</strong> Install <a href="https://ollama.com" target="_blank" rel="noopener"
-          style=${{color:'#60a5fa', textDecoration:'underline'}}>Ollama</a> and run
-        <code style=${{background:'var(--tag-bg)', padding:'.1rem .25rem', borderRadius:3, fontSize:'0.67rem'}}>ollama pull qwen2.5:7b</code>
-        for faster local AI.<br/>
-        <span style=${{color:mutedCol}}>Or connect your own API key in Settings → AI.</span>
-      </span>
-      <button onClick=${function(){ setShowOllamaTip(false); }} style=${{
-        background:'none', border:'none', cursor:'pointer', color:mutedCol, fontSize:'0.92rem', padding:'0 .1rem', lineHeight:1
-      }}>×</button>
-    </div>` : null;
+    var ollamaTipBar = null; // removed — server AI handles everything
 
     // ── Status banner when no messages ──
     var statusBanner = msgs.length === 0 ? html`<div style=${{
@@ -14593,9 +14605,9 @@ function startApp() {
       background:'var(--bg-secondary)', borderRadius:8, margin:'0 0 .3rem'
     }}>
       ${llmStatus === 'ready' && backendLabel ? html`<span>Ready — using <strong style=${{color:backendColor}}>${backendLabel}</strong>. Describe what you want in plain English.</span>`
-        : llmStatus === 'loading' ? html`<span>Loading AI model${llmProgress > 0 ? ' (' + llmProgress + '%)' : ''}... You can still type commands below.</span>`
-        : llmStatus === 'error' ? html`<span style=${{color:'#f87171'}}>AI failed to load. Check Settings → AI to configure a provider, or install Ollama locally.</span>`
-        : html`<span>No AI backend loaded. Enable Ollama in Settings → AI, or configure an API key. You can still use suggestion chips below.</span>`}
+        : llmStatus === 'loading' ? html`<span>Connecting to AI server...</span>`
+        : llmStatus === 'error' ? html`<span style=${{color:'#f87171'}}>AI server unavailable. Basic commands still work via text matching.</span>`
+        : html`<span>Checking AI server... You can still use suggestion chips below.</span>`}
     </div>` : null;
 
     // ── Docked mode: render inline as side panel content ──
@@ -14613,7 +14625,7 @@ function startApp() {
           var isUser = m.role === 'user';
           if (m.setup) return html`<${ClashSetupCard} key=${i} setup=${m.setup} s=${s} d=${d} onRun=${executeDetection} setMsgs=${setMsgs} idx=${i} />`;
           if (m.detecting) return null;
-          return html`<div key=${i} style=${{display:'flex', justifyContent: isUser?'flex-end':'flex-start'}}>
+          return html`<div key=${i} style=${{display:'flex', flexDirection:'column', alignItems: isUser?'flex-end':'flex-start'}}>
             <div style=${{
               maxWidth:'85%', padding:'.45rem .7rem',
               borderRadius: isUser ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
@@ -14623,6 +14635,7 @@ function startApp() {
             }}>
               ${m.text}
             </div>
+            ${!isUser && m.text && renderAIFeedback(i, m.text)}
           </div>`;
         })}
         ${loading && html`<div style=${{display:'flex'}}>
@@ -14696,8 +14709,17 @@ function startApp() {
           Stop</button>`}
       </div>` : html`<div style=${{
         padding:'.55rem .65rem', borderTop:'1px solid '+borderCol,
-        display:'flex', gap:'.45rem', alignItems:'flex-end', flexShrink:0
+        display:'flex', flexDirection:'column', gap:'.3rem', flexShrink:0
       }}>
+        ${replyTo && html`<div style=${{
+          display:'flex', alignItems:'center', gap:'.3rem', padding:'.2rem .4rem',
+          background:'var(--bg-secondary)', borderRadius:6, fontSize:'0.72rem', color:mutedCol
+        }}>
+          <span style=${{opacity:0.6}}>↩</span>
+          <span style=${{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>${replyTo.text.substring(0,80)}${replyTo.text.length>80?'…':''}</span>
+          <button onClick=${function(){setReplyTo(null);}} style=${{background:'none',border:'none',cursor:'pointer',color:mutedCol,fontSize:'0.78rem',padding:'0 .15rem'}}>×</button>
+        </div>`}
+        <div style=${{display:'flex', gap:'.45rem', alignItems:'flex-end'}}>
         <textarea
           ref=${inputRef}
           value=${input}
@@ -14718,6 +14740,7 @@ function startApp() {
           opacity:(!input.trim()||loading)?0.45:1, alignSelf:'flex-end',
           transition:'opacity .15s'
         }}>Send</button>
+        </div>
       </div>`}
     </div>`;
     }
@@ -14749,7 +14772,7 @@ function startApp() {
           var isUser = m.role === 'user';
           if (m.setup) return html`<${ClashSetupCard} key=${i} setup=${m.setup} s=${s} d=${d} onRun=${executeDetection} setMsgs=${setMsgs} idx=${i} />`;
           if (m.detecting) return null;
-          return html`<div key=${i} style=${{display:'flex', justifyContent: isUser?'flex-end':'flex-start'}}>
+          return html`<div key=${i} style=${{display:'flex', flexDirection:'column', alignItems: isUser?'flex-end':'flex-start'}}>
             <div style=${{
               maxWidth:'85%', padding:'.45rem .7rem',
               borderRadius: isUser ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
@@ -14759,6 +14782,7 @@ function startApp() {
             }}>
               ${m.text}
             </div>
+            ${!isUser && m.text && renderAIFeedback(i, m.text)}
           </div>`;
         })}
         ${loading && html`<div style=${{display:'flex'}}>
@@ -14822,6 +14846,7 @@ function startApp() {
           opacity:(!input.trim()||loading)?0.45:1, alignSelf:'flex-end',
           transition:'opacity .15s'
         }}>Send</button>
+        </div>
       </div>`}
     </div></div>`;
   }
