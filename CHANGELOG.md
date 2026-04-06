@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.9.4 (2026-04-06)
+- Update sw.js and CLAUDE.md for backend architecture
+
 ## v4.9.3 (2026-04-05)
 - Add GitHub Pages redirect to www.clashcontrol.io
 
