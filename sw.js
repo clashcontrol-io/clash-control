@@ -51,6 +51,10 @@ self.addEventListener('message', function(e) {
 
 self.addEventListener('fetch', function(e) {
   var url = e.request.url;
+
+  // Never cache API calls — these must always go to the server
+  if (url.indexOf('/api/') !== -1) return;
+
   var isNav = e.request.mode === 'navigate';
   var isHTML = url.indexOf('index.html') !== -1 || url.endsWith('/');
 

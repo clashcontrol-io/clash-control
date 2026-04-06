@@ -77,7 +77,43 @@ README.md                   — Project readme with version badge
 LICENSE                     — License file
 OPEN_SOURCE_COMPONENTS.md   — Third-party library credits
 manifest.json               — PWA manifest for installable app
-sw.js                       — Service worker for offline caching
+sw.js                       — Service worker for offline caching (excludes /api/*)
 scripts/bump-version.sh     — Pre-commit version bump script
 scripts/generate-sri.js     — Generate SRI hashes for CDN scripts
+vercel.json                 — Vercel config: COOP/COEP headers, function durations
+package.json                — Neon Postgres driver for serverless functions
+api/health.js               — Health check: AI + DB status
+api/nl.js                   — Gemma 4 NL proxy with native function calling
+api/training.js             — Training data ingestion (replaces Google Forms)
+api/project.js              — Shared issues sync (project key, no login)
+api/title.js                — AI clash title generation (batch, Gemma 4)
 ```
+
+## Backend (Vercel Serverless + Neon Postgres)
+
+The app is deployed at `www.clashcontrol.io` on Vercel. The backend consists of serverless functions in the `api/` directory.
+
+### Environment Variables (set in Vercel dashboard)
+- `GOOGLE_AI_KEY` — Google AI Studio API key for Gemma 4
+- `DATABASE_URL` — Neon Postgres connection string
+
+### API Endpoints
+- `GET /api/health` — Returns `{ ai: bool, db: bool, model: string }`
+- `POST /api/nl` — NL command proxy. Body: `{ command, context, replyContext }`. Returns `{ intent, ...params }`
+- `POST /api/training` — Training data. Requires `X-CC-Consent: true` header. Types: `nl_command`, `clash_feedback`, `detection_run`
+- `POST /api/project` — Create shared project. Returns `{ id, name }`
+- `GET /api/project?id=KEY` — Pull all shared issues for a project
+- `PUT /api/project?id=KEY` — Push issue changes. Body: `{ issues, user }`
+- `POST /api/title` — Generate AI titles. Body: `{ clashes: [...] }` (max 20)
+
+### NL Command Flow
+1. Client sends command to `/api/nl` (Gemma 4, server-side)
+2. Gemma 4 uses native function calling with 13 tool declarations
+3. Server returns structured `{ intent, ...params }` — no fragile JSON parsing
+4. On server failure, client falls back to regex matching (offline mode)
+
+### Shared Issues
+- No login required. Uses shareable project keys (e.g., `MEP-abc123`)
+- Shared records are minimal (~250 bytes): identity (GlobalIds) + team decisions (status, priority, assignee, title)
+- IFC metadata (types, names, storeys, materials) is derived locally from each user's loaded model
+- Conflict resolution: last-write-wins per issue
