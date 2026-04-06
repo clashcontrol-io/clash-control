@@ -12024,20 +12024,22 @@ function startApp() {
             ${spId && html`<div style=${TROW}>
               <div>
                 <div style=${TLBL}>Project Key</div>
-                <div style=${TSUB}>Share this key with your team so they can sync issues.</div>
+                <div style=${TSUB}>Share this key with your team. Issue status, priority, assignee, title and description sync automatically.</div>
               </div>
               <div style=${{display:'flex',gap:'.3rem',alignItems:'center',flexShrink:0}}>
                 <code style=${{fontSize:'0.78rem',background:'var(--bg-secondary)',padding:'.2rem .5rem',borderRadius:4,fontFamily:'monospace',color:'var(--accent)'}}>${spId}</code>
                 <button onClick=${function(){navigator.clipboard.writeText(spId);}}
                   style=${{...S_BTN,padding:'.3rem .5rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',fontSize:'0.72rem',border:'1px solid var(--border)',borderRadius:6}}>Copy</button>
-                <button onClick=${function(){try{localStorage.removeItem('cc_sharedProjectId');localStorage.removeItem('cc_sharedProjectName');}catch(e){}d({t:A.UPD_PREFS,u:{_sharedRefresh:Date.now()}});}}
+                <button onClick=${function(){if(window._ccSharedPull)window._ccSharedPull();}}
+                  style=${{...S_BTN,padding:'.3rem .5rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',fontSize:'0.72rem',border:'1px solid var(--border)',borderRadius:6}}>Sync now</button>
+                <button onClick=${function(){if(window._ccSharedStop)window._ccSharedStop();try{localStorage.removeItem('cc_sharedProjectId');localStorage.removeItem('cc_sharedProjectName');}catch(e){}d({t:A.UPD_PREFS,u:{_sharedRefresh:Date.now()}});}}
                   style=${{...S_BTN,padding:'.3rem .5rem',background:'var(--bg-secondary)',color:'#f87171',fontSize:'0.72rem',border:'1px solid #ef444444',borderRadius:6}}>Leave</button>
               </div>
             </div>`}
             ${!spId && html`<div style=${TROW}>
               <div>
-                <div style=${TLBL}>Join a shared project</div>
-                <div style=${TSUB}>Enter a project key to sync clashes and issues with your team. No account needed.</div>
+                <div style=${TLBL}>Shared project</div>
+                <div style=${TSUB}>Sync clash decisions with your team. No account needed — just share the project key.</div>
               </div>
               <div style=${{display:'flex',gap:'.3rem',flexShrink:0}}>
                 <input type="text" placeholder="e.g. MEP-abc123" id="cc-join-key"
@@ -12049,11 +12051,21 @@ function startApp() {
                     .then(function(r){if(!r.ok)throw new Error();return r.json();})
                     .then(function(data){
                       try{localStorage.setItem('cc_sharedProjectId',key);localStorage.setItem('cc_sharedProjectName',data.project.name);}catch(e){}
+                      if(window._ccSharedStart)window._ccSharedStart();
                       d({t:A.UPD_PREFS,u:{_sharedRefresh:Date.now()}});
                     })
                     .catch(function(){alert('Project not found. Check the key and try again.');});
                 }}
-                  style=${{...S_BTN,padding:'.3rem .6rem',background:'var(--accent)',color:'#fff',fontSize:'0.78rem',fontWeight:600,borderRadius:6,whiteSpace:'nowrap'}}>Join</button>
+                  style=${{...S_BTN,padding:'.3rem .6rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',fontSize:'0.78rem',fontWeight:500,borderRadius:6,whiteSpace:'nowrap',border:'1px solid var(--border)'}}>Join</button>
+                <button onClick=${function(){
+                  var name = prompt('Name your shared project:', 'My ClashControl Project');
+                  if (!name) return;
+                  if (!window._ccSharedCreate) return;
+                  window._ccSharedCreate(name)
+                    .then(function(data){ d({t:A.UPD_PREFS,u:{_sharedRefresh:Date.now()}}); })
+                    .catch(function(){ alert('Could not create shared project. Server may be unavailable.'); });
+                }}
+                  style=${{...S_BTN,padding:'.3rem .6rem',background:'var(--accent)',color:'#fff',fontSize:'0.78rem',fontWeight:600,borderRadius:6,whiteSpace:'nowrap'}}>Create</button>
               </div>
             </div>`}
           </div>`;
@@ -12926,6 +12938,148 @@ function startApp() {
         return { ai: false, db: false };
       });
   }
+
+  // ── Shared Project sync (Phase 6F) ───────────────────────────────
+  // Push/pull minimal shared records to /api/project. Local-only fields
+  // (geometry, IFC metadata, etc.) stay client-side and are re-derived
+  // from each user's loaded model via GlobalIds.
+
+  var _sharedPushQueue = {};   // id -> item (debounced batch)
+  var _sharedPushTimer = null;
+  var _sharedPullTimer = null;
+  var _sharedLastPullAt = 0;
+  var SHARED_PUSH_DEBOUNCE = 3000;
+  var SHARED_PULL_INTERVAL = 30000;
+
+  function _sharedProjectId() {
+    try { return localStorage.getItem('cc_sharedProjectId') || null; } catch(e) { return null; }
+  }
+
+  // Strip an item to the minimal shared shape (mirrors server stripToShared)
+  function _sharedStrip(item) {
+    return {
+      id: item.id,
+      globalIdA: item.globalIdA || null,
+      globalIdB: item.globalIdB || null,
+      point: item.point || null,
+      type: item.type || null,
+      distance: item.distance != null ? item.distance : null,
+      status: item.status || 'open',
+      priority: item.priority || 'normal',
+      assignee: item.assignee || null,
+      title: item.title || '',
+      description: item.description || null,
+      category: item.category || null,
+      dueDate: item.dueDate || null,
+      source: item.source || null,
+      createdAt: item.createdAt || null,
+      _updatedAt: item._updatedAt || new Date().toISOString(),
+    };
+  }
+
+  function _sharedEnqueue(item) {
+    if (!_sharedProjectId()) return;
+    if (!item || !item.id) return;
+    _sharedPushQueue[item.id] = _sharedStrip(item);
+    if (_sharedPushTimer) return;
+    _sharedPushTimer = setTimeout(_sharedFlushPush, SHARED_PUSH_DEBOUNCE);
+  }
+
+  function _sharedFlushPush() {
+    _sharedPushTimer = null;
+    var key = _sharedProjectId();
+    if (!key) { _sharedPushQueue = {}; return; }
+    var items = Object.keys(_sharedPushQueue).map(function(k){ return _sharedPushQueue[k]; });
+    if (!items.length) return;
+    _sharedPushQueue = {};
+    var user = (typeof _ccChangelogUser !== 'undefined' && _ccChangelogUser) || 'anonymous';
+    fetch('/api/project?id=' + encodeURIComponent(key), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issues: items, user: user }),
+    }).catch(function(){ /* offline — silent, next push will retry these if re-edited */ });
+  }
+
+  // Apply incoming shared records into local state via UPD_CLASH/UPD_ISSUE
+  // with _fromSync:true so the wrapped dispatch skips changelog + re-enqueue
+  function _sharedHydrate(records) {
+    var d = window._ccDispatch;
+    var s = window._ccLatestState;
+    if (!d || !s || !records || !records.length) return;
+    var clashById = {};
+    (s.clashes || []).forEach(function(c){ clashById[c.id] = c; });
+    var issueById = {};
+    (s.issues || []).forEach(function(i){ issueById[i.id] = i; });
+    var SHARED_FIELDS = ['status','priority','assignee','title','description','category','dueDate'];
+    records.forEach(function(rec) {
+      if (!rec || !rec.id) return;
+      // Skip if our local copy was edited more recently than the server's
+      var localUpdatedAt = (clashById[rec.id] && clashById[rec.id]._updatedAt) || (issueById[rec.id] && issueById[rec.id]._updatedAt);
+      if (localUpdatedAt && rec._updatedAt && new Date(localUpdatedAt) > new Date(rec._updatedAt)) return;
+      var u = {};
+      SHARED_FIELDS.forEach(function(f){ if (rec[f] != null) u[f] = rec[f]; });
+      u._updatedAt = rec._updatedAt;
+      u._updatedBy = rec._updatedBy;
+      if (clashById[rec.id]) {
+        d({ t: A.UPD_CLASH, id: rec.id, u: u, _fromSync: true });
+      } else if (issueById[rec.id]) {
+        d({ t: A.UPD_ISSUE, id: rec.id, u: u, _fromSync: true });
+      }
+      // If neither exists locally, we silently drop it — the user hasn't loaded
+      // the model that contains this element. They'll see the shared record
+      // automatically when they load the matching IFC.
+    });
+  }
+
+  function _sharedPull() {
+    var key = _sharedProjectId();
+    if (!key) return Promise.resolve();
+    return fetch('/api/project?id=' + encodeURIComponent(key))
+      .then(function(r){ if (!r.ok) throw new Error('pull failed'); return r.json(); })
+      .then(function(data){
+        _sharedLastPullAt = Date.now();
+        if (data && data.issues) _sharedHydrate(data.issues);
+      })
+      .catch(function(){ /* silent */ });
+  }
+
+  function _sharedStartPolling() {
+    if (_sharedPullTimer) return;
+    if (!_sharedProjectId()) return;
+    _sharedPull(); // initial pull
+    _sharedPullTimer = setInterval(function(){
+      if (!_sharedProjectId()) { _sharedStopPolling(); return; }
+      _sharedPull();
+    }, SHARED_PULL_INTERVAL);
+  }
+
+  function _sharedStopPolling() {
+    if (_sharedPullTimer) { clearInterval(_sharedPullTimer); _sharedPullTimer = null; }
+  }
+
+  // Create a brand-new shared project on the server
+  function _sharedCreateProject(name) {
+    return fetch('/api/project', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || 'ClashControl Project' }),
+    })
+      .then(function(r){ if (!r.ok) throw new Error('create failed'); return r.json(); })
+      .then(function(data){
+        try {
+          localStorage.setItem('cc_sharedProjectId', data.id);
+          localStorage.setItem('cc_sharedProjectName', data.name);
+        } catch(e) {}
+        _sharedStartPolling();
+        return data;
+      });
+  }
+
+  // Expose for UI buttons
+  window._ccSharedCreate = _sharedCreateProject;
+  window._ccSharedPull = _sharedPull;
+  window._ccSharedStart = _sharedStartPolling;
+  window._ccSharedStop = _sharedStopPolling;
 
   // ── Server NL call ──────────────────────────────────────────────
   function callServerNL(command, context, replyContext) {
@@ -16360,10 +16514,35 @@ function startApp() {
           var _clEntry = _buildChangelogEntry(a, _clashesRef.current, s);
           if (_clEntry) _rawD({t:A.APPEND_CHANGELOG, v:_clEntry});
         } catch(e2) {}
+        // ── Shared project sync push (Phase 6F) ──
+        try {
+          if (typeof _sharedEnqueue === 'function' && _sharedProjectId()) {
+            var _now = new Date().toISOString();
+            if (a.t === A.UPD_CLASH && a.u) {
+              var _c = _clashesRef.current.find(function(c){return c.id===a.id;});
+              if (_c) _sharedEnqueue(Object.assign({}, _c, a.u, {_updatedAt:_now}));
+            } else if (a.t === A.UPD_ISSUE && a.u) {
+              var _i = (s.issues||[]).find(function(i){return i.id===a.id;});
+              if (_i) _sharedEnqueue(Object.assign({}, _i, a.u, {_updatedAt:_now}));
+            } else if (a.t === A.ADD_ISSUE && a.v) {
+              _sharedEnqueue(Object.assign({}, a.v, {_updatedAt:_now}));
+            } else if (a.t === A.BATCH_UPD_CLASH && a.u) {
+              _clashesRef.current.forEach(function(c){
+                if (s.selected[c.id]) _sharedEnqueue(Object.assign({}, c, a.u, {_updatedAt:_now}));
+              });
+            } else if (a.t === A.BATCH_UPD_ISSUE && a.u) {
+              (s.issues||[]).forEach(function(i){
+                if (s.selected[i.id]) _sharedEnqueue(Object.assign({}, i, a.u, {_updatedAt:_now}));
+              });
+            }
+          }
+        } catch(e3) {}
       }
     }, []);
     window._ccDispatch = d;
     window._ccLatestState = s;
+    // Start shared sync polling once dispatch is available (idempotent)
+    try { if (typeof _sharedStartPolling === 'function') _sharedStartPolling(); } catch(e){}
     // Console helper: compare two loaded models by GlobalId
     // Usage: _ccCompareModels() — lists models
     //        _ccCompareModels(0, 1) — compare by index
