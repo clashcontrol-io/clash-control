@@ -10,9 +10,9 @@ module.exports = async function handler(req, res) {
   var status = { ai: false, db: false, model: null };
 
   // Check AI (Google AI Studio / Gemma 4)
-  if (process.env.GOOGLE_AI_KEY) {
+  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY) {
     status.ai = true;
-    status.model = 'gemma-4-27b-it';
+    status.model = 'gemma-3-27b-it';
   }
 
   // Check DB (Neon Postgres)
