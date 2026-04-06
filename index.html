@@ -8921,8 +8921,10 @@ function startApp() {
 
   function ClashStatsBar(props) {
     var items = props.items, isClash = props.isClash, delta = props.delta;
+    var stTitlesBusy = useState(false), titlesBusy = stTitlesBusy[0], setTitlesBusy = stTitlesBusy[1];
     if (!items.length) return null;
     var total = items.length;
+    var untitled = isClash ? items.filter(function(c){return !c.aiTitle;}).length : 0;
     var open = items.filter(function(c){return c.status==='open';}).length;
     var inProg = items.filter(function(c){return c.status==='in_progress';}).length;
     var resolved = items.filter(function(c){return c.status==='resolved'||c.status==='closed';}).length;
@@ -8955,6 +8957,19 @@ function startApp() {
         ${isClash && hard > 0 && CHIP('Hard', hard, '#7f1d1d', '#fca5a5')}
         ${isClash && soft > 0 && CHIP('Soft', soft, '#78350f', '#fcd34d')}
         ${isClash && dup > 0 && CHIP('Dup', dup, '#4c1d95', '#c4b5fd')}
+        ${isClash && untitled > 0 && html`<button onClick=${function(){
+          if (titlesBusy || !window._ccGenerateAITitles) return;
+          setTitlesBusy(true);
+          window._ccGenerateAITitles().then(function(){ setTitlesBusy(false); });
+        }} disabled=${titlesBusy}
+          title=${'Generate human-readable AI titles for the next '+Math.min(untitled,20)+' clash'+(Math.min(untitled,20)===1?'':'es')}
+          style=${{marginLeft:'auto',fontSize:'0.65rem',padding:'.1rem .4rem',borderRadius:99,
+            background:titlesBusy?'var(--bg-secondary)':'rgba(124,58,237,0.18)',
+            color:titlesBusy?'var(--text-faint)':'#c4b5fd',
+            border:'1px solid '+(titlesBusy?'var(--border)':'rgba(167,139,250,0.4)'),
+            cursor:titlesBusy?'wait':'pointer',fontWeight:600,whiteSpace:'nowrap'}}>
+          ${titlesBusy ? '… generating' : '✦ AI titles ('+Math.min(untitled,20)+')'}
+        </button>`}
       </div>
       ${isClash && delta && html`<div style=${{display:'flex',gap:'.3rem',marginTop:'.25rem',alignItems:'center',flexWrap:'wrap'}}>
         <span style=${{fontSize:'0.63rem',color:'var(--text-faint)',flexShrink:0}}>This run:</span>
@@ -13080,6 +13095,49 @@ function startApp() {
   window._ccSharedPull = _sharedPull;
   window._ccSharedStart = _sharedStartPolling;
   window._ccSharedStop = _sharedStopPolling;
+
+  // ── AI clash titles (Phase 5) ────────────────────────────────────
+  // Batch-generates human titles via /api/title for clashes that don't
+  // have one yet. Caps at 20 per call to control quota; user can re-click.
+  var _aiTitlesBusy = false;
+  function _aiGenerateTitles() {
+    if (_aiTitlesBusy) return Promise.resolve({skipped:true});
+    var s = window._ccLatestState;
+    var d = window._ccDispatch;
+    if (!s || !d) return Promise.resolve({skipped:true});
+    var todo = (s.clashes || []).filter(function(c){ return !c.aiTitle; }).slice(0, 20);
+    if (!todo.length) return Promise.resolve({done:0});
+    _aiTitlesBusy = true;
+    return fetch('/api/title', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ clashes: todo.map(function(c){
+        return {
+          id: c.id,
+          elemAType: c.elemAType, elemAName: c.elemAName,
+          elemBType: c.elemBType, elemBName: c.elemBName,
+          modelA: c.modelA, modelB: c.modelB,
+          type: c.type, distance: c.distance,
+          storey: c.elemAStorey || c.elemBStorey,
+        };
+      })}),
+    })
+      .then(function(r){ if (!r.ok) throw new Error('title api failed'); return r.json(); })
+      .then(function(data){
+        if (!data || !Array.isArray(data.titles)) return {done:0};
+        data.titles.forEach(function(t) {
+          if (!t || !t.id) return;
+          var u = { aiTitle: t.title, title: t.title };
+          if (t.severity) u.aiSeverity = t.severity;
+          if (t.resolution) u.aiResolutionHint = t.resolution;
+          d({ t: A.UPD_CLASH, id: t.id, u: u });
+        });
+        return { done: data.titles.length };
+      })
+      .catch(function(e){ console.warn('[AI titles]', e); return { done:0, error:true }; })
+      .then(function(r){ _aiTitlesBusy = false; return r; });
+  }
+  window._ccGenerateAITitles = _aiGenerateTitles;
 
   // ── Server NL call ──────────────────────────────────────────────
   function callServerNL(command, context, replyContext) {
