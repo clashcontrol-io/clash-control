@@ -15910,15 +15910,43 @@ function startApp() {
 
   function AIChatPanel(props) {
     var s=props.s, d=props.d;
-    var widthSt=useState(320), panelW=widthSt[0], setPanelW=widthSt[1];
+    var widthSt=useState(function(){
+      try { var w=parseInt(localStorage.getItem('cc_ai_panel_w')||'',10); return (w>=250&&w<=600)?w:320; } catch(e) { return 320; }
+    }), panelW=widthSt[0], setPanelW=widthSt[1];
+    var collSt=useState(function(){
+      try { return localStorage.getItem('cc_ai_panel_collapsed')==='1'; } catch(e) { return false; }
+    }), collapsed=collSt[0], setCollapsed=collSt[1];
     var dragRef=useRef(null);
-    var onResizeDown = _makeResizeHandler(dragRef, setPanelW, 250, 600, true);
+    var onResizeDown = _makeResizeHandler(dragRef, function(w){ setPanelW(w); try{localStorage.setItem('cc_ai_panel_w',String(w));}catch(e){} }, 250, 600, true);
+
+    // Collapsed: thin tab on the right edge
+    if (collapsed) {
+      return html`<button onClick=${function(){ setCollapsed(false); try{localStorage.setItem('cc_ai_panel_collapsed','0');}catch(e){} }}
+        title="Open AI chat"
+        style=${{
+          position:'absolute', right:0, top:'50%', transform:'translateY(-50%)',
+          zIndex:1100, background:'var(--bg-secondary)', border:'1px solid var(--border)',
+          borderRight:'none', borderRadius:'8px 0 0 8px', padding:'.6rem .35rem',
+          cursor:'pointer', color:'var(--text-secondary)', fontSize:'0.78rem',
+          writingMode:'vertical-rl', boxShadow:'var(--shadow-md)'
+        }}>AI Chat ›</button>`;
+    }
+
+    // Floating overlay: absolute on the right edge, viewer keeps full width
     return html`<div class="cc-side-panel cc-ai-panel" style=${{
-      width:panelW,flexShrink:0,display:'flex',flexDirection:'column',overflow:'hidden',
-      background:'var(--bg-primary)',borderLeft:'1px solid var(--border-subtle)',position:'relative'
+      width:panelW, position:'absolute', right:0, top:0, bottom:0,
+      display:'flex', flexDirection:'column', overflow:'hidden',
+      background:'var(--bg-primary)', borderLeft:'1px solid var(--border-subtle)',
+      boxShadow:'-4px 0 18px rgba(0,0,0,0.18)', zIndex:1100
     }}>
       <div onMouseDown=${onResizeDown} style=${{position:'absolute',left:0,top:0,bottom:0,width:8,cursor:'col-resize',zIndex:10,
         background:'transparent',transition:'background .15s'}} onMouseEnter=${function(e){e.currentTarget.style.background='rgba(59,130,246,0.3)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
+      <button onClick=${function(){ setCollapsed(true); try{localStorage.setItem('cc_ai_panel_collapsed','1');}catch(e){} }}
+        title="Collapse AI chat" style=${{
+          position:'absolute', right:6, top:6, zIndex:11, background:'transparent',
+          border:'none', cursor:'pointer', color:'var(--text-muted)', fontSize:'1rem',
+          padding:'.15rem .35rem', lineHeight:1
+        }}>›</button>
       <${NLCommandPanel} s=${s} d=${d} docked=${true} />
     </div>`;
   }
@@ -16986,7 +17014,7 @@ function startApp() {
     }
 
     var is2D = s.underlayMode === 'view2d' || s.underlayMode === 'compare';
-    return html`<div style=${{height:'100vh',display:'flex',flexDirection:'row',overflow:'hidden'}}>
+    return html`<div style=${{height:'100vh',display:'flex',flexDirection:'row',overflow:'hidden',position:'relative'}}>
       <input ref=${_gFileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <input ref=${_gFile2dRef} type="file" accept=".dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <${LeftRail} s=${s} d=${d} />
