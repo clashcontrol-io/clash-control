@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.10.4 (2026-04-07)
+- BCF: brand attribution + fix author override + schema element order
+
 ## v4.10.3 (2026-04-07)
 - Navigator: PatternFly tree view + frameless viewer chrome
 
