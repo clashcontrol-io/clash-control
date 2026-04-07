@@ -133,6 +133,18 @@
       --card-bg:#162032;--card-border:#1e3a5f;
       --input-bg:#0f172a;
       --shadow-sm:0 1px 3px rgba(0,0,0,.3);--shadow-md:0 4px 12px rgba(0,0,0,.3);--shadow-lg:0 8px 24px rgba(0,0,0,.4);
+      /* ── Design tokens (Stitch design.md / Material 3 inspired) ── */
+      --space-0:0;--space-1:.25rem;--space-2:.5rem;--space-3:.75rem;--space-4:1rem;--space-5:1.25rem;--space-6:1.5rem;--space-8:2rem;
+      --text-2xs:.6875rem;--text-xs:.75rem;--text-sm:.8125rem;--text-base:.875rem;--text-md:.9375rem;--text-lg:1.0625rem;--text-xl:1.25rem;--text-2xl:1.5rem;
+      --leading-tight:1.25;--leading-base:1.45;--leading-relaxed:1.6;
+      --weight-regular:400;--weight-medium:500;--weight-semibold:600;--weight-bold:700;
+      --radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-xl:16px;--radius-pill:999px;
+      --ease-standard:cubic-bezier(.2,0,0,1);--ease-decelerate:cubic-bezier(0,0,0,1);--ease-accelerate:cubic-bezier(.3,0,1,1);
+      --duration-fast:120ms;--duration-base:200ms;--duration-slow:320ms;
+      --color-success:#22c55e;--color-success-fg:#34d399;--color-success-bg:#052e16;--color-success-border:rgba(34,197,94,.35);
+      --color-warning:#f59e0b;--color-warning-fg:#fbbf24;--color-warning-bg:#422006;--color-warning-border:rgba(245,158,11,.35);
+      --color-danger:#ef4444;--color-danger-fg:#fca5a5;--color-danger-bg:#450a0a;--color-danger-border:rgba(239,68,68,.4);
+      --color-info:#3b82f6;--color-info-fg:#93c5fd;--color-info-bg:#172554;--color-info-border:rgba(59,130,246,.35);
     }
     [data-theme=light]{
       --bg-primary:#f8fafc;--bg-secondary:#ffffff;--bg-tertiary:#f1f5f9;
@@ -150,6 +162,10 @@
       --card-bg:#f8fafc;--card-border:#d1d5db;
       --input-bg:#f9fafb;
       --shadow-sm:0 1px 2px rgba(0,0,0,.06);--shadow-md:0 4px 8px rgba(0,0,0,.08);--shadow-lg:0 8px 24px rgba(0,0,0,.12);
+      --color-success:#16a34a;--color-success-fg:#15803d;--color-success-bg:#dcfce7;--color-success-border:rgba(22,163,74,.35);
+      --color-warning:#d97706;--color-warning-fg:#b45309;--color-warning-bg:#fef3c7;--color-warning-border:rgba(217,119,6,.35);
+      --color-danger:#dc2626;--color-danger-fg:#b91c1c;--color-danger-bg:#fee2e2;--color-danger-border:rgba(220,38,38,.4);
+      --color-info:#2563eb;--color-info-fg:#1d4ed8;--color-info-bg:#dbeafe;--color-info-border:rgba(37,99,235,.35);
     }
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:var(--bg-primary);color:var(--text-primary);font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
@@ -164,6 +180,22 @@
     @keyframes nlBorderReady{0%{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 4px rgba(34,197,94,.5),0 0 20px rgba(34,197,94,.4)}100%{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 0 rgba(34,197,94,0),0 0 0 rgba(34,197,94,0)}}
     .lc2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
     button{font-family:inherit}
+    /* ── Design-system utilities ── */
+    @keyframes ccModalIn{from{opacity:0;transform:scale(.97) translateY(4px)}to{opacity:1;transform:scale(1) translateY(0)}}
+    @keyframes ccBackdropIn{from{opacity:0}to{opacity:1}}
+    .cc-modal-backdrop{animation:ccBackdropIn var(--duration-fast) var(--ease-standard)}
+    .cc-modal-card{animation:ccModalIn var(--duration-base) var(--ease-decelerate)}
+    .cc-list-row{transition:background var(--duration-fast) var(--ease-standard),border-color var(--duration-fast) var(--ease-standard)}
+    .cc-list-row:hover{background:var(--bg-secondary)}
+    .cc-list-row-active{transition:background var(--duration-fast) var(--ease-standard)}
+    .cc-overlay-chrome{background:var(--overlay-bg-strong);border:1px solid var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-md);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+    .cc-btn-press{transition:background var(--duration-fast) var(--ease-standard),transform var(--duration-fast) var(--ease-standard),color var(--duration-fast) var(--ease-standard),border-color var(--duration-fast) var(--ease-standard)}
+    .cc-btn-press:active:not(:disabled){transform:translateY(1px)}
+    .cc-status-pill{display:inline-flex;align-items:center;gap:.2rem;padding:.1rem .45rem;border-radius:var(--radius-pill);font-size:var(--text-2xs);font-weight:var(--weight-semibold);letter-spacing:.04em;text-transform:uppercase;line-height:1.4;white-space:nowrap}
+    @media(prefers-reduced-motion: reduce){
+      *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+      .cc-modal-card,.cc-modal-backdrop{animation:none!important}
+    }
     .cc-tip{position:relative}.cc-tip::after{content:attr(data-tip);position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%) translateX(-4px);background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:.3rem .6rem;font-size:0.8rem;white-space:pre-line;max-width:420px;pointer-events:none;opacity:0;transition:opacity .15s,transform .15s;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)}.cc-tip:hover::after{opacity:1;transform:translateY(-50%) translateX(0)}.cc-tip-delay::after{transition-delay:0s}.cc-tip-delay:hover::after{transition-delay:1s}.cc-tip-up::after{left:50%;top:auto;bottom:calc(100% + 7px);transform:translateX(-50%) translateY(4px)}.cc-tip-up:hover::after{transform:translateX(-50%) translateY(0)}.cc-tip-left::after{left:auto;right:calc(100% + 8px);transform:translateY(-50%) translateX(4px)}.cc-tip-left:hover::after{transform:translateY(-50%) translateX(0)}
     button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
@@ -6113,7 +6145,7 @@ function startApp() {
       setFindResults(results);
     }
 
-    var P = {position:'absolute',pointerEvents:'none',fontSize:'0.8rem',padding:'.2rem .6rem',borderRadius:'5px'};
+    var P = {position:'absolute',pointerEvents:'none',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',borderRadius:'var(--radius-pill)'};
     var ep = selectedEl ? selectedEl.props : null;
     var epQ = ep && ep.quantities ? Object.keys(ep.quantities) : [];
     var epP = ep && ep.psets ? Object.keys(ep.psets) : [];
@@ -6135,20 +6167,20 @@ function startApp() {
         }}></div>
         <span style=${{fontSize:'0.98rem',color:'#93c5fd',fontWeight:500,letterSpacing:'.03em'}}>Switching project…</span>
       </div>`}
-      <div class="cc-overlay-info" style=${{...P,top:'.75rem',left:'.75rem',background:'var(--overlay-bg)',color:'var(--text-muted)',display:'flex',alignItems:'center',gap:'.5rem'}}>
+      <div class="cc-overlay-info cc-overlay-chrome" style=${{position:'absolute',top:'var(--space-3)',left:'var(--space-3)',padding:'var(--space-1) var(--space-3)',color:'var(--text-muted)',display:'flex',alignItems:'center',gap:'var(--space-2)',fontSize:'var(--text-xs)',pointerEvents:'auto'}}>
         <span>${s.models.length===0?'Load an IFC file to begin':s.models.length+' model'+(s.models.length>1?'s':'')+' loaded'}</span>
-        ${s.clashes.length>0 && html`<span style=${{color:'#ef4444'}}>· ${s.clashes.length} clashes</span>`}
-        <span style=${{color:perfData.fps>=50?'#22c55e':perfData.fps>=25?'#f59e0b':'#ef4444',cursor:'pointer',pointerEvents:'auto'}}
+        ${s.clashes.length>0 && html`<span style=${{color:'var(--color-danger)'}}>· ${s.clashes.length} clashes</span>`}
+        <span style=${{color:perfData.fps>=50?'var(--color-success)':perfData.fps>=25?'var(--color-warning)':'var(--color-danger)',cursor:'pointer',pointerEvents:'auto',fontWeight:'var(--weight-medium)'}}
           onClick=${function(){setPerfOpen(!perfOpen)}}>${perfData.fps} fps</span>
       </div>
-      ${perfOpen && html`<div style=${{position:'absolute',top:'2.2rem',left:'.75rem',background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.5rem',pointerEvents:'auto',fontSize:'0.69rem',color:'var(--text-secondary)',minWidth:170,boxShadow:'0 4px 12px rgba(0,0,0,.4)'}}>
-        <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}}>
-          <span style=${{fontWeight:600,color:'var(--text-primary)',fontSize:'0.75rem'}}>Performance</span>
-          <button onClick=${function(){setPerfOpen(false)}} style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'0.69rem'}} aria-label="Close performance stats">✕</button>
+      ${perfOpen && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'2.4rem',left:'var(--space-3)',padding:'var(--space-2) var(--space-3)',pointerEvents:'auto',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',minWidth:180}}>
+        <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'var(--space-1)'}}>
+          <span style=${{fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',fontSize:'var(--text-xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>Performance</span>
+          <button onClick=${function(){setPerfOpen(false)}} style=${{...S_BTN,padding:'0 var(--space-1)',background:'none',color:'var(--text-faint)',fontSize:'var(--text-xs)'}} aria-label="Close performance stats">✕</button>
         </div>
         <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
           <span>FPS</span>
-          <span style=${{color:perfData.fps>=50?'#22c55e':perfData.fps>=25?'#f59e0b':'#ef4444',fontWeight:600}}>${perfData.fps}</span>
+          <span style=${{color:perfData.fps>=50?'var(--color-success)':perfData.fps>=25?'var(--color-warning)':'var(--color-danger)',fontWeight:'var(--weight-semibold)'}}>${perfData.fps}</span>
         </div>
         <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
           <span>Triangles</span>
@@ -6179,27 +6211,27 @@ function startApp() {
           <span style=${{color:'var(--text-muted)'}}>${CC_VERSION.v} (${CC_VERSION.hash})</span>
         </div>
       </div>`}
-      ${s.clashes.length>0 && html`<div class="cc-overlay-top" style=${{position:'absolute',top:'.75rem',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'.3rem',pointerEvents:'auto'}}>
-        <button onClick=${function(){if(_fitToClashes)_fitToClashes(s.clashes);}}
-          style=${{...S_BTN,background:'var(--overlay-bg)',color:'#93c5fd',border:'1px solid var(--border)',fontSize:'0.75rem',padding:'.25rem .5rem'}}>
+      ${s.clashes.length>0 && html`<div class="cc-overlay-top" style=${{position:'absolute',top:'var(--space-3)',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'var(--space-1)',pointerEvents:'auto'}}>
+        <button class="cc-btn-press" onClick=${function(){if(_fitToClashes)_fitToClashes(s.clashes);}}
+          style=${{...S_BTN,background:'var(--overlay-bg-strong)',color:'var(--color-info-fg)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'}}>
           Fit All Clashes
         </button>
-        <button onClick=${function(){d({t:A.UPD_PREFS,u:{showMarkers:!s.prefs.showMarkers}})}}
-          style=${{...S_BTN,background:s.prefs.showMarkers?'rgba(37,99,235,.7)':'var(--overlay-bg)',color:s.prefs.showMarkers?'#fff':'var(--text-muted)',border:'1px solid var(--border)',fontSize:'0.75rem',padding:'.25rem .5rem'}}>
+        <button class="cc-btn-press" onClick=${function(){d({t:A.UPD_PREFS,u:{showMarkers:!s.prefs.showMarkers}})}}
+          style=${{...S_BTN,background:s.prefs.showMarkers?'var(--accent)':'var(--overlay-bg-strong)',color:s.prefs.showMarkers?'#fff':'var(--text-muted)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'}}>
           ${s.prefs.showMarkers?'Markers On':'Markers Off'}
         </button>
       </div>`}
-      ${s.models.length>0 && html`<div style=${{position:'absolute',top:'.75rem',right:'50%',transform:'translateX(50%)',marginRight:'-45%',pointerEvents:'auto'}}>
-        <div style=${{display:'flex',alignItems:'center',gap:'.2rem'}}>
-          <button onClick=${function(){setFinderOpen(!finderOpen);if(finderOpen){doFind('');setFindQuery('');}}}
-            style=${{...S_BTN,background:finderOpen?'rgba(37,99,235,.7)':'var(--overlay-bg)',color:finderOpen?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',fontSize:'0.75rem',padding:'.25rem .5rem'}}>
+      ${s.models.length>0 && html`<div style=${{position:'absolute',top:'var(--space-3)',right:'50%',transform:'translateX(50%)',marginRight:'-45%',pointerEvents:'auto'}}>
+        <div style=${{display:'flex',alignItems:'center',gap:'var(--space-1)'}}>
+          <button class="cc-btn-press" onClick=${function(){setFinderOpen(!finderOpen);if(finderOpen){doFind('');setFindQuery('');}}}
+            style=${{...S_BTN,background:finderOpen?'var(--accent)':'var(--overlay-bg-strong)',color:finderOpen?'#fff':'var(--text-secondary)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'}}>
             Find Elements
           </button>
         </div>
-        ${finderOpen && html`<div style=${{marginTop:'.3rem',background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.4rem',width:240,boxShadow:'0 4px 12px rgba(0,0,0,.4)'}}>
+        ${finderOpen && html`<div class="cc-overlay-chrome" style=${{marginTop:'var(--space-1)',padding:'var(--space-2)',width:240}}>
           <input type="text" placeholder="Search by name, type, storey…" value=${findQuery}
             onInput=${function(e){doFind(e.target.value);}}
-            style=${{...S_INPUT,fontSize:'0.75rem',padding:'.25rem .4rem',marginBottom:'.3rem'}} />
+            style=${{...S_INPUT,fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-2)',marginBottom:'var(--space-1)'}} />
           ${findResults.length>0 && html`<div style=${{fontSize:'0.69rem',color:'var(--text-muted)',marginBottom:'.2rem'}}>${findResults.length} element${findResults.length>1?'s':''} found</div>`}
           <div style=${{maxHeight:180,overflowY:'auto'}}>
             ${findResults.slice(0,50).map(function(r,idx){
@@ -6778,15 +6810,34 @@ function startApp() {
   }
 
   // ── Shared style objects ───────────────────────────────────────
+  // These reference the design tokens defined in :root (see top of file).
+  // Goal: a small, consistent system rather than per-call-site inline values.
 
   var S_PANEL   = {background:'var(--bg-primary)',borderRight:'1px solid var(--border-subtle)',display:'flex',flexDirection:'column',flexShrink:0,overflow:'hidden'};
   var S_PANELR  = {background:'var(--bg-primary)',borderLeft:'1px solid var(--border-subtle)',display:'flex',flexDirection:'column',flexShrink:0};
-  var S_BTN     = {border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'0.86rem',borderRadius:'6px',padding:'.4rem .85rem',lineHeight:1.4};
-  var S_INPUT   = {width:'100%',background:'var(--bg-tertiary)',color:'var(--text-primary)',fontSize:'0.92rem',borderRadius:'8px',padding:'.4rem .65rem',border:'1px solid var(--border)',outline:'none',transition:'border-color .15s'};
+  var S_BTN     = {border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'var(--text-base)',borderRadius:'var(--radius-sm)',padding:'var(--space-2) var(--space-4)',lineHeight:'var(--leading-tight)',transition:'background var(--duration-fast) var(--ease-standard),color var(--duration-fast) var(--ease-standard),border-color var(--duration-fast) var(--ease-standard),transform var(--duration-fast) var(--ease-standard)'};
+  var S_INPUT   = {width:'100%',background:'var(--bg-tertiary)',color:'var(--text-primary)',fontSize:'var(--text-md)',borderRadius:'var(--radius-md)',padding:'var(--space-2) var(--space-3)',border:'1px solid var(--border)',outline:'none',transition:'border-color var(--duration-fast) var(--ease-standard),box-shadow var(--duration-fast) var(--ease-standard)'};
+  // Shared modal shell pieces (replaces per-modal MS/MX duplication)
+  var S_BACKDROP = {position:'fixed',inset:0,background:'var(--modal-bg)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,overflow:'hidden',padding:'var(--space-6) 0',backdropFilter:'blur(2px)',WebkitBackdropFilter:'blur(2px)'};
+  var S_MODAL_CARD = {background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-lg)',maxWidth:'95vw',maxHeight:'85vh',overflowY:'auto',WebkitOverflowScrolling:'touch',boxShadow:'var(--shadow-lg)',flexShrink:0};
+  var S_MODAL_HEADER = {display:'flex',alignItems:'center',justifyContent:'space-between',padding:'var(--space-4) var(--space-5)',borderBottom:'1px solid var(--border-subtle)',gap:'var(--space-3)'};
+  var S_MODAL_TITLE = {fontWeight:'var(--weight-semibold)',fontSize:'var(--text-lg)',color:'var(--text-primary)',lineHeight:'var(--leading-tight)'};
+  var S_MODAL_BODY = {padding:'var(--space-5)',display:'flex',flexDirection:'column',gap:'var(--space-3)'};
+  var S_MODAL_CLOSE = {border:'none',background:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:'var(--text-xl)',lineHeight:1,padding:'var(--space-1) var(--space-2)',borderRadius:'var(--radius-sm)',transition:'background var(--duration-fast) var(--ease-standard),color var(--duration-fast) var(--ease-standard)'};
+  // Card list row (clash/issue row) — paired with .cc-list-row class for hover state
+  var S_LIST_ROW = {padding:'var(--space-3) var(--space-3)',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer',borderLeft:'2px solid transparent'};
+  var S_LIST_ROW_ACTIVE = {padding:'var(--space-3) var(--space-3)',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer',borderLeft:'2px solid var(--accent)',background:'var(--bg-secondary)'};
+  // Viewer overlay chrome — paired with .cc-overlay-chrome class
+  var S_OVERLAY = {padding:'var(--space-2) var(--space-3)',color:'var(--text-secondary)',fontSize:'var(--text-xs)',pointerEvents:'auto'};
   // Expose for addons
   window._ccHtml = html;
   window._ccS_BTN = S_BTN;
   window._ccS_INPUT = S_INPUT;
+  window._ccS_BACKDROP = S_BACKDROP;
+  window._ccS_MODAL_CARD = S_MODAL_CARD;
+  window._ccS_MODAL_HEADER = S_MODAL_HEADER;
+  window._ccS_MODAL_BODY = S_MODAL_BODY;
+  window._ccS_MODAL_TITLE = S_MODAL_TITLE;
 
   // ── Header ─────────────────────────────────────────────────────
 
@@ -7042,10 +7093,10 @@ function startApp() {
       setRenaming(false);
     }
 
-    return html`<header class="cc-header" style=${{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'.5rem 1rem',background:'var(--bg-primary)',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
-      <div style=${{display:'flex',alignItems:'center',gap:'.75rem'}}>
+    return html`<header class="cc-header" style=${{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'var(--space-2) var(--space-4)',background:'var(--bg-primary)',borderBottom:'1px solid var(--border)',flexShrink:0,gap:'var(--space-3)'}}>
+      <div style=${{display:'flex',alignItems:'center',gap:'var(--space-3)'}}>
         <div style=${{position:'relative'}}>
-          <div style=${{width:32,height:32,background:'var(--accent)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}} title="ClashControl — tap for version info" onClick=${function(){setShowVer(!showVer);}}><span style=${{color:'#fff',fontWeight:900,fontSize:14}}>CC</span></div>
+          <div style=${{width:32,height:32,background:'var(--accent)',borderRadius:'var(--radius-md)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'var(--shadow-sm)'}} title="ClashControl — tap for version info" onClick=${function(){setShowVer(!showVer);}}><span style=${{color:'#fff',fontWeight:900,fontSize:14}}>CC</span></div>
           ${showVer && html`<div onClick=${function(){setShowVer(false);}} style=${{position:'fixed',inset:0,zIndex:8999,background:'transparent'}}></div>
           <div style=${{position:'fixed',top:50,left:12,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,padding:'.6rem .8rem',zIndex:9000,minWidth:220,boxShadow:'0 8px 24px rgba(0,0,0,.4)',fontSize:'0.83rem',color:'var(--text-primary)',whiteSpace:'nowrap'}} onClick=${function(e){e.stopPropagation();}}>
             <div style=${{fontWeight:700,marginBottom:'.3rem'}}>ClashControl</div>
@@ -7122,26 +7173,26 @@ function startApp() {
           </div>`}
         </div>
       </div>
-      <div class="cc-header-actions" style=${{display:'flex',alignItems:'center',gap:'.5rem',flexWrap:'wrap',overflow:'hidden'}}>
-        ${openN>0 && html`<span style=${{background:'#ef4444',color:'#fff',fontSize:'0.75rem',padding:'.1rem .5rem',borderRadius:99}}>${openN} open</span>`}
-        <button class="cc-hide-mobile" onClick=${function(){loadProject(d)}}
-          style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',fontSize:'0.75rem'}}>
+      <div class="cc-header-actions" style=${{display:'flex',alignItems:'center',gap:'var(--space-2)',flexWrap:'wrap',overflow:'hidden'}}>
+        ${openN>0 && html`<span class="cc-status-pill" style=${{background:'var(--color-danger)',color:'#fff',padding:'.15rem var(--space-2)'}}>${openN} open</span>`}
+        <button class="cc-hide-mobile cc-btn-press" onClick=${function(){loadProject(d)}}
+          style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',fontSize:'var(--text-xs)'}}>
           Open Project
         </button>
-        <button class="cc-hide-mobile" onClick=${function(){saveProject(s)}} disabled=${!all.length&&!s.models.length}
-          style=${{...S_BTN,background:s.models.length||all.length?'#0f4c81':'var(--bg-secondary)',color:s.models.length||all.length?'#93c5fd':'var(--text-faint)',cursor:s.models.length||all.length?'pointer':'not-allowed',fontSize:'0.75rem'}}>
+        <button class="cc-hide-mobile cc-btn-press" onClick=${function(){saveProject(s)}} disabled=${!all.length&&!s.models.length}
+          style=${{...S_BTN,background:s.models.length||all.length?'#0f4c81':'var(--bg-secondary)',color:s.models.length||all.length?'var(--color-info-fg)':'var(--text-faint)',cursor:s.models.length||all.length?'pointer':'not-allowed',fontSize:'var(--text-xs)'}}>
           Save Project
         </button>
-        <button class="cc-hide-mobile" onClick=${function(){importBCF(d)}}
-          style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>
+        <button class="cc-hide-mobile cc-btn-press" onClick=${function(){importBCF(d)}}
+          style=${{...S_BTN,background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',fontSize:'var(--text-xs)'}}>
           ↑ Import BCF
         </button>
-        <button class="cc-hide-mobile" onClick=${function(){exportBCF(all, '2.1', s.viewpoints)}} disabled=${!all.length}
-          style=${{...S_BTN,background:all.length?'var(--accent)':'var(--bg-secondary)',color:all.length?'#fff':'var(--text-faint)',cursor:all.length?'pointer':'not-allowed'}}>
+        <button class="cc-hide-mobile cc-btn-press" onClick=${function(){exportBCF(all, '2.1', s.viewpoints)}} disabled=${!all.length}
+          style=${{...S_BTN,background:all.length?'var(--accent)':'var(--bg-secondary)',color:all.length?'#fff':'var(--text-faint)',cursor:all.length?'pointer':'not-allowed',fontSize:'var(--text-xs)'}}>
           ↓ BCF 2.1
         </button>
-        <button class="cc-hide-mobile" onClick=${function(){exportBCF(all, '3.0', s.viewpoints)}} disabled=${!all.length}
-          style=${{...S_BTN,background:all.length?'#1d4ed8':'var(--bg-secondary)',color:all.length?'#fff':'var(--text-faint)',cursor:all.length?'pointer':'not-allowed'}}>
+        <button class="cc-hide-mobile cc-btn-press" onClick=${function(){exportBCF(all, '3.0', s.viewpoints)}} disabled=${!all.length}
+          style=${{...S_BTN,background:all.length?'#1d4ed8':'var(--bg-secondary)',color:all.length?'#fff':'var(--text-faint)',cursor:all.length?'pointer':'not-allowed',fontSize:'var(--text-xs)'}}>
           ↓ BCF 3.0
         </button>
         <button onClick=${function(){d({t:A.UPD_PREFS,u:{theme:isDark?'light':'dark'}})}}
@@ -11783,19 +11834,20 @@ function startApp() {
         }
       }}
       data-item-id=${it.id}
-      style=${{padding:'.6rem .7rem',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer',background:active?'var(--bg-secondary)':'transparent',borderLeft:active?'2px solid #3b82f6':'2px solid transparent'}}>
-      <div style=${{display:'flex',gap:'.35rem',alignItems:'flex-start'}}>
+      class=${active?'cc-list-row-active':'cc-list-row'}
+      style=${active?S_LIST_ROW_ACTIVE:S_LIST_ROW}>
+      <div style=${{display:'flex',gap:'var(--space-2)',alignItems:'flex-start'}}>
         ${selectMode && html`<input type="checkbox" checked=${isSelected} onClick=${function(e){e.stopPropagation();d({t:A.SELECT_TOGGLE,id:it.id});}}
           style=${{marginTop:3,flexShrink:0,accentColor:'var(--accent)',cursor:'pointer'}} />`}
-        ${!isClash && html`<span style=${{fontSize:'0.98rem',flexShrink:0}}>${icon}</span>`}
+        ${!isClash && html`<span style=${{fontSize:'var(--text-md)',flexShrink:0}}>${icon}</span>`}
         <div style=${{flex:1,minWidth:0}}>
-          <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
-            ${isClash && typeLabel && html`<span style=${{fontSize:'0.63rem',padding:'.1rem .3rem',borderRadius:3,background:typeBg,color:typeCol,fontWeight:700,flexShrink:0}}>${typeLabel}</span>`}
-            ${isClash && sevLabel && html`<span style=${{fontSize:'0.63rem',padding:'.1rem .3rem',borderRadius:3,background:sevBg,color:sevCol,fontWeight:700,flexShrink:0}}>${sevLabel}</span>`}
-            ${isClash && it._delta==='new' && html`<span title="New this run" style=${{fontSize:'0.57rem',padding:'.05rem .25rem',borderRadius:3,background:'#1e3a5f',color:'#60a5fa',fontWeight:700,flexShrink:0,letterSpacing:'.03em'}}>NEW</span>`}
-            ${isClash && it._delta==='auto_resolved' && html`<span title="No longer detected" style=${{fontSize:'0.57rem',padding:'.05rem .25rem',borderRadius:3,background:'#1e293b',color:'#94a3b8',fontWeight:600,flexShrink:0}}>AUTO</span>`}
-            <span style=${{color:'var(--text-primary)',fontSize:'0.8rem',fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>${it.title}</span>
-            <span style=${{fontSize:'0.63rem',padding:'.1rem .35rem',borderRadius:4,background:stBg+'22',color:stBg,fontWeight:600,flexShrink:0,whiteSpace:'nowrap'}}>${(STAT[it.status]||STAT.open).label}</span>
+          <div style=${{display:'flex',alignItems:'center',gap:'var(--space-1)'}}>
+            ${isClash && typeLabel && html`<span class="cc-status-pill" style=${{background:typeBg,color:typeCol,padding:'.1rem var(--space-2)'}}>${typeLabel}</span>`}
+            ${isClash && sevLabel && html`<span class="cc-status-pill" style=${{background:sevBg,color:sevCol,padding:'.1rem var(--space-2)'}}>${sevLabel}</span>`}
+            ${isClash && it._delta==='new' && html`<span class="cc-status-pill" title="New this run" style=${{background:'var(--color-info-bg)',color:'var(--color-info-fg)'}}>NEW</span>`}
+            ${isClash && it._delta==='auto_resolved' && html`<span class="cc-status-pill" title="No longer detected" style=${{background:'var(--bg-secondary)',color:'var(--text-faint)'}}>AUTO</span>`}
+            <span style=${{color:'var(--text-primary)',fontSize:'var(--text-sm)',fontWeight:'var(--weight-medium)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1,lineHeight:'var(--leading-base)'}}>${it.title}</span>
+            <span class="cc-status-pill" style=${{background:stBg+'22',color:stBg}}>${(STAT[it.status]||STAT.open).label}</span>
             ${isClash && trainingMode && function(){
               var fb=it.aiFeedback;
               return html`<span style=${{display:'inline-flex',alignItems:'center',gap:'2px',marginLeft:'.15rem',flexShrink:0}}>
@@ -11807,49 +11859,49 @@ function startApp() {
               </span>`;
             }()}
           </div>
-          <p style=${{color:'var(--text-faint)',fontSize:'0.75rem',marginTop:'.1rem'}} class="lc2">${it.description}</p>
-          ${isClash && html`<div style=${{display:'flex',gap:'.3rem',marginTop:'.2rem',flexWrap:'wrap',alignItems:'center'}}>
-            ${it.distance!=null && it.distance>=0 && html`<span style=${{fontSize:'0.69rem',color:'var(--text-muted)',background:'var(--bg-secondary)',padding:'.05rem .3rem',borderRadius:3,fontWeight:500}}>
+          <p style=${{color:'var(--text-faint)',fontSize:'var(--text-xs)',marginTop:'var(--space-1)',lineHeight:'var(--leading-base)'}} class="lc2">${it.description}</p>
+          ${isClash && html`<div style=${{display:'flex',gap:'var(--space-1)',marginTop:'var(--space-1)',flexWrap:'wrap',alignItems:'center'}}>
+            ${it.distance!=null && it.distance>=0 && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)',background:'var(--bg-secondary)',padding:'.1rem var(--space-2)',borderRadius:'var(--radius-pill)',fontWeight:'var(--weight-medium)'}}>
               ${it.distance===0?'⬤ touching':'⬤ '+it.distance+'mm gap'}
             </span>`}
-            ${storeyLabel && html`<span style=${{fontSize:'0.69rem',color:'var(--text-secondary)',background:'var(--bg-secondary)',padding:'.05rem .3rem',borderRadius:3}}>🏢 ${storeyLabel}</span>`}
-            ${it.selfClash && html`<span style=${{fontSize:'0.63rem',color:'#a78bfa',background:'#2e1065',padding:'.05rem .25rem',borderRadius:3}}>self</span>`}
-            ${it.expectedClash && html`<span style=${{fontSize:'0.63rem',color:'#fcd34d',background:'#78350f',padding:'.05rem .25rem',borderRadius:3}}>expected</span>`}
-            ${it.status==='accepted_needs_check' && html`<span style=${{fontSize:'0.63rem',color:'#7dd3fc',background:'#0c4a6e',padding:'.05rem .25rem',borderRadius:3}}>needs check</span>`}
+            ${storeyLabel && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-secondary)',background:'var(--bg-secondary)',padding:'.1rem var(--space-2)',borderRadius:'var(--radius-pill)'}}>🏢 ${storeyLabel}</span>`}
+            ${it.selfClash && html`<span class="cc-status-pill" style=${{color:'#a78bfa',background:'#2e1065'}}>self</span>`}
+            ${it.expectedClash && html`<span class="cc-status-pill" style=${{color:'var(--color-warning-fg)',background:'var(--color-warning-bg)'}}>expected</span>`}
+            ${it.status==='accepted_needs_check' && html`<span class="cc-status-pill" style=${{color:'var(--color-info-fg)',background:'var(--color-info-bg)'}}>needs check</span>`}
           </div>`}
-          ${!isClash && it.elementType && html`<div style=${{display:'flex',gap:'.2rem',marginTop:'.15rem',flexWrap:'wrap'}}>
-            <span style=${{fontSize:'0.57rem',background:'#1e3a5f',color:'#93c5fd',padding:'.05rem .25rem',borderRadius:3}}>${it.elementType}</span>
-            ${it.storey && html`<span style=${{fontSize:'0.57rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',padding:'.05rem .25rem',borderRadius:3}}>${it.storey}</span>`}
+          ${!isClash && it.elementType && html`<div style=${{display:'flex',gap:'var(--space-1)',marginTop:'var(--space-1)',flexWrap:'wrap'}}>
+            <span class="cc-status-pill" style=${{background:'var(--color-info-bg)',color:'var(--color-info-fg)'}}>${it.elementType}</span>
+            ${it.storey && html`<span class="cc-status-pill" style=${{background:'var(--bg-secondary)',color:'var(--text-secondary)'}}>${it.storey}</span>`}
           </div>`}
         </div>
       </div>
       ${active && html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid var(--border)'}}>
         <div style=${{display:'flex',gap:'.25rem',marginBottom:'.4rem',flexWrap:'wrap',alignItems:'center'}}>
-          ${isClash && html`<span style=${{fontSize:'0.63rem',padding:'.15rem .35rem',borderRadius:4,background:'var(--bg-secondary)',color:'var(--text-muted)',fontWeight:600}}>${(STAT[it.status||'open']||STAT.open).label}</span>`}
-          ${isClash && it.status!=='confirmed' && html`<button onClick=${function(e){
+          ${isClash && html`<span class="cc-status-pill" style=${{background:'var(--bg-secondary)',color:'var(--text-muted)'}}>${(STAT[it.status||'open']||STAT.open).label}</span>`}
+          ${isClash && it.status!=='confirmed' && html`<button class="cc-btn-press" onClick=${function(e){
               e.stopPropagation();
-              var btn=e.target;btn.style.color='#4ade80';btn.style.background='#166534';btn.style.borderColor='#22c55e66';btn.textContent='Confirmed ✓';
+              var btn=e.currentTarget;btn.style.color='var(--color-success-fg)';btn.style.background='var(--color-success-bg)';btn.style.borderColor='var(--color-success-border)';btn.textContent='Confirmed ✓';
               var _advId=it.id;if(window._ccPrepareAdvance)window._ccPrepareAdvance(_advId);setTimeout(function(){d({t:A.UPD_CLASH,id:_advId,u:{status:'confirmed'}});setTimeout(function(){if(window._ccAdvanceToNext)window._ccAdvanceToNext(_advId);},50);},600);
             }}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.15rem .5rem',background:'var(--bg-secondary)',color:'#4ade80',border:'1px solid #22c55e44',fontWeight:600,transition:'all .2s'}}>Confirm</button>`}
-          ${isClash && it.status!=='confirmed' && html`<button onClick=${function(e){
+            style=${{...S_BTN,fontSize:'var(--text-2xs)',padding:'var(--space-1) var(--space-2)',background:'var(--bg-secondary)',color:'var(--color-success-fg)',border:'1px solid var(--color-success-border)',fontWeight:'var(--weight-semibold)'}} aria-label="Confirm clash">Confirm</button>`}
+          ${isClash && it.status!=='confirmed' && html`<button class="cc-btn-press" onClick=${function(e){
               e.stopPropagation();
-              var btn=e.target;btn.style.color='#fca5a5';btn.style.background='#7f1d1d';btn.style.borderColor='#ef444466';btn.textContent='Denied ✗';
+              var btn=e.currentTarget;btn.style.color='var(--color-danger-fg)';btn.style.background='var(--color-danger-bg)';btn.style.borderColor='var(--color-danger-border)';btn.textContent='Denied ✗';
               var _advId=it.id;if(window._ccPrepareAdvance)window._ccPrepareAdvance(_advId);setTimeout(function(){d({t:A.UPD_CLASH,id:_advId,u:{status:'denied'}});setTimeout(function(){if(window._ccAdvanceToNext)window._ccAdvanceToNext(_advId);},50);},600);
             }}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.15rem .5rem',background:'var(--bg-secondary)',color:'#f87171',border:'1px solid #ef444444',fontWeight:600,transition:'all .2s'}}>Deny</button>`}
-          ${isClash && it.status!=='confirmed' && html`<button onClick=${function(e){
+            style=${{...S_BTN,fontSize:'var(--text-2xs)',padding:'var(--space-1) var(--space-2)',background:'var(--bg-secondary)',color:'var(--color-danger-fg)',border:'1px solid var(--color-danger-border)',fontWeight:'var(--weight-semibold)'}} aria-label="Deny clash">Deny</button>`}
+          ${isClash && it.status!=='confirmed' && html`<button class="cc-btn-press" onClick=${function(e){
               e.stopPropagation();
-              var btn=e.target;btn.style.color='#7dd3fc';btn.style.background='#0c4a6e';btn.style.borderColor='#0ea5e966';btn.textContent='Accepted ✓';
+              var btn=e.currentTarget;btn.style.color='var(--color-info-fg)';btn.style.background='var(--color-info-bg)';btn.style.borderColor='var(--color-info-border)';btn.textContent='Accepted ✓';
               var _advId=it.id;if(window._ccPrepareAdvance)window._ccPrepareAdvance(_advId);setTimeout(function(){d({t:A.UPD_CLASH,id:_advId,u:{status:'accepted_needs_check'}});setTimeout(function(){if(window._ccAdvanceToNext)window._ccAdvanceToNext(_advId);},50);},600);
             }}
             title="Accept but flag for later verification"
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.15rem .5rem',background:'var(--bg-secondary)',color:'#38bdf8',border:'1px solid #0ea5e944',fontWeight:600,transition:'all .2s'}}>Accept · Check</button>`}
-          ${!isClash && EDITABLE_STATUSES.map(function(k){return html`<button key=${k}
+            style=${{...S_BTN,fontSize:'var(--text-2xs)',padding:'var(--space-1) var(--space-2)',background:'var(--bg-secondary)',color:'var(--color-info-fg)',border:'1px solid var(--color-info-border)',fontWeight:'var(--weight-semibold)'}} aria-label="Accept clash and flag for later verification">Accept · Check</button>`}
+          ${!isClash && EDITABLE_STATUSES.map(function(k){return html`<button class="cc-btn-press" key=${k}
             onClick=${function(e){e.stopPropagation();d({t:A.UPD_ISSUE,id:it.id,u:{status:k}})}}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.15rem .35rem',background:it.status===k?STAT[k].bg:'var(--bg-secondary)',color:it.status===k?'#fff':'var(--text-faint)'}}>${STAT[k].label}</button>`})}
+            style=${{...S_BTN,fontSize:'var(--text-2xs)',padding:'var(--space-1) var(--space-2)',background:it.status===k?STAT[k].bg:'var(--bg-secondary)',color:it.status===k?'#fff':'var(--text-faint)',fontWeight:'var(--weight-medium)'}}>${STAT[k].label}</button>`})}
           <button onClick=${function(e){e.stopPropagation();d({t:A.ACTIVE,id:null});if(_unghostAll)_unghostAll();if(window._ccRemoveActiveClashMarker)window._ccRemoveActiveClashMarker();}}
-            title="Collapse" style=${{...S_BTN,marginLeft:'auto',padding:'0 4px',background:'none',color:'var(--text-faint)',fontSize:'0.8rem',flexShrink:0}}>▲</button>
+            title="Collapse" aria-label="Collapse details" style=${{...S_BTN,marginLeft:'auto',padding:'0 var(--space-1)',background:'none',color:'var(--text-faint)',fontSize:'var(--text-base)',flexShrink:0}}>▲</button>
         </div>
         ${html`<${ClashProps} item=${it} models=${pr._models||[]} isClash=${isClash} />`}
         <div style=${{display:'flex',gap:'.3rem',alignItems:'center',marginTop:'.3rem',marginBottom:'.2rem'}}>
@@ -12039,43 +12091,43 @@ function startApp() {
       d({t:A.ADD_ISSUE,v:issue});
       d({t:A.MODAL,v:false}); d({t:A.TAB,v:'issues'});
     }
-    var MS={position:'fixed',inset:0,background:'rgba(0,0,0,.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,overflow:'hidden',padding:'2rem 0'};
-    var MX={background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:12,width:420,maxWidth:'95vw',maxHeight:'85vh',overflowY:'auto',WebkitOverflowScrolling:'touch',boxShadow:'0 25px 50px rgba(0,0,0,.5)',flexShrink:0};
-    var LBL={fontSize:'0.8rem',color:'var(--text-muted)',display:'block',marginBottom:'.2rem'};
-    var ROW={display:'flex',justifyContent:'space-between',padding:'.1rem 0'};
-    var LS={fontSize:'0.69rem',color:'var(--text-muted)'}; var VS={fontSize:'0.69rem',color:'var(--text-primary)'};
-    return html`<div style=${MS} role="dialog" aria-label=${fromClash?'New Issue from Clash':hasEl?'New Element Issue':'New Issue'}><div style=${MX}>
-      <div style=${{display:'flex',justifyContent:'space-between',padding:'.8rem 1rem',borderBottom:'1px solid var(--border)'}}>
-        <span style=${{fontWeight:600,fontSize:'1.01rem'}}>${fromClash?'New Issue from Clash':hasEl?'New Element Issue':'New Issue'}</span>
-        <button onClick=${function(){d({t:A.MODAL,v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.26rem',padding:0}} aria-label="Close modal">✕</button>
+    var LBL={fontSize:'var(--text-sm)',color:'var(--text-muted)',display:'block',marginBottom:'var(--space-1)',fontWeight:'var(--weight-medium)'};
+    var META_PILL={fontSize:'var(--text-2xs)',background:'var(--color-info-bg)',color:'var(--color-info-fg)',padding:'.1rem var(--space-2)',borderRadius:'var(--radius-pill)',fontWeight:'var(--weight-medium)'};
+    var META_NEUTRAL={fontSize:'var(--text-2xs)',background:'var(--bg-secondary)',color:'var(--text-secondary)',padding:'.1rem var(--space-2)',borderRadius:'var(--radius-pill)'};
+    var titleText = fromClash?'New Issue from Clash':hasEl?'New Element Issue':'New Issue';
+    var titleId = 'cc-newissue-title';
+    return html`<div class="cc-modal-backdrop" style=${S_BACKDROP} role="dialog" aria-modal="true" aria-labelledby=${titleId}><div class="cc-modal-card" style=${{...S_MODAL_CARD,width:440}}>
+      <div style=${S_MODAL_HEADER}>
+        <span id=${titleId} style=${S_MODAL_TITLE}>${titleText}</span>
+        <button onClick=${function(){d({t:A.MODAL,v:false})}} style=${S_MODAL_CLOSE} aria-label="Close modal">✕</button>
       </div>
-      ${fromClash && html`<div style=${{padding:'.6rem 1rem',borderBottom:'1px solid var(--border)',background:'var(--bg-primary)'}}>
-        <div style=${{fontSize:'0.75rem',fontWeight:600,color:'#93c5fd',marginBottom:'.3rem'}}>From Clash</div>
-        <div style=${{display:'flex',flexWrap:'wrap',gap:'.3rem',marginBottom:'.2rem'}}>
-          ${fromClash.elemAType && html`<span style=${{fontSize:'0.69rem',background:'#1e3a5f',color:'#93c5fd',padding:'.1rem .4rem',borderRadius:4}}>${fromClash.elemAType}</span>`}
-          <span style=${{fontSize:'0.69rem',color:'var(--text-faint)',alignSelf:'center'}}>vs</span>
-          ${fromClash.elemBType && html`<span style=${{fontSize:'0.69rem',background:'#1e3a5f',color:'#93c5fd',padding:'.1rem .4rem',borderRadius:4}}>${fromClash.elemBType}</span>`}
-          ${fromClash.elemAStorey && html`<span style=${{fontSize:'0.69rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',padding:'.1rem .4rem',borderRadius:4}}>${fromClash.elemAStorey}</span>`}
-          ${fromClash.distance!=null && html`<span style=${{fontSize:'0.69rem',background:'var(--bg-secondary)',color:'var(--text-muted)',padding:'.1rem .4rem',borderRadius:4}}>${fromClash.distance===0?'touching':fromClash.distance+'mm gap'}</span>`}
+      ${fromClash && html`<div style=${{padding:'var(--space-3) var(--space-5)',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-primary)'}}>
+        <div style=${{fontSize:'var(--text-2xs)',fontWeight:'var(--weight-semibold)',color:'var(--color-info-fg)',marginBottom:'var(--space-1)',textTransform:'uppercase',letterSpacing:'.06em'}}>From Clash</div>
+        <div style=${{display:'flex',flexWrap:'wrap',gap:'var(--space-1)',marginBottom:'var(--space-1)',alignItems:'center'}}>
+          ${fromClash.elemAType && html`<span style=${META_PILL}>${fromClash.elemAType}</span>`}
+          <span style=${{fontSize:'var(--text-2xs)',color:'var(--text-faint)'}}>vs</span>
+          ${fromClash.elemBType && html`<span style=${META_PILL}>${fromClash.elemBType}</span>`}
+          ${fromClash.elemAStorey && html`<span style=${META_NEUTRAL}>${fromClash.elemAStorey}</span>`}
+          ${fromClash.distance!=null && html`<span style=${META_NEUTRAL}>${fromClash.distance===0?'touching':fromClash.distance+'mm gap'}</span>`}
         </div>
-        <div style=${{fontSize:'0.63rem',color:'var(--text-faint)'}}>${fromClash.elemAName||''} · ${fromClash.elemBName||''}</div>
+        <div style=${{fontSize:'var(--text-2xs)',color:'var(--text-faint)'}}>${fromClash.elemAName||''} · ${fromClash.elemBName||''}</div>
       </div>`}
-      ${hasEl && !fromClash && html`<div style=${{padding:'.6rem 1rem',borderBottom:'1px solid var(--border)',background:'var(--bg-primary)'}}>
-        <div style=${{fontSize:'0.75rem',fontWeight:600,color:'#93c5fd',marginBottom:'.3rem'}}>Linked Element</div>
-        <div style=${{display:'flex',flexWrap:'wrap',gap:'.3rem'}}>
-          ${ep.ifcType && html`<span style=${{fontSize:'0.69rem',background:'#1e3a5f',color:'#93c5fd',padding:'.1rem .4rem',borderRadius:4}}>${ep.ifcType}</span>`}
-          ${ep.name && html`<span style=${{fontSize:'0.69rem',background:'var(--bg-secondary)',color:'var(--text-primary)',padding:'.1rem .4rem',borderRadius:4}}>${ep.name}</span>`}
-          ${ep.storey && html`<span style=${{fontSize:'0.69rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',padding:'.1rem .4rem',borderRadius:4}}>${ep.storey}</span>`}
-          ${ep.material && html`<span style=${{fontSize:'0.69rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',padding:'.1rem .4rem',borderRadius:4}}>${ep.material}</span>`}
+      ${hasEl && !fromClash && html`<div style=${{padding:'var(--space-3) var(--space-5)',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-primary)'}}>
+        <div style=${{fontSize:'var(--text-2xs)',fontWeight:'var(--weight-semibold)',color:'var(--color-info-fg)',marginBottom:'var(--space-1)',textTransform:'uppercase',letterSpacing:'.06em'}}>Linked Element</div>
+        <div style=${{display:'flex',flexWrap:'wrap',gap:'var(--space-1)'}}>
+          ${ep.ifcType && html`<span style=${META_PILL}>${ep.ifcType}</span>`}
+          ${ep.name && html`<span style=${META_NEUTRAL}>${ep.name}</span>`}
+          ${ep.storey && html`<span style=${META_NEUTRAL}>${ep.storey}</span>`}
+          ${ep.material && html`<span style=${META_NEUTRAL}>${ep.material}</span>`}
         </div>
-        <div style=${{fontSize:'0.63rem',color:'var(--text-faint)',marginTop:'.2rem'}}>${el.modelName} · #${el.expressId}</div>
+        <div style=${{fontSize:'var(--text-2xs)',color:'var(--text-faint)',marginTop:'var(--space-1)'}}>${el.modelName} · #${el.expressId}</div>
       </div>`}
-      <form onSubmit=${submit} style=${{padding:'1rem',display:'flex',flexDirection:'column',gap:'.5rem'}}>
+      <form onSubmit=${submit} style=${S_MODAL_BODY}>
         <div><label style=${LBL}>Title *</label>
           <input required value=${form.title} onInput=${upd('title')} placeholder="Short description of the issue" style=${S_INPUT} /></div>
         <div><label style=${LBL}>What is the issue? *</label>
           <textarea required value=${form.desc} onInput=${upd('desc')} rows="3" placeholder="Describe what the problem is and what needs to be resolved…" style=${{...S_INPUT,resize:'vertical'}} /></div>
-        <div style=${{display:'flex',gap:'.5rem'}}>
+        <div style=${{display:'flex',gap:'var(--space-2)'}}>
           <div style=${{flex:1}}><label style=${LBL}>Status</label>
             <select value=${form.status} onChange=${upd('status')} style=${S_INPUT}>
               ${EDITABLE_STATUSES.map(function(k){return html`<option key=${k} value=${k}>${STAT[k].label}</option>`})}
@@ -12089,15 +12141,15 @@ function startApp() {
               <option value="design">Design</option><option value="coordination">Coordination</option><option value="constructability">Constructability</option><option value="safety">Safety</option><option value="code_compliance">Code Compliance</option><option value="other">Other</option>
             </select></div>
         </div>
-        <div style=${{display:'flex',gap:'.5rem'}}>
+        <div style=${{display:'flex',gap:'var(--space-2)'}}>
           <div style=${{flex:1}}><label style=${LBL}>Assigned to</label>
             <input value=${form.assignee} onInput=${upd('assignee')} placeholder="Name or team" style=${S_INPUT} /></div>
           <div style=${{flex:1}}><label style=${LBL}>Due date</label>
             <input type="date" value=${form.dueDate} onInput=${upd('dueDate')} style=${S_INPUT} /></div>
         </div>
-        <div style=${{display:'flex',gap:'.4rem',paddingTop:'.3rem'}}>
-          <button type="button" onClick=${function(){d({t:A.MODAL,v:false})}} style=${{...S_BTN,flex:1,background:'var(--border)',color:'var(--text-primary)'}}>Cancel</button>
-          <button type="submit" style=${{...S_BTN,flex:1,background:'#2563eb',color:'#fff',fontWeight:600}}>Create Issue</button>
+        <div style=${{display:'flex',gap:'var(--space-2)',paddingTop:'var(--space-2)'}}>
+          <button class="cc-btn-press" type="button" onClick=${function(){d({t:A.MODAL,v:false})}} style=${{...S_BTN,flex:1,background:'var(--bg-tertiary)',color:'var(--text-primary)',border:'1px solid var(--border)'}}>Cancel</button>
+          <button class="cc-btn-press" type="submit" style=${{...S_BTN,flex:1,background:'var(--accent)',color:'#fff',fontWeight:'var(--weight-semibold)'}}>Create Issue</button>
         </div>
       </form>
     </div></div>`;
@@ -12139,13 +12191,11 @@ function startApp() {
     }
     function tog(k){return function(){var u={};u[k]=!p[k];d({t:A.UPD_PREFS,u:u});}}
     function sel(k){return function(e){var u={};u[k]=e.target.value;d({t:A.UPD_PREFS,u:u});}}
-    var MS={position:'fixed',inset:0,background:'var(--modal-bg)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,overflow:'hidden',padding:'2rem 0'};
-    var MX={background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:14,width:460,maxWidth:'95vw',maxHeight:'85vh',overflowY:'auto',WebkitOverflowScrolling:'touch',boxShadow:'0 25px 50px rgba(0,0,0,.5)',flexShrink:0};
-    var LBL={fontSize:'0.83rem',color:'var(--text-muted)',display:'block',marginBottom:'.25rem'};
-    var SEC={fontSize:'0.8rem',fontWeight:700,color:'var(--pill-blue)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'.5rem',marginTop:'.8rem'};
-    var TROW={display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.5rem 0',gap:'1rem',borderBottom:'1px solid var(--border-subtle)'};
-    var TLBL={fontSize:'0.9rem',color:'var(--text-primary)'};
-    var TSUB={fontSize:'0.75rem',color:'var(--text-muted)',marginTop:'.1rem',lineHeight:1.4};
+    var LBL={fontSize:'var(--text-sm)',color:'var(--text-muted)',display:'block',marginBottom:'var(--space-1)'};
+    var SEC={fontSize:'var(--text-xs)',fontWeight:'var(--weight-bold)',color:'var(--color-info-fg)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:'var(--space-2)',marginTop:'var(--space-4)'};
+    var TROW={display:'flex',justifyContent:'space-between',alignItems:'center',padding:'var(--space-2) 0',gap:'var(--space-4)',borderBottom:'1px solid var(--border-subtle)'};
+    var TLBL={fontSize:'var(--text-md)',color:'var(--text-primary)',fontWeight:'var(--weight-medium)'};
+    var TSUB={fontSize:'var(--text-xs)',color:'var(--text-muted)',marginTop:'.1rem',lineHeight:'var(--leading-base)'};
     // Toggle switch style
     function Toggle(tp) {
       var on=tp.on;
@@ -12153,12 +12203,12 @@ function startApp() {
         <div style=${{width:18,height:18,borderRadius:9,background:'#fff',position:'absolute',top:2,left:on?18:2,transition:'left .2s',boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}></div>
       </div>`;
     }
-    return html`<div style=${MS} role="dialog" aria-label="Settings" onClick=${function(){d({t:A.SETTINGS,v:false});}}><div style=${MX} onClick=${function(e){e.stopPropagation();}}>
-      <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'1rem 1.2rem',borderBottom:'1px solid var(--border)'}}>
-        <span style=${{fontWeight:600,fontSize:'1.03rem'}}>Settings</span>
-        <button onClick=${function(){d({t:A.SETTINGS,v:false})}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.26rem',padding:0}} aria-label="Close settings">✕</button>
+    return html`<div class="cc-modal-backdrop" style=${S_BACKDROP} role="dialog" aria-modal="true" aria-labelledby="cc-settings-title" onClick=${function(){d({t:A.SETTINGS,v:false});}}><div class="cc-modal-card" style=${{...S_MODAL_CARD,width:480}} onClick=${function(e){e.stopPropagation();}}>
+      <div style=${S_MODAL_HEADER}>
+        <span id="cc-settings-title" style=${S_MODAL_TITLE}>Settings</span>
+        <button onClick=${function(){d({t:A.SETTINGS,v:false})}} style=${S_MODAL_CLOSE} aria-label="Close settings">✕</button>
       </div>
-      <div style=${{padding:'.2rem 1.2rem 1rem 1.2rem'}}>
+      <div style=${{padding:'var(--space-2) var(--space-5) var(--space-5) var(--space-5)'}}>
         <div style=${{display:'flex',alignItems:'center',gap:'.6rem',padding:'.85rem 1rem',margin:'.6rem 0 .2rem',background:'linear-gradient(135deg, rgba(196,181,253,.08), rgba(96,165,250,.06))',border:'1px solid rgba(196,181,253,.25)',borderRadius:10}}>
           <span style=${{fontSize:'1.15rem',color:'#f472b6',flexShrink:0}}>♥</span>
           <span style=${{fontSize:'0.92rem',color:'var(--text-primary)',lineHeight:1.45}}>
@@ -16399,9 +16449,9 @@ function startApp() {
     var pwaAvail = !!(window._ccPwaInstallPrompt && window._ccPwaInstallPrompt());
     var CARD = {background:'var(--card-bg)',border:'1px solid var(--card-border)',borderRadius:10,padding:'.65rem .75rem',display:'flex',gap:'.6rem',alignItems:'flex-start',cursor:'default'};
 
-    return html`<div style=${{position:'fixed',inset:0,background:vis?'var(--modal-bg)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60,transition:'background .2s',overflow:'hidden',padding:'2rem 0'}}
+    return html`<div role="dialog" aria-modal="true" aria-labelledby="cc-welcome-title" style=${{position:'fixed',inset:0,background:vis?'var(--modal-bg)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60,transition:'background var(--duration-base) var(--ease-standard)',overflow:'hidden',padding:'var(--space-6) 0',backdropFilter:'blur(2px)',WebkitBackdropFilter:'blur(2px)'}}
       onClick=${function(e){if(e.target===e.currentTarget)dismiss();}}>
-      <div style=${{background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:16,width:460,maxWidth:'92vw',maxHeight:'85vh',overflowY:'auto',WebkitOverflowScrolling:'touch',boxShadow:'var(--shadow-lg)',transform:vis?'translateY(0) scale(1)':'translateY(12px) scale(.97)',opacity:vis?1:0,transition:'transform .25s cubic-bezier(.16,1,.3,1), opacity .2s',flexShrink:0}}>
+      <div style=${{background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xl)',width:460,maxWidth:'92vw',maxHeight:'85vh',overflowY:'auto',WebkitOverflowScrolling:'touch',boxShadow:'var(--shadow-lg)',transform:vis?'translateY(0) scale(1)':'translateY(12px) scale(.97)',opacity:vis?1:0,transition:'transform var(--duration-slow) var(--ease-decelerate), opacity var(--duration-base) var(--ease-standard)',flexShrink:0}}>
 
         <!-- Header -->
         <div style=${{background:'linear-gradient(135deg,#0f172a 0%,#1e3a5f 40%,#2563eb 100%)',padding:'1.4rem 1.4rem 1.2rem',position:'relative',overflow:'hidden'}}>
@@ -16413,7 +16463,7 @@ function startApp() {
               </svg>
             </div>
             <div>
-              <div style=${{color:'#fff',fontWeight:700,fontSize:'1.05rem',letterSpacing:'-.01em'}}>Welcome to ClashControl</div>
+              <div id="cc-welcome-title" style=${{color:'#fff',fontWeight:'var(--weight-bold)',fontSize:'var(--text-lg)',letterSpacing:'-.01em'}}>Welcome to ClashControl</div>
               <div style=${{color:'rgba(255,255,255,.6)',fontSize:'.65rem',marginTop:'.15rem'}}>Get the best experience</div>
             </div>
           </div>
