@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.9.11 (2026-04-07)
+- Add load_model tool: 'load ifc' now opens the file picker
+
 ## v4.9.10 (2026-04-07)
 - Try thinkingBudget: 128 on Gemma 4 (low cap instead of disabled)
 
