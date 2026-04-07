@@ -16414,15 +16414,18 @@ function startApp() {
         }}>AI Chat ›</button>`;
     }
 
-    // Floating overlay: absolute on the right edge, viewer keeps full width
+    // Floating card: absolute, with margin from all edges, rounded corners,
+    // full drop shadow. Viewer keeps full width underneath.
     return html`<div class="cc-side-panel cc-ai-panel" style=${{
-      width:panelW, position:'absolute', right:0, top:0, bottom:0,
+      width:panelW, position:'absolute', right:'1rem', top:'1rem', bottom:'1rem',
       display:'flex', flexDirection:'column', overflow:'hidden',
-      background:'var(--bg-primary)', borderLeft:'1px solid var(--border-subtle)',
-      boxShadow:'-4px 0 18px rgba(0,0,0,0.18)', zIndex:1100
+      background:'var(--bg-primary)', border:'1px solid var(--border)',
+      borderRadius:14,
+      boxShadow:'0 12px 32px rgba(0,0,0,0.32), 0 4px 12px rgba(0,0,0,0.18)',
+      zIndex:1100
     }}>
       <div onMouseDown=${onResizeDown} style=${{position:'absolute',left:0,top:0,bottom:0,width:8,cursor:'col-resize',zIndex:10,
-        background:'transparent',transition:'background .15s'}} onMouseEnter=${function(e){e.currentTarget.style.background='rgba(59,130,246,0.3)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
+        background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='rgba(59,130,246,0.3)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
       <button onClick=${function(){ setCollapsed(true); try{localStorage.setItem('cc_ai_panel_collapsed','1');}catch(e){} }}
         title="Collapse AI chat" style=${{
           position:'absolute', right:6, top:6, zIndex:11, background:'transparent',
