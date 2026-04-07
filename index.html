@@ -13073,6 +13073,10 @@ function startApp() {
     'group_by: {intent, groupBy: "storey"|"discipline"|"status"|"type"|"none"}',
     'export_bcf: {intent}',
     'query: {intent, query: "clash_count"|"issue_count"|"model_list"|"current_rules"|"worst_storey"}',
+    'analyze: {intent}  // for "summary", "summarize clashes", "analyze", "report", "overview"',
+    'create_project: {intent, name}  // for "new project Foo", "create project Tower A"',
+    'rename_project: {intent, name}',
+    'switch_project: {intent, name}',
     'help: {intent}',
     'unknown: {intent}',
     '',
@@ -13119,6 +13123,39 @@ function startApp() {
       case 'group_by': var gv = {storey:'storey',floor:'storey',level:'storey',discipline:'discipline',status:'status',type:'type',none:'none'}[action.groupBy]||'none'; d({t:A.CLASH_GROUP_BY,v:gv}); d({t:A.TAB,v:'clashes'}); return 'Grouped by '+gv+'.';
       case 'export_bcf': if (!s.issues.length&&!s.clashes.length) return 'Nothing to export yet.'; var items=s.issues.length?s.issues:s.clashes; exportBCF(items,'2.1',s.viewpoints); return 'Done — '+items.length+' items exported as BCF.';
       case 'query': return processNLCommand(action.query||'', s, d);
+      case 'analyze': case 'analyse': case 'summary': case 'summarize': case 'summarise': case 'report':
+        return processNLCommand('analyze clashes', s, d) || 'No data yet. Load models and run detection first.';
+      case 'create_project': {
+        var cpName = (action.name||'').trim();
+        if (!cpName) return 'What should the project be called?';
+        try {
+          var cpId = uid();
+          var cpList = getProjects().concat([{id:cpId, name:cpName, createdAt:Date.now(), sourceType:'ifc'}]);
+          saveProjects(cpList);
+          d({t:A.SET_PROJECT_LIST, v:cpList});
+          _switchProject(cpId, s, d);
+          return 'Created project **' + cpName + '** and switched to it.';
+        } catch(e) { return 'Couldn\'t create project: '+(e.message||e); }
+      }
+      case 'rename_project': {
+        var rpName = (action.name||'').trim();
+        if (!rpName) return 'What should I rename it to?';
+        try {
+          var rpId = s.activeProject || 'default';
+          var rpList = getProjects().map(function(p){return p.id===rpId?Object.assign({},p,{name:rpName}):p;});
+          saveProjects(rpList);
+          d({t:A.SET_PROJECT_LIST, v:rpList});
+          return 'Renamed to **' + rpName + '**.';
+        } catch(e) { return 'Couldn\'t rename: '+(e.message||e); }
+      }
+      case 'switch_project': {
+        var spHint = (action.name||'').toLowerCase();
+        var spList = getProjects();
+        var spMatch = spList.find(function(p){return p.name.toLowerCase()===spHint;}) ||
+                      spList.find(function(p){return p.name.toLowerCase().indexOf(spHint)!==-1;});
+        if (spMatch) { _switchProject(spMatch.id, s, d); return 'Switched to **'+spMatch.name+'**.'; }
+        return 'No project named "'+(action.name||'')+'".';
+      }
       case 'help': return processNLCommand('help', s, d);
       default: return null;
     }
@@ -13256,6 +13293,51 @@ function startApp() {
         window.dispatchEvent(new Event('cc-training-data-change'));
       } catch(e) {}
       return 'Thanks! I\'ll learn from this. Your feedback has been saved.';
+    }
+
+    // ── Project create / rename / switch ──────────────────────────
+    // "new project Foo", "create project Foo", "start project Foo", "open project Foo as new"
+    var newProjMatch = raw.match(/^\s*(?:new|create|add|start|make)\s+(?:a\s+)?(?:new\s+)?project(?:\s+(?:called|named|name))?\s+["']?(.+?)["']?\s*$/i);
+    if (newProjMatch) {
+      var newName = newProjMatch[1].trim();
+      if (!newName) return 'Give the project a name — try "new project My Tower".';
+      try {
+        var newId = uid();
+        var pList = getProjects().concat([{id:newId, name:newName, createdAt:Date.now(), sourceType:'ifc'}]);
+        saveProjects(pList);
+        d({t:A.SET_PROJECT_LIST, v:pList});
+        _switchProject(newId, s, d);
+        return 'Created project **' + newName + '** and switched to it. Drop an IFC file to get started.';
+      } catch(e) { return 'Couldn\'t create the project: ' + (e.message||e); }
+    }
+    // "rename project to Foo" / "rename current project Foo"
+    var renProjMatch = raw.match(/^\s*rename\s+(?:(?:the\s+)?(?:current\s+)?project\s+)?(?:to\s+)?["']?(.+?)["']?\s*$/i);
+    if (renProjMatch && /project/i.test(raw)) {
+      var rnName = renProjMatch[1].trim();
+      if (!rnName) return 'What should I rename it to?';
+      try {
+        var pid = s.activeProject || 'default';
+        var rList = getProjects().map(function(p){return p.id===pid?Object.assign({},p,{name:rnName}):p;});
+        saveProjects(rList);
+        d({t:A.SET_PROJECT_LIST, v:rList});
+        return 'Renamed to **' + rnName + '**.';
+      } catch(e) { return 'Couldn\'t rename: ' + (e.message||e); }
+    }
+    // "switch to project Foo" / "open project Foo"
+    var swProjMatch = raw.match(/^\s*(?:switch|change|go|open|load)\s+(?:to\s+)?(?:the\s+)?project\s+["']?(.+?)["']?\s*$/i);
+    if (swProjMatch) {
+      var swName = swProjMatch[1].trim().toLowerCase();
+      var swList = getProjects();
+      var swMatch = swList.find(function(p){return p.name.toLowerCase()===swName;}) ||
+                    swList.find(function(p){return p.name.toLowerCase().indexOf(swName)!==-1;});
+      if (swMatch) { _switchProject(swMatch.id, s, d); return 'Switched to **' + swMatch.name + '**.'; }
+      return 'No project named "' + swProjMatch[1] + '". Try "new project ' + swProjMatch[1] + '" to create it.';
+    }
+    // "list projects" / "what projects"
+    if (/^(?:list|show|what)\s+(?:the\s+)?projects?$/i.test(text)) {
+      var lpList = getProjects();
+      if (!lpList.length) return 'No projects yet. Try "new project My Tower".';
+      return 'Projects:\n' + lpList.map(function(p){return (p.id===s.activeProject?'• ':'  ')+p.name;}).join('\n');
     }
 
     // ── Help ───────────────────────────────────────────────────────
@@ -14803,9 +14885,18 @@ function startApp() {
         })}
         ${loading && html`<div style=${{display:'flex'}}>
           <div style=${{
-            padding:'.4rem .65rem', borderRadius:'12px 12px 12px 3px',
-            background:aiBubbleBg, color:mutedCol, fontSize:'0.84rem'
-          }}>…</div>
+            padding:'.45rem .75rem', borderRadius:'12px 12px 12px 3px',
+            background:aiBubbleBg, color:mutedCol, fontSize:'0.85rem',
+            display:'flex', alignItems:'center', gap:'.5rem'
+          }}>
+            <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
+            <span style=${{color:'#93c5fd',fontStyle:'italic'}}>Thinking</span>
+            <span style=${{display:'inline-flex',gap:'.15rem'}}>
+              <span style=${{animation:'nlDots 1.4s ease-in-out infinite',color:'#93c5fd'}}>.</span>
+              <span style=${{animation:'nlDots 1.4s ease-in-out .2s infinite',color:'#93c5fd'}}>.</span>
+              <span style=${{animation:'nlDots 1.4s ease-in-out .4s infinite',color:'#93c5fd'}}>.</span>
+            </span>
+          </div>
         </div>`}
         ${!loading && msgs.length <= 2 && function(){
           var suggestions = [];
@@ -14939,9 +15030,18 @@ function startApp() {
         })}
         ${loading && html`<div style=${{display:'flex'}}>
           <div style=${{
-            padding:'.4rem .65rem', borderRadius:'12px 12px 12px 3px',
-            background:aiBubbleBg, color:mutedCol, fontSize:'0.84rem'
-          }}>…</div>
+            padding:'.45rem .75rem', borderRadius:'12px 12px 12px 3px',
+            background:aiBubbleBg, color:mutedCol, fontSize:'0.85rem',
+            display:'flex', alignItems:'center', gap:'.5rem'
+          }}>
+            <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
+            <span style=${{color:'#93c5fd',fontStyle:'italic'}}>Thinking</span>
+            <span style=${{display:'inline-flex',gap:'.15rem'}}>
+              <span style=${{animation:'nlDots 1.4s ease-in-out infinite',color:'#93c5fd'}}>.</span>
+              <span style=${{animation:'nlDots 1.4s ease-in-out .2s infinite',color:'#93c5fd'}}>.</span>
+              <span style=${{animation:'nlDots 1.4s ease-in-out .4s infinite',color:'#93c5fd'}}>.</span>
+            </span>
+          </div>
         </div>`}
         <div ref=${bottomRef}></div>
       </div>
