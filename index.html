@@ -379,6 +379,23 @@ function startApp() {
   }
   window._ccParseLoadPct = _parseLoadPct;
 
+  // Read a File/Blob into an ArrayBuffer and emit (loaded, total) progress
+  // events so the loading strip can show "Reading file (X / Y)…" and the
+  // existing _parseLoadPct extracts the percentage. Falls back to a single
+  // 100% callback when length isn't computable.
+  function _readFileWithProgress(file, onProgress) {
+    return new Promise(function(resolve, reject) {
+      var r = new FileReader();
+      r.onload = function(e) { resolve(e.target.result); };
+      r.onerror = function() { reject(r.error || new Error('FileReader error')); };
+      r.onprogress = function(e) {
+        if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
+      };
+      r.readAsArrayBuffer(file);
+    });
+  }
+  window._ccReadFileWithProgress = _readFileWithProgress;
+
   // ── Pending offer system ──────────────────────────────────────
   // When the assistant can't fulfill a command because of a missing
   // prerequisite (no models, no clashes, etc.) it phrases the reply as
@@ -7882,14 +7899,18 @@ function startApp() {
               window._ccModelLoadMsg = base + ': ' + msg;
               window.dispatchEvent(new CustomEvent('cc-model-loading', {detail:{loading:true, msg:base+': '+msg}}));
             };
-            _onProg('Loading GLB geometry…');
-            return grp.glb.arrayBuffer().then(function(glbBuf) {
+            _onProg('Reading GLB file…');
+            return _readFileWithProgress(grp.glb, function(loaded, total){
+              _onProg('Reading GLB (' + loaded + ' / ' + total + ')');
+            }).then(function(glbBuf) {
               _phases['GLB read'] = performance.now() - t0;
               return loadGLB(glbBuf, base, _onProg).then(function(glbResult) {
                 _phases['GLB parse'] = performance.now() - t0;
                 // Load IFC metadata, sidecar and/or .ifcprops (run in parallel)
                 // Skip IFC STEP parsing when .ifcmeta or .ifcprops is present — JSON sidecars cover all metadata
-                var ifcPromise = (!grp.ifcprops && !grp.ifcmeta && grp.ifc) ? grp.ifc.arrayBuffer().then(function(ifcBuf) {
+                var ifcPromise = (!grp.ifcprops && !grp.ifcmeta && grp.ifc) ? _readFileWithProgress(grp.ifc, function(loaded, total){
+                  _onProg('Reading IFC (' + loaded + ' / ' + total + ')');
+                }).then(function(ifcBuf) {
                   _phases['IFC file read'] = performance.now() - t0;
                   return loadIFCMetadataOnly(ifcBuf, _onProg);
                 }).then(function(ifcMeta) {
@@ -7995,8 +8016,11 @@ function startApp() {
           chain = chain.then(function() {
             setLoading(true);
             var t0 = performance.now();
-            var _onProg = function(msg) { setLoadMsg(base + ': ' + msg); };
-            return grp.glb.arrayBuffer().then(function(glbBuf) {
+            var _onProg = function(msg) { setLoadMsg(base + ': ' + msg); window._ccModelLoadMsg=base+': '+msg; window.dispatchEvent(new CustomEvent('cc-model-loading',{detail:{loading:true,msg:base+': '+msg}})); };
+            _onProg('Reading GLB file…');
+            return _readFileWithProgress(grp.glb, function(loaded, total){
+              _onProg('Reading GLB (' + loaded + ' / ' + total + ')');
+            }).then(function(glbBuf) {
               return loadGLB(glbBuf, base, _onProg).then(function(glbResult) {
                 // Create minimal element data from GLB meshes
                 var elements = [];
@@ -8149,9 +8173,11 @@ function startApp() {
         chain = chain.then(function() {
           setLoading(true);
           setLoadMsg(totalIfc > 1 ? f.name + ' (' + (doneIfc + 1) + '/' + totalIfc + ')…' : 'Loading ' + f.name + '…');
-          return f.arrayBuffer().then(function(buf) {
+          var _onProg = function(msg){ setLoadMsg(f.name + ': ' + msg); window._ccModelLoadMsg=f.name+': '+msg; window.dispatchEvent(new CustomEvent('cc-model-loading',{detail:{loading:true,msg:f.name+': '+msg}})); };
+          return _readFileWithProgress(f, function(loaded, total){
+            _onProg('Reading file (' + loaded + ' / ' + total + ')');
+          }).then(function(buf) {
             var disc='structural', col=DISC[0].c;
-            var _onProg = function(msg){ setLoadMsg(f.name + ': ' + msg); window._ccModelLoadMsg=f.name+': '+msg; window.dispatchEvent(new CustomEvent('cc-model-loading',{detail:{loading:true,msg:f.name+': '+msg}})); };
             var _loadP = loadIFCWorker(buf, col, _onProg);
             var _workerGen = _ccLoadGeneration; // capture generation assigned by loadIFCWorker
             _loadP = _loadP.catch(function(workerErr) {
@@ -16417,7 +16443,7 @@ function startApp() {
     // Floating card: absolute, with margin from all edges, rounded corners,
     // full drop shadow. Viewer keeps full width underneath.
     return html`<div class="cc-side-panel cc-ai-panel" style=${{
-      width:panelW, position:'absolute', right:'1rem', top:'1rem', bottom:'1rem',
+      width:panelW, position:'absolute', right:'.5rem', top:'.5rem', bottom:'.5rem',
       display:'flex', flexDirection:'column', overflow:'hidden',
       background:'var(--bg-primary)', border:'1px solid var(--border)',
       borderRadius:14,
