@@ -14,7 +14,7 @@ module.exports = async function handler(req, res) {
   // Check AI (Google AI Studio / Gemma)
   if (key) {
     status.ai = true;
-    status.model = 'gemma-3-27b-it';
+    status.model = 'gemma-4-31b-it';
   }
 
   // Optional: list available models so we can discover the latest Gemma ID
@@ -28,6 +28,36 @@ module.exports = async function handler(req, res) {
         .filter(function(m) { return /gemma|gemini/i.test(m.name); });
     } catch (e) {
       status.modelsError = String(e && e.message || e);
+    }
+  }
+
+  // Optional: actually call a model and surface the raw response so we can
+  // diagnose "doesn't work" errors. Hit /api/health?test=1 (defaults to the
+  // model used by the app) or /api/health?test=gemma-4-31b-it to override.
+  if (key && req.query && req.query.test) {
+    var testModel = (typeof req.query.test === 'string' && req.query.test !== '1')
+      ? req.query.test
+      : status.model;
+    try {
+      var tr = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/' + testModel + ':generateContent?key=' + encodeURIComponent(key),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'Reply with just the word OK.' }] }]
+          })
+        }
+      );
+      var tdata = await tr.json();
+      status.test = {
+        model: testModel,
+        httpStatus: tr.status,
+        ok: tr.ok,
+        response: tdata
+      };
+    } catch (e) {
+      status.test = { model: testModel, error: String(e && e.message || e) };
     }
   }
 
