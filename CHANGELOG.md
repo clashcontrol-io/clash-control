@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.9.13 (2026-04-07)
+- feat: project name NL commands + thinking indicator
+
 ## v4.9.12 (2026-04-07)
 - feat: smart fast-path regex for NL commands (skip AI for trivial inputs)
 
