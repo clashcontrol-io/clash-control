@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.9.17 (2026-04-07)
+- chore: prune dead directories and stale planning docs
+
 ## v4.9.16 (2026-04-07)
 - chore: wire up GitHub Sponsors
 
