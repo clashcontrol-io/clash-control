@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.9.9 (2026-04-07)
+- Add 'self' to connect-src CSP so /api/* calls aren't blocked
+
 ## v4.9.8 (2026-04-07)
 - Add F12 console debug logging for /api/nl and /api/health
 
