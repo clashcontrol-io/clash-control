@@ -1,6 +1,8 @@
 # ClashControl
 > Version: **v4.9.15** (2026-04-07)
 
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ec4899?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/clashcontrol-io)
+
 **Free, open-source IFC clash detection — right in your browser.**
 
 No installs. No licenses. No subscriptions. Just open the file and start checking your models.
