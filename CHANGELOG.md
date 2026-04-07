@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.10.2 (2026-04-07)
+- UI refresh: Stitch design.md token system + visual polish
+
 ## v4.10.1 (2026-04-07)
 - fix: reliable training data flush via sendBeacon + batched payloads
 
