@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.10.3 (2026-04-07)
+- Navigator: PatternFly tree view + frameless viewer chrome
+
 ## v4.10.2 (2026-04-07)
 - UI refresh: Stitch design.md token system + visual polish
 
