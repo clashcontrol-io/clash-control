@@ -12340,73 +12340,8 @@ function startApp() {
               <option value="design">Design</option><option value="coordination">Coordination</option><option value="constructability">Constructability</option><option value="safety">Safety</option><option value="code_compliance">Code Compliance</option><option value="other">Other</option>
             </select></div>
         </div>
-        <div class="cc-hide-mobile">
-          <div style=${SEC}>Developer / Fine-Tuning</div>
-          <${DevTrainingSection} models=${models} />
-        </div>
       </div>
     </div></div>`;
-  }
-
-  function DevTrainingSection(props) {
-    var models = props&&props.models||[];
-    var nlCount = useState(function(){return _getNLTrainCount();}), nlN=nlCount[0], setNlN=nlCount[1];
-    var clashCount = useState(function(){return _getClashTrainCount();}), clashN=clashCount[0], setClashN=clashCount[1];
-    var confirmClearNL = useState(false), showClearNL=confirmClearNL[0], setClearNL=confirmClearNL[1];
-    var confirmClearClash = useState(false), showClearClash=confirmClearClash[0], setClearClash=confirmClearClash[1];
-    var nlShareSt = useState(null), nlShareStatus=nlShareSt[0], setNlShareStatus=nlShareSt[1];
-    var clShareSt = useState(null), clShareStatus=clShareSt[0], setClShareStatus=clShareSt[1];
-    var TLBL={fontSize:'1.03rem',color:'var(--text-primary)'};
-    var TSUB={fontSize:'0.86rem',color:'var(--text-muted)',marginTop:'.1rem',lineHeight:1.4};
-    var TROW={display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.5rem 0',gap:'1rem',borderBottom:'1px solid var(--border-subtle)'};
-
-    return html`<div>
-      <div style=${TROW}>
-        <div style=${{flex:1}}>
-          <div style=${TLBL}>NL commands recorded: ${nlN}</div>
-          <div style=${TSUB}>User commands paired with resolved actions</div>
-        </div>
-        <div style=${{display:'flex',gap:'.25rem',flexShrink:0}}>
-          <button onClick=${function(){_shareNLTrainingData(models,function(st){setNlShareStatus(st);if(st==='ok')setTimeout(function(){setNlShareStatus(null);},3000);});}}
-            disabled=${!nlN||nlShareStatus==='sending'}
-            style=${{...S_BTN,fontSize:'0.79rem',padding:'.2rem .4rem',background:nlN?'#7c3aed':'var(--bg-secondary)',color:nlN?'#fff':'var(--text-faint)'}}>${nlShareStatus==='sending'?'Sending…':nlShareStatus==='ok'?'Sent ✓':'Share'}</button>
-          <button onClick=${function(){_exportNLTrainingJSONL();}}
-            disabled=${!nlN}
-            style=${{...S_BTN,fontSize:'0.79rem',padding:'.2rem .4rem',background:nlN?'var(--accent)':'var(--bg-secondary)',color:nlN?'#fff':'var(--text-faint)'}}>Export</button>
-          ${!showClearNL ? html`<button onClick=${function(){setClearNL(true);}}
-            disabled=${!nlN}
-            style=${{...S_BTN,fontSize:'0.79rem',padding:'.2rem .4rem',background:'none',color:nlN?'var(--text-muted)':'var(--text-faint)',border:'1px solid var(--border)'}}>Clear</button>`
-          : html`<button onClick=${function(){_clearNLTrainStore();setNlN(0);setClearNL(false);}}
-            style=${{...S_BTN,fontSize:'0.79rem',padding:'.2rem .4rem',background:'#ef4444',color:'#fff'}}>Confirm</button>
-          <button onClick=${function(){setClearNL(false);}}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .4rem',background:'none',color:'var(--text-muted)',border:'1px solid var(--border)'}}>Cancel</button>`}
-        </div>
-      </div>
-      <div style=${TROW}>
-        <div style=${{flex:1}}>
-          <div style=${TLBL}>Clash feedback records: ${clashN}</div>
-          <div style=${TSUB}>Feature vectors with user labels for classifier training</div>
-        </div>
-        <div style=${{display:'flex',gap:'.25rem',flexShrink:0}}>
-          <button onClick=${function(){_shareClashTrainStore(function(st){setClShareStatus(st);if(st==='ok')setTimeout(function(){setClShareStatus(null);},3000);});}}
-            disabled=${!clashN||clShareStatus==='sending'}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .4rem',background:clashN?'#7c3aed':'var(--bg-secondary)',color:clashN?'#fff':'var(--text-faint)'}}>${clShareStatus==='sending'?'Sending…':clShareStatus==='ok'?'Sent ✓':'Share'}</button>
-          <button onClick=${function(){_exportClashTrainingJSONL();}}
-            disabled=${!clashN}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .4rem',background:clashN?'var(--accent)':'var(--bg-secondary)',color:clashN?'#fff':'var(--text-faint)'}}>Export</button>
-          ${!showClearClash ? html`<button onClick=${function(){setClearClash(true);}}
-            disabled=${!clashN}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .4rem',background:'none',color:clashN?'var(--text-muted)':'var(--text-faint)',border:'1px solid var(--border)'}}>Clear</button>`
-          : html`<button onClick=${function(){_clearClashTrainStore();setClashN(0);setClearClash(false);}}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .4rem',background:'#ef4444',color:'#fff'}}>Confirm</button>
-          <button onClick=${function(){setClearClash(false);}}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .4rem',background:'none',color:'var(--text-muted)',border:'1px solid var(--border)'}}>Cancel</button>`}
-        </div>
-      </div>
-      <div style=${{fontSize:'0.69rem',color:'var(--text-faint)',marginTop:'.4rem',lineHeight:1.5}}>
-        Data is stored locally in this browser. When sharing is enabled, data is sent automatically at end of session. NL commands are sanitised (model names, file paths, and emails are stripped). Export downloads the raw file for your own use.
-      </div>
-    </div>`;
   }
 
   // ── Advanced Settings Tab (tolerance matrix) ────────────────
