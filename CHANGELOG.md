@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.9.12 (2026-04-07)
+- feat: smart fast-path regex for NL commands (skip AI for trivial inputs)
+
 ## v4.9.11 (2026-04-07)
 - Add load_model tool: 'load ifc' now opens the file picker
 
