@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.10.7 (2026-04-08)
+- perf(ifc): skip non-renderable types before geometry decode
+
 ## v4.10.6 (2026-04-07)
 - Logo: mirror the second C so the mark reads C⊃
 
