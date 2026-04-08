@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.11.5 (2026-04-08)
+- perf(nl): dual-prompt routing + expanded fast path for lower latency
+
 ## v4.11.4 (2026-04-08)
 - feat(nl): deep system prompt rewrite + richer app context
 
