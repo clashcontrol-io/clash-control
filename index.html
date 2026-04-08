@@ -1290,6 +1290,7 @@ function startApp() {
       var mesh = new THREE.Mesh(geo, mat);
       mesh.applyMatrix4(new THREE.Matrix4().fromArray(md.mtx));
       mesh.userData.expressId = md.eid;
+      _ccBakeMesh(mesh);
       if(!meshByEid[md.eid]) meshByEid[md.eid] = [];
       meshByEid[md.eid].push(mesh);
       return mesh;
@@ -1345,6 +1346,44 @@ function startApp() {
   // Shared LOD box proxy resources (must be at startApp scope so both loader paths can access them)
   var _lodBoxGeo = typeof THREE !== 'undefined' ? new THREE.BoxBufferGeometry(1, 1, 1) : null;
   var _lodProxyMat = typeof THREE !== 'undefined' ? new THREE.MeshBasicMaterial({color:0x667788, transparent:true, opacity:0.25, depthWrite:false}) : null;
+
+  // ── Bake static mesh transforms for rendering perf ────────────
+  // Called once per mesh at load time. Three.js defaults every Mesh
+  // to matrixAutoUpdate = true, which means renderer.render() walks
+  // the whole scene graph every frame and calls updateMatrix() on
+  // each node, recomposing this.matrix from pos/quat/scale. For
+  // 33 000+ static IFC meshes that's 3–7 ms of pure waste per
+  // frame — the transforms never change after load.
+  //
+  // Setting matrixAutoUpdate = false skips the recompose entirely
+  // (matrixWorld is still propagated through the parent chain on
+  // render, so re-parenting still works). Setting frustumCulled =
+  // false skips Three.js's built-in per-mesh frustum test — the
+  // manual updateCulling() in the render loop already handles
+  // frustum/LOD and writes obj.visible directly, so the built-in
+  // culler is pure duplicate work.
+  //
+  // SAFETY
+  //   - Clash detection calls mesh.updateWorldMatrix(true, false)
+  //     explicitly before reading matrixWorld in _getWorldTris and
+  //     _getWorldVerts, so stale matrixWorld after re-parenting is
+  //     handled and the narrow phase is unaffected.
+  //   - Revit linked models go through the same helper via
+  //     window._ccBakeMesh in addons/revit-bridge.js.
+  //   - LOD proxies set position/scale directly (no applyMatrix4)
+  //     so this helper calls updateMatrix() unconditionally to
+  //     ensure the baked matrix reflects the current pos/scale.
+  //   - Safe to call BEFORE the mesh is parented — updateMatrixWorld
+  //     will just copy this.matrix into this.matrixWorld when
+  //     parent is null, and the next render pass picks up the
+  //     correct world transform after grp.add(mesh).
+  function _ccBakeMesh(mesh) {
+    mesh.updateMatrix();            // one-time compose from pos/quat/scale
+    mesh.updateMatrixWorld(true);   // bake matrixWorld from current parent chain
+    mesh.matrixAutoUpdate = false;  // skip per-frame updateMatrix()
+    mesh.frustumCulled = false;     // manual updateCulling() handles frustum
+  }
+  window._ccBakeMesh = _ccBakeMesh;
 
   // ── WASM-init hang recovery ─────────────────────────────────────
   // The IFC loader has stalled at 18% ("Initializing WASM") on multiple
@@ -2085,6 +2124,7 @@ function startApp() {
             mesh.applyMatrix4(new THREE.Matrix4().fromArray(placed.flatTransformation));
             mesh.userData.expressId = expressID;
             elBox.expandByObject(mesh);
+            _ccBakeMesh(mesh);
             elMeshes.push(mesh); meshes.push(mesh);
           } catch(e) { console.warn('Skipped element geometry #'+expressID+': '+(e.message||e)); }
           finally { if (gd) try { gd.delete(); } catch(e2) {} }
@@ -2104,9 +2144,9 @@ function startApp() {
             _proxy = new THREE.Mesh(_lodBoxGeo, _lodProxyMat);
             _proxy.position.copy(_bc); _proxy.scale.copy(_bsz);
             _proxy.visible = false;
-            _proxy.frustumCulled = false;
             _proxy.userData._isLodProxy = true;
             _proxy.userData.expressId = expressID;
+            _ccBakeMesh(_proxy); // also sets frustumCulled=false + matrixAutoUpdate=false
             elMeshes.forEach(function(m) { m.userData._lodProxy = _proxy; });
           }
           rawElements.push({expressId:expressID, meshes:elMeshes, box:elBox.clone(), props:elProps, _lodProxy:_proxy});
@@ -2622,6 +2662,7 @@ function startApp() {
               var mesh = new THREE.Mesh(geo, mat);
               mesh.applyMatrix4(new THREE.Matrix4().fromArray(gData.tf));
               mesh.userData.expressId = raw.expressId;
+              _ccBakeMesh(mesh);
               _tMesh += performance.now() - _tM;
               var _tB = performance.now();
               elBox.expandByObject(mesh);
@@ -2638,9 +2679,9 @@ function startApp() {
                 _proxy = new THREE.Mesh(_lodBoxGeo, _lodProxyMat);
                 _proxy.position.copy(_bc); _proxy.scale.copy(_bsz);
                 _proxy.visible = false;
-                _proxy.frustumCulled = false;
                 _proxy.userData._isLodProxy = true;
                 _proxy.userData.expressId = raw.expressId;
+                _ccBakeMesh(_proxy); // also sets frustumCulled=false + matrixAutoUpdate=false
                 elMeshes.forEach(function(m) { m.userData._lodProxy = _proxy; });
               }
               _tLod += performance.now() - _tL;
@@ -5894,8 +5935,41 @@ function startApp() {
       var projScreenMatrix = new THREE.Matrix4();
       var tmpBox = new THREE.Box3();
       var tmpSphere = new THREE.Sphere();
-      var cullEvery = 4; // re-evaluate culling every N frames
+      // Cull period: every N frames re-evaluate per-mesh visibility +
+      // LOD state. Bumped from 4 → 8 because updateCulling() walks
+      // the entire S.mg subtree (33k+ nodes on a large model), and
+      // on 60 FPS that's 7.5 full traversals per second → 15. For
+      // smooth orbit the old value was ~40-80 ms of CPU per call
+      // amortised to ~10-20 ms/frame. At cullEvery=8 the amortised
+      // cost halves and the stale-visibility window is still only
+      // 133 ms which is imperceptible during a drag.
+      var cullEvery = 8;
       var cullFrame = 0;
+      // Camera-fingerprint cull skip: when the camera is completely
+      // stationary (e.g. user just stopped orbiting, or the scene is
+      // idle), the per-mesh visibility is already correct and
+      // walking the entire scene to re-test it would be pure waste.
+      // We compute a short string fingerprint of the camera's world
+      // position + orientation on every would-be cull and skip the
+      // whole updateCulling() call if the fingerprint matches the
+      // previous one. String concatenation + tiny toFixed is ~1 µs
+      // per check vs the ~40 ms cull pass, so the break-even is
+      // ~40 000× in favour of the skip.
+      //
+      // The fingerprint lives on S so the model-sync useEffect can
+      // reset it (via S._lastCullCamKey = '') whenever a model is
+      // added/removed/replaced — that forces the next cull pass to
+      // run so newly-loaded meshes outside the current frustum get
+      // culled instead of being rendered until the next orbit.
+      S._lastCullCamKey = '';
+      function _camFingerprint() {
+        var p = S.camera.position, q = S.camera.quaternion;
+        // 4-decimal position (0.1 mm precision) + 5-decimal quaternion
+        // is enough to catch any visible camera motion but coarse
+        // enough to ignore floating-point jitter across frames.
+        return p.x.toFixed(4)+','+p.y.toFixed(4)+','+p.z.toFixed(4)+','+
+               q.x.toFixed(5)+','+q.y.toFixed(5)+','+q.z.toFixed(5)+','+q.w.toFixed(5);
+      }
       // Screen-ratio LOD: uses (radius/distance)² as unified metric for all object sizes.
       // Objects whose apparent screen area falls below threshold get culled.
       // screenRatio = r²/d² ≈ proportional to fraction of screen height the object covers.
@@ -5970,11 +6044,21 @@ function startApp() {
         // Render on demand: skip if nothing changed
         if(_needsRender <= 0) return;
         _needsRender--;
-        // Frustum culling (every N frames for performance)
+        // Frustum culling (every N frames for performance).
+        // Additionally, short-circuit the cull pass entirely if the
+        // camera hasn't moved since the last pass — the visibility
+        // state is already correct and walking the whole scene is
+        // pure waste. Big win during idle frames (e.g. after the
+        // user stops orbiting) and when invalidate() fires for a
+        // non-camera reason (material swap, highlight update, etc).
         cullFrame++;
         if(cullFrame >= cullEvery && S.mg && S.mg.children.length > 0){
           cullFrame = 0;
-          updateCulling();
+          var _camKey = _camFingerprint();
+          if (_camKey !== S._lastCullCamKey) {
+            S._lastCullCamKey = _camKey;
+            updateCulling();
+          }
         }
         // Main render
         try {
@@ -6008,6 +6092,13 @@ function startApp() {
     useEffect(function() {
       var S = state3d.current; if(!S.mg) return;
       var ids = s.models.map(function(m){return m.id});
+      // Scene composition is about to change (remove stale / add new /
+      // swap existing). Reset the cull-skip fingerprint so the next
+      // tick() runs a fresh updateCulling() pass — otherwise newly
+      // loaded meshes keep their default frustumCulled=false + visible=
+      // true state and would render outside the camera frustum until
+      // the user moves the camera.
+      S._lastCullCamKey = '';
       // Remove stale
       Object.keys(S.map).forEach(function(id){
         if(ids.indexOf(id)===-1){
@@ -7801,6 +7892,7 @@ function startApp() {
           var m = new THREE.Mesh(child.geometry.clone(), mat);
           m.geometry.computeVertexNormals(); // recompute from face winding — GLB normals may be flipped
           m.applyMatrix4(child.matrixWorld);
+          _ccBakeMesh(m);
           if (gid) {
             m.userData.globalId = gid;
             if (!meshByGid[gid]) meshByGid[gid] = [];
