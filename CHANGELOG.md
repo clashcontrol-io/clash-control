@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.10.10 (2026-04-08)
+- chore(sw): bump cache name to evict stale precached web-ifc
+
 ## v4.10.9 (2026-04-08)
 - feat(chat): bare / key reopens collapsed chat
 
