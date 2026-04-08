@@ -190,6 +190,20 @@
     }
     var mats = el.materials;
     if (Array.isArray(mats)) mats = mats.join(', ');
+    // Link-source metadata. Used by _finalizeModel to split a single
+    // model-start buffer into multiple ClashControl models, one per
+    // linked Revit document. The plugin should tag each element that
+    // comes from a linked file with linkName (required, human-readable)
+    // and optionally linkDocument / linkInstanceId / linkGuid for more
+    // precise grouping when the same RVT is linked multiple times.
+    // Absent fields are no-ops — elements from the host model end up
+    // ungrouped and stay in the single host ClashControl model.
+    var linkName = el.linkName || el.linkDocumentName || null;
+    var linkInstanceId = el.linkInstanceId || el.linkInstance || null;
+    var linkKey = null;
+    if (linkName) {
+      linkKey = linkInstanceId ? (linkName + '#' + linkInstanceId) : linkName;
+    }
     return {
       expressId: el.expressId || nextId,
       meshes: meshes,
@@ -206,7 +220,10 @@
         psets: el.parameters || {},
         revitId: el.revitId || null,
         hostId: el.hostId || null,
-        hostRelationships: el.hostRelationships || null
+        hostRelationships: el.hostRelationships || null,
+        linkName: linkName,
+        linkInstanceId: linkInstanceId,
+        linkKey: linkKey
       }
     };
   }
@@ -239,6 +256,15 @@
       case 'model-start':
         var isLink = !!msg.isLink;
         var modelLabel = (isLink ? '[Link] ' : '') + (msg.name || 'Revit Model');
+        // Diagnostic: log the full model-start payload so we can see
+        // whether the plugin is sending separate model-start events
+        // per linked file (preferred) or lumping everything into a
+        // single host model-start. If the latter, element-level
+        // linkName tagging is required for the split path in
+        // _finalizeModel to create separate ClashControl models.
+        console.log('%c[Revit→CC] model-start', 'color:#60a5fa;font-weight:bold',
+          'name=', msg.name, 'isLink=', isLink,
+          'documentName=', msg.documentName, 'elementCount=', msg.elementCount);
         _revitBuf = {
           name: modelLabel,
           rawName: msg.name || 'Revit Model',
@@ -358,6 +384,70 @@
       else window._ccDispatch({t:'SET_PROJECT', v:targetProj});
     }
 
+    // ── Linked-model split ──────────────────────────────────────
+    // If the incoming buffer contains elements from multiple Revit
+    // linked files (each tagged with linkKey by _revitElementToMesh),
+    // split it into separate sub-models and finalise each one
+    // independently so they appear as distinct entries in the Models
+    // tab and can be clashed against each other. Elements without a
+    // linkKey stay in the host buffer. Single-source buffers (all
+    // host, or all from one link) skip this path entirely.
+    var _groups = {}; // linkKey → {name, rawName, isLink, elements, meshes, count, received}
+    var _hostElements = [], _hostMeshes = [];
+    _revitBuf.elements.forEach(function(el) {
+      var lk = el.props && el.props.linkKey;
+      if (!lk) {
+        _hostElements.push(el);
+        el.meshes.forEach(function(m) { _hostMeshes.push(m); });
+        return;
+      }
+      if (!_groups[lk]) {
+        _groups[lk] = {
+          name: '[Link] ' + (el.props.linkName || lk),
+          rawName: el.props.linkName || lk,
+          isLink: true,
+          elements: [],
+          meshes: [],
+          count: 0,
+          received: 0
+        };
+      }
+      _groups[lk].elements.push(el);
+      el.meshes.forEach(function(m) { _groups[lk].meshes.push(m); });
+    });
+    var _groupKeys = Object.keys(_groups);
+    if (_groupKeys.length > 0) {
+      // Split detected — recurse into _finalizeModelInner for the host
+      // (if any) and each link group. Swap _revitBuf for each call so
+      // the rest of the finalise logic works on the current group.
+      var _origBuf = _revitBuf;
+      d({t:'BRIDGE_LOG', logType:'pull', text:'Splitting incoming buffer into ' + (_hostElements.length > 0 ? '1 host + ' : '') + _groupKeys.length + ' linked model(s)'});
+      if (_hostElements.length > 0) {
+        _revitBuf = {
+          name: _origBuf.name,
+          rawName: _origBuf.rawName,
+          isLink: _origBuf.isLink,
+          elements: _hostElements,
+          meshes: _hostMeshes,
+          count: _hostElements.length,
+          received: _hostElements.length,
+          _unchangedGids: _origBuf._unchangedGids,
+          _batchGids: _origBuf._batchGids
+        };
+        _finalizeModelInner(msg, d);
+      }
+      _groupKeys.forEach(function(lk) {
+        _revitBuf = _groups[lk];
+        _finalizeModelInner(msg, d);
+      });
+      _revitBuf = null;
+      return;
+    }
+    // No split needed — fall through to the single-model path.
+    _finalizeModelInner(msg, d);
+  }
+
+  function _finalizeModelInner(msg, d) {
     var storeys = msg.storeys || [];
     var storeyData = msg.storeyData || [];
     var relatedPairs = msg.relatedPairs || {};
