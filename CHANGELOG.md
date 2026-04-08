@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.10.9 (2026-04-08)
+- feat(chat): bare / key reopens collapsed chat
+
 ## v4.10.8 (2026-04-08)
 - Revert "perf(ifc): skip non-renderable types before geometry decode"
 
