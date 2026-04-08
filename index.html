@@ -15006,11 +15006,25 @@ function startApp() {
         if ((e.ctrlKey || e.metaKey) && e.key === '/') {
           e.preventDefault();
           setOpen(function(o){ return !o; });
+          return;
+        }
+        // Bare `/` opens the chat when it's collapsed — same convention as Slack/GitHub.
+        // Skip when modifiers are held (lets the browser keep its own bindings) or when
+        // the user is already typing in any input/textarea/contentEditable.
+        if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          var t = e.target;
+          var tag = (t && t.tagName) || '';
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+          if (t && t.isContentEditable) return;
+          if (open) return;
+          e.preventDefault();
+          setOpen(true);
+          if (inputRef.current) setTimeout(function(){ inputRef.current && inputRef.current.focus(); }, 50);
         }
       }
       window.addEventListener('keydown', onKey);
       return function() { window.removeEventListener('keydown', onKey); };
-    }, []);
+    }, [open]);
 
     // On first open: check server AI health
     useEffect(function() {
