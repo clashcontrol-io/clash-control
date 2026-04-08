@@ -14285,6 +14285,14 @@ function startApp() {
         importBCF(d);
         return 'BCF file picker opened.';
       }
+      case 'save_viewpoint': {
+        if (_captureViewpoint) {
+          var vpName = action.name || ('Viewpoint ' + (s.viewpoints ? s.viewpoints.length + 1 : 1));
+          _captureViewpoint(vpName);
+          return 'Viewpoint saved: ' + vpName + '.';
+        }
+        return 'No active 3D view to capture.';
+      }
       case 'measure': {
         if (action.mode==='stop') { d({t:A.MEASURE_MODE,v:null}); return 'Measurement off.'; }
         if (action.mode==='clear') { d({t:A.CLEAR_MEASUREMENTS}); return 'Measurements cleared.'; }
