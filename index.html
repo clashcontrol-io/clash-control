@@ -4917,9 +4917,15 @@ function startApp() {
         _animateFly(endTarget, endPos);
       };
 
-      // Ghost: swap non-highlighted meshes to a ghostly grey material
+      // Ghost: swap non-highlighted meshes to a ghostly grey material.
+      // Keep shading visible by using a brighter base colour and higher
+      // opacity than the old "barely-there" look — the previous
+      // 0x445566 @ 0.12 made the Phong lighting contribution invisible,
+      // so ghosted surfaces looked like uniform flat silhouettes.
+      // 0x8994a3 @ 0.30 with shininess 30 preserves surface normals
+      // under lighting while still reading as "not the current focus".
       var _ghostedMeshes = [];
-      var _ghostMat = new THREE.MeshPhongMaterial({color:0x445566, transparent:true, opacity:0.12, depthWrite:false, shininess:10, flatShading:false});
+      var _ghostMat = new THREE.MeshPhongMaterial({color:0x8994a3, transparent:true, opacity:0.30, depthWrite:false, shininess:30, flatShading:false});
       S._ghostMat = _ghostMat;
       function ghostOthers(targetExpressIds) {
         unghostAll();
