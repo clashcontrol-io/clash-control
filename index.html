@@ -15252,7 +15252,13 @@ function startApp() {
   function ClashSetupCard(props) {
     var setup = props.setup, s = props.s, d = props.d, onRun = props.onRun, setMsgs = props.setMsgs, idx = props.idx;
     var init = setup.rules;
-    var st = useState(Object.assign({hard:true,maxGap:s.rules.maxGap||0,duplicates:false,excludeSelf:false,excludeTypes:[]},init));
+    var st = useState(Object.assign({
+      hard:true, maxGap:s.rules.maxGap||0, minGap:s.rules.minGap||0,
+      duplicates:false, excludeSelf:false, excludeTypes:[],
+      useSemanticFilter:s.rules.useSemanticFilter!==false,
+      changeAware:s.rules.changeAware||false,
+      minOverlapVolM3:s.rules.minOverlapVolM3||1e-5
+    }, init));
     var rules = st[0], setRules = st[1];
     var stRan = useState(false), ran = stRan[0], setRan = stRan[1];
     var stExOpen = useState(false), exOpen = stExOpen[0], setExOpen = stExOpen[1];
@@ -15273,6 +15279,7 @@ function startApp() {
     s.models.forEach(function(m){ opts.push({id:m.id, label:m.name}); });
 
     function upd(k,v){ setRules(function(r){var n=Object.assign({},r);n[k]=v;return n;}); }
+    function updMany(obj){ setRules(function(r){return Object.assign({},r,obj);}); }
 
     function run(){
       setRan(true);
@@ -15319,6 +15326,16 @@ function startApp() {
     var selSt={...S_INPUT,fontSize:'0.78rem',padding:'.22rem .35rem',width:'100%',background:'var(--input-bg)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:5};
     var chkRow={display:'flex',alignItems:'center',gap:'.3rem',fontSize:'0.78rem',color:'var(--text-secondary)',cursor:'pointer'};
     var numSt={...S_INPUT,fontSize:'0.78rem',padding:'.2rem .3rem',width:60,background:'var(--input-bg)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:5,textAlign:'right'};
+    var togRow={display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.18rem 0'};
+    function Tog(tp) {
+      var on=tp.on;
+      return html`<div onClick=${tp.onToggle} role="switch" aria-checked=${on} style=${{width:28,height:15,borderRadius:8,background:on?'var(--accent)':'var(--text-faint)',cursor:'pointer',position:'relative',transition:'background .2s',flexShrink:0}}>
+        <div style=${{width:11,height:11,borderRadius:6,background:'#fff',position:'absolute',top:2,left:on?15:2,transition:'left .2s',boxShadow:'0 1px 2px rgba(0,0,0,.2)'}}></div>
+      </div>`;
+    }
+
+    // Derive clash type from rules
+    var clashType = !rules.hard ? 'soft' : (rules.maxGap||0)>0 ? 'mixed' : 'hard';
 
     return html`<div style=${{maxWidth:'100%',background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'.65rem .75rem',fontSize:'0.85rem'}}>
       <div style=${{fontWeight:600,marginBottom:'.5rem',color:'var(--text-primary)',display:'flex',alignItems:'center',gap:'.3rem'}}>
@@ -15328,6 +15345,7 @@ function startApp() {
         Self-clash mode: ${setup._multiSelf.map(function(p){return p.name;}).join(', ')} — each group checked against itself
       </div>`}
 
+      <!-- Sets -->
       <div style=${{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.45rem .6rem'}}>
         <div>
           <div style=${lblSt}>Set A</div>
@@ -15343,36 +15361,86 @@ function startApp() {
         </div>
       </div>
 
-      <div style=${{display:'flex',flexWrap:'wrap',gap:'.45rem .8rem',marginTop:'.5rem'}}>
-        <label style=${chkRow}>
-          <input type="checkbox" checked=${rules.hard} onChange=${function(e){upd('hard',e.target.checked)}} />
-          Hard clashes
-        </label>
-        <label style=${chkRow}>
-          <input type="checkbox" checked=${rules.duplicates} onChange=${function(e){upd('duplicates',e.target.checked)}} />
-          Duplicates
-        </label>
-        <label style=${{...chkRow,gap:'.3rem'}}>
-          Self-clashes:
-          <select value=${rules.selfClashGroup||(rules.excludeSelf?'none':'both')} onChange=${function(e){upd('selfClashGroup',e.target.value);upd('excludeSelf',e.target.value==='none')}}
-            style=${{fontSize:'0.71rem',background:'var(--input-bg)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:4,padding:'1px 3px'}}>
-            <option value="none">Off</option>
-            <option value="both">Both</option>
-            <option value="a">A only</option>
-            <option value="b">B only</option>
-          </select>
-        </label>
+      <!-- Clash type (matches standards tab) -->
+      <div style=${{marginTop:'.5rem'}}>
+        <div style=${{fontSize:'0.72rem',fontWeight:600,color:'var(--text-primary)',marginBottom:'.25rem'}}>What type of clashes?</div>
+        <div style=${{display:'flex',flexDirection:'column',gap:'.15rem'}}>
+          <label style=${chkRow}>
+            <input type="radio" name=${'ctype_'+idx} checked=${clashType==='hard'} onChange=${function(){updMany({hard:true,maxGap:0})}} style=${{margin:0,accentColor:'var(--accent)'}} />
+            <div>
+              <div style=${{fontSize:'0.72rem',color:'var(--text-primary)'}}>Hard clashes only</div>
+              <div style=${{fontSize:'0.63rem',color:'var(--text-faint)'}}>Elements that physically intersect</div>
+            </div>
+          </label>
+          <label style=${chkRow}>
+            <input type="radio" name=${'ctype_'+idx} checked=${clashType==='mixed'} onChange=${function(){updMany({hard:true,maxGap:rules.maxGap>0?rules.maxGap:50})}} style=${{margin:0,accentColor:'var(--accent)'}} />
+            <div>
+              <div style=${{fontSize:'0.72rem',color:'var(--text-primary)'}}>Hard clashes + near misses</div>
+              <div style=${{fontSize:'0.63rem',color:'var(--text-faint)'}}>Intersections and elements too close</div>
+            </div>
+          </label>
+          <label style=${chkRow}>
+            <input type="radio" name=${'ctype_'+idx} checked=${clashType==='soft'} onChange=${function(){updMany({hard:false,maxGap:rules.maxGap>0?rules.maxGap:100})}} style=${{margin:0,accentColor:'var(--accent)'}} />
+            <div>
+              <div style=${{fontSize:'0.72rem',color:'var(--text-primary)'}}>Soft clashes only (clearance check)</div>
+              <div style=${{fontSize:'0.63rem',color:'var(--text-faint)'}}>Only flag elements within a distance range</div>
+            </div>
+          </label>
+        </div>
       </div>
 
-      <div style=${{display:'flex',alignItems:'center',gap:'.4rem',marginTop:'.4rem'}}>
-        <span class="cc-tip cc-tip-up cc-tip-delay" data-tip="Elements within this distance are flagged as near misses. Set to 0 for hard clashes only."
-          style=${{fontSize:'0.75rem',color:'var(--text-muted)',cursor:'help'}}>Max gap</span>
-        <input type="number" min="0" max="9999" value=${rules.maxGap}
-          onChange=${function(e){upd('maxGap',Math.max(0,parseInt(e.target.value)||0))}}
+      <!-- Gap input (shown when near misses or soft) -->
+      ${(clashType==='mixed'||clashType==='soft') && html`<div style=${{display:'flex',alignItems:'center',gap:'.4rem',marginTop:'.4rem',background:'var(--bg-secondary)',borderRadius:5,padding:'.3rem .4rem'}}>
+        <span style=${{fontSize:'0.72rem',color:'var(--text-muted)',whiteSpace:'nowrap'}}>${clashType==='soft'?'Gap range':'Max gap'}</span>
+        ${clashType==='soft' && html`<input type="number" min="0" max="2000" value=${rules.minGap||0}
+          onChange=${function(e){upd('minGap',Math.max(0,parseInt(e.target.value)||0))}}
+          style=${numSt} />`}
+        ${clashType==='soft' && html`<span style=${{fontSize:'0.69rem',color:'var(--text-faint)'}}>–</span>`}
+        <input type="number" min="1" max="9999" value=${rules.maxGap||50}
+          onChange=${function(e){upd('maxGap',Math.max(1,parseInt(e.target.value)||1))}}
           style=${numSt} />
         <span style=${{fontSize:'0.71rem',color:'var(--text-faint)'}}>mm</span>
+      </div>`}
+
+      <!-- Filtering options (matches standards tab) -->
+      <div style=${{marginTop:'.45rem',display:'flex',flexDirection:'column',gap:0}}>
+        <div style=${{fontSize:'0.72rem',fontWeight:600,color:'var(--text-primary)',marginBottom:'.2rem'}}>Filtering</div>
+        <div style=${togRow}>
+          <div style=${{fontSize:'0.72rem',color:'var(--text-secondary)'}}>Ignore intentional connections</div>
+          <${Tog} on=${rules.useSemanticFilter!==false} onToggle=${function(){upd('useSemanticFilter',rules.useSemanticFilter===false);}} />
+        </div>
+        <div style=${togRow}>
+          <div style=${{fontSize:'0.72rem',color:'var(--text-secondary)'}}>Include duplicate hits</div>
+          <${Tog} on=${rules.duplicates} onToggle=${function(){upd('duplicates',!rules.duplicates);}} />
+        </div>
+        <div style=${togRow}>
+          <div style=${{fontSize:'0.72rem',color:'var(--text-secondary)'}}>Only changed elements</div>
+          <${Tog} on=${rules.changeAware} onToggle=${function(){upd('changeAware',!rules.changeAware);}} />
+        </div>
       </div>
 
+      <!-- Self-clashes (matches standards tab) -->
+      <div style=${{display:'flex',alignItems:'center',gap:'.35rem',marginTop:'.35rem'}}>
+        <span style=${{fontSize:'0.72rem',color:'var(--text-primary)',whiteSpace:'nowrap'}}>Check within same model</span>
+        <select value=${rules.selfClashGroup||(rules.excludeSelf?'none':'both')} onChange=${function(e){upd('selfClashGroup',e.target.value);upd('excludeSelf',e.target.value==='none')}}
+          style=${{...S_INPUT,fontSize:'0.72rem',padding:'.2rem .3rem',flex:1}}>
+          <option value="none">No</option>
+          <option value="both">Yes, both groups</option>
+          <option value="a">Yes, first group only</option>
+          <option value="b">Yes, second group only</option>
+        </select>
+      </div>
+
+      <!-- Min overlap volume (hard clashes only, matches standards tab) -->
+      ${rules.hard && html`<div style=${{display:'flex',alignItems:'center',gap:'.35rem',marginTop:'.35rem'}}>
+        <span style=${{fontSize:'0.72rem',color:'var(--text-primary)',whiteSpace:'nowrap'}}>Ignore overlaps smaller than</span>
+        <input type="number" min="0" max="500" value=${Math.round((rules.minOverlapVolM3||0)*1e6)}
+          onInput=${function(e){upd('minOverlapVolM3',+e.target.value/1e6)}}
+          style=${{...S_INPUT,fontSize:'0.72rem',width:48,padding:'.15rem .25rem',textAlign:'right'}} />
+        <span style=${{fontSize:'0.69rem',color:'var(--text-faint)'}}>cm\u00B3</span>
+      </div>`}
+
+      <!-- Exclude IFC types -->
       ${allIfcTypes.length>0 && html`<div style=${{marginTop:'.45rem'}}>
         <div onClick=${function(){setExOpen(!exOpen)}} style=${{fontSize:'0.75rem',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',gap:'.25rem',userSelect:'none'}}>
           <span style=${{fontSize:'0.57rem',transition:'transform .15s',transform:exOpen?'rotate(90deg)':'rotate(0)'}}>▶</span>
@@ -15395,8 +15463,8 @@ function startApp() {
       <div style=${{display:'flex',gap:'.4rem',marginTop:'.55rem',justifyContent:'flex-end'}}>
         <button onClick=${function(){setMsgs(function(prev){var n=prev.slice();n[idx]={role:'assistant',text:'Setup cancelled.'};return n;});}}
           style=${{...S_BTN,padding:'.25rem .6rem',fontSize:'0.78rem',background:'none',color:'var(--text-muted)',border:'1px solid var(--border)'}}>Cancel</button>
-        <button onClick=${run} disabled=${!rules.hard&&!rules.maxGap&&!rules.duplicates}
-          style=${{...S_BTN,padding:'.25rem .8rem',fontSize:'0.78rem',background:'var(--accent)',color:'#fff',fontWeight:600,opacity:(!rules.hard&&!rules.maxGap&&!rules.duplicates)?0.4:1}}>
+        <button onClick=${run} disabled=${!rules.hard&&!(rules.maxGap>0)&&!rules.duplicates}
+          style=${{...S_BTN,padding:'.25rem .8rem',fontSize:'0.78rem',background:'var(--accent)',color:'#fff',fontWeight:600,opacity:(!rules.hard&&!(rules.maxGap>0)&&!rules.duplicates)?0.4:1}}>
           Run Detection
         </button>
       </div>
@@ -15768,14 +15836,10 @@ function startApp() {
           setLoading(false);
           return;
         }
-        // If it's a clash setup, run through conversation flow
+        // Clash setup → show the interactive card directly (same options as standards tab, no text loop)
         if (rawResult && rawResult._clashSetup) {
-          var convResult = _clashConverse(text, rawResult);
-          if (convResult && convResult._clashSetup) {
-            setMsgs(function(m){ return m.concat([{role:'assistant', setup:convResult}]); });
-          } else {
-            setMsgs(function(m){ return m.concat([{role:'assistant', text:convResult||''}]); });
-          }
+          clashCtxRef.current = null;
+          setMsgs(function(m){ return m.concat([{role:'assistant', setup:rawResult}]); });
         } else if (rawResult !== null) {
           setMsgs(function(m){ return m.concat([{role:'assistant', text:rawResult}]); });
         } else {
