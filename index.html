@@ -8395,7 +8395,7 @@ function startApp() {
           <span style=${{fontSize:'0.8rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Models</span>
           <span style=${{fontSize:'0.8rem',color:'var(--text-faint)'}}>${s.models.length} loaded</span>
         </div>
-        <input ref=${fileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${onFiles} />
+        <input ref=${fileRef} type="file" accept=".ifc,.glb,.ifcmeta,.ifcprops" multiple style=${{display:'none'}} onChange=${onFiles} />
         <input ref=${file2dRef} type="file" accept=".dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${onFiles} />
         <button class="cc-tip cc-tip-left" data-tip=${dragging?'Drop to load':'Add IFC / GLB / DXF / PDF'} title=${'Load IFC, GLB, DXF, or PDF.\n\nFor fast Revit import: drop IFC + GLB + .ifcmeta together.\n• GLB = pre-tessellated geometry (fast)\n• IFC = properties, storeys, spatial hierarchy\n• .ifcmeta = Revit data (phase, workset, design option, layers, constraints)\n\nCreate bundles with Ifc2Ifc:\ngithub.com/thomhoffer-arch/Ifc2Ifc'} onClick=${function(){setErr('');fileRef.current&&fileRef.current.click()}} disabled=${loading}
           style=${{...S_BTN,width:'100%',background:dragging?'#1e3a5f':'var(--bg-secondary)',color:dragging?'#93c5fd':'var(--text-secondary)',border:dragging?'2px dashed #3b82f6':'1px dashed var(--border)',display:'flex',alignItems:'center',justifyContent:'center',gap:'.3rem',transition:'all .15s'}}>
@@ -17547,7 +17547,7 @@ function startApp() {
 
     var is2D = s.underlayMode === 'view2d' || s.underlayMode === 'compare';
     return html`<div style=${{height:'100vh',display:'flex',flexDirection:'row',overflow:'hidden',position:'relative'}}>
-      <input ref=${_gFileRef} type="file" accept=".ifc" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
+      <input ref=${_gFileRef} type="file" accept=".ifc,.glb,.ifcmeta,.ifcprops" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <input ref=${_gFile2dRef} type="file" accept=".dxf,.pdf,.dwg" multiple style=${{display:'none'}} onChange=${_gOnFiles} />
       <${LeftRail} s=${s} d=${d} />
       <${LeftPanel} s=${s} d=${d} />
