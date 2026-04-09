@@ -3228,18 +3228,28 @@ function startApp() {
 
         // Apply model rules
         if (sameModel) {
-          // Self-clash: check selfClashGroup ('both','a','b') or legacy excludeSelf boolean.
+          // Self-clash: new selfClashModels field (per-model picker) takes precedence
+          // over legacy selfClashGroup/excludeSelf booleans.
           // Duplicate detection is an exception — duplicate elements
           // almost always live WITHIN a single model (double imports,
           // linked files flattened twice, etc.) so we must let
           // same-model pairs through whenever rules.duplicates is on.
-          // _processCandidate then runs the duplicate check first and,
-          // if excludeSelf was set, bails out before the hard/soft
-          // tests so the cross-model-only policy is still honoured.
-          var scg = rules.selfClashGroup || (rules.excludeSelf ? 'none' : 'both');
-          if (scg === 'none' && !rules.duplicates) continue;
-          if (scg === 'a' && !inA[cur.m.id]) continue;
-          if (scg === 'b' && !inB[cur.m.id]) continue;
+          var scmVal = rules.selfClashModels;
+          var selfAllowed;
+          if (scmVal !== undefined) {
+            // new field: 'none' → false, 'all' → true, specific IDs → check if this model is in the list
+            if (scmVal === 'none') { selfAllowed = false; }
+            else if (scmVal === 'all') { selfAllowed = true; }
+            else {
+              var scmIds = Array.isArray(scmVal) ? scmVal : [scmVal];
+              selfAllowed = scmIds.indexOf(cur.m.id) !== -1;
+            }
+          } else {
+            // legacy fallback
+            var scg = rules.selfClashGroup || (rules.excludeSelf ? 'none' : 'both');
+            selfAllowed = scg !== 'none' && (scg === 'both' || (scg === 'a' && inA[cur.m.id]) || (scg === 'b' && inB[cur.m.id]));
+          }
+          if (!selfAllowed && !rules.duplicates) continue;
           if (!inA[cur.m.id] && !inB[cur.m.id]) continue;
         } else {
           // Cross-model: one must be from A, the other from B
@@ -5904,6 +5914,7 @@ function startApp() {
         // Filter out ghosted meshes and meshes from hidden (unchecked) model groups
         var hits = raycaster.intersectObjects(S.mg.children, true).filter(function(h){
           if(h.object.userData._isLodProxy) return false;
+          if(!h.object.visible) return false; // skip storey/type-hidden elements
           if(_isGhostMat(h.object.material)) return false;
           if(h.object.parent && h.object.parent.userData.modelId && !h.object.parent.visible) return false;
           return true;
@@ -6111,6 +6122,7 @@ function startApp() {
         raycaster.setFromCamera(mouse, S.camera);
         var hits = raycaster.intersectObjects(S.mg.children, true).filter(function(h){
           if(h.object.userData._isLodProxy) return false;
+          if(!h.object.visible) return false; // skip storey/type-hidden elements
           if(_isGhostMat(h.object.material)) return false;
           if(h.object.parent && h.object.parent.userData.modelId && !h.object.parent.visible) return false;
           return true;
@@ -10665,6 +10677,84 @@ function startApp() {
     }, models);
   }
 
+  // Self-clash model picker: "none" = no self-clashes, specific model IDs = only those models.
+  // Uses same chip UI as modelA/modelB but "clear" resets to "none" (skip self-clashes)
+  // rather than "all". The picker value is stored in rules.selfClashModels.
+  function _selfClashPicker(rules, models, dispatchOrUpd) {
+    // Derive current value: prefer new selfClashModels field, fall back to legacy
+    var val = rules.selfClashModels;
+    if (val === undefined) val = rules.excludeSelf ? 'none' : (rules.selfClashGroup === 'a' ? null : rules.selfClashGroup === 'b' ? null : 'all');
+
+    function commit(next) {
+      var u = { selfClashModels: next, excludeSelf: next === 'none' || (Array.isArray(next) ? next.length === 0 : false) };
+      if (typeof dispatchOrUpd === 'function') {
+        // called from chat panel where dispatchOrUpd is a multi-key updater
+        dispatchOrUpd(u);
+      } else {
+        dispatchOrUpd({t: A.UPD_RULES, u: u});
+      }
+    }
+
+    var selected = val === 'none' || val == null ? [] : val === 'all' ? ['__all__'] : Array.isArray(val) ? val : [val];
+    var selSet = {}; selected.forEach(function(id){ selSet[id] = true; });
+
+    function addId(id) {
+      if (!id || id === '__add__' || selSet[id]) return;
+      var next;
+      if (id === '__all__') {
+        next = 'all';
+      } else {
+        var cur = selected.filter(function(x){return x !== '__all__';});
+        next = cur.concat([id]);
+        if (next.length === 0) next = 'none';
+        else if (next.length === 1) next = next[0];
+      }
+      commit(next);
+    }
+    function removeId(id) {
+      var remaining = selected.filter(function(x){return x !== id;});
+      commit(remaining.length === 0 ? 'none' : remaining.length === 1 ? remaining[0] : remaining);
+    }
+    function clearAll() { commit('none'); }
+
+    var addOptions = [];
+    if (!selSet['__all__']) addOptions.push({id:'__all__', label:'All models'});
+    models.forEach(function(m){ if(!selSet[m.id] && !selSet['__all__']) addOptions.push({id:m.id, label:m.name+(m.tag?' ['+m.tag+']':'')}); });
+
+    var chipStyle = {display:'inline-flex',alignItems:'center',gap:'.2rem',padding:'.1rem .35rem',borderRadius:10,
+      fontSize:'0.66rem',background:'var(--tag-bg)',color:'var(--text-primary)',border:'1px solid var(--border-subtle)',lineHeight:1.2};
+    var plusChipStyle = {display:'inline-flex',alignItems:'center',padding:'.1rem .25rem',borderRadius:10,
+      fontSize:'0.66rem',background:'transparent',color:'var(--text-faint)',border:'1px dashed var(--border)',lineHeight:1.2};
+
+    return html`<div style=${{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'.2rem',flex:1,
+      padding:'.15rem .25rem',borderRadius:6,background:'var(--input-bg)',border:'1px solid var(--border)',minHeight:'1.5rem'}}>
+      ${selected.length === 0
+        ? html`<span style=${{fontSize:'0.7rem',color:'var(--text-muted)',padding:'.1rem .2rem'}}>None (cross-model only)</span>`
+        : selected.map(function(id, i){
+            var label = id === '__all__' ? 'all models' : _modelSelectLabel(id, models);
+            return html`<span key=${id} style=${chipStyle}>
+              ${i > 0 && html`<span style=${{color:'var(--text-faint)',marginRight:'.1rem'}}>+</span>`}
+              ${label}
+              <button onClick=${function(ev){ev.preventDefault();removeId(id);}}
+                title="Remove"
+                style=${{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',
+                  fontSize:'0.75rem',lineHeight:1,padding:'0 0 0 .1rem'}}>×</button>
+            </span>`;
+          })}
+      ${addOptions.length > 0 && html`<select value="__add__"
+        onChange=${function(e){ var v=e.target.value; e.target.value='__add__'; addId(v); }}
+        style=${{...plusChipStyle,cursor:'pointer',appearance:'none',WebkitAppearance:'none',MozAppearance:'none',
+          paddingRight:'.35rem',fontFamily:'inherit'}}>
+        <option value="__add__">+ add</option>
+        ${addOptions.map(function(o){return html`<option key=${o.id} value=${o.id}>${o.label}</option>`})}
+      </select>`}
+      ${selected.length > 0 && html`<button onClick=${function(ev){ev.preventDefault();clearAll();}}
+        title="Clear (no self-clashes)"
+        style=${{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',
+          fontSize:'0.62rem',padding:'.1rem .25rem',fontFamily:'inherit'}}>clear</button>`}
+    </div>`;
+  }
+
   function _renderTypePairTolerances(rules, models, tpState, setTPState, d) {
     var tpPairs = rules.toleranceByTypePair||{};
     var tpKeys = Object.keys(tpPairs);
@@ -10947,15 +11037,9 @@ function startApp() {
           </div>
 
           <!-- Self-clashes -->
-          <div style=${{display:'flex',alignItems:'center',gap:'.35rem'}}>
-            <span style=${{fontSize:'0.72rem',color:'var(--text-primary)',whiteSpace:'nowrap'}}>Check within same model</span>
-            <select value=${rules.selfClashGroup||(rules.excludeSelf?'none':'both')} onChange=${function(e){d({t:A.UPD_RULES,u:{selfClashGroup:e.target.value,excludeSelf:e.target.value==='none'}})}}
-              style=${{...S_INPUT,fontSize:'0.72rem',padding:'.2rem .3rem',flex:1}}>
-              <option value="none">No</option>
-              <option value="both">Yes, both groups</option>
-              <option value="a">Yes, first group only</option>
-              <option value="b">Yes, second group only</option>
-            </select>
+          <div style=${{display:'flex',alignItems:'flex-start',gap:'.35rem'}}>
+            <span style=${{fontSize:'0.72rem',color:'var(--text-primary)',whiteSpace:'nowrap',paddingTop:'.25rem'}}>Check within</span>
+            ${_selfClashPicker(rules, models, d)}
           </div>
 
           <!-- Min overlap volume -->
@@ -11545,6 +11629,15 @@ function startApp() {
       description: 'Validates all physical elements are assigned to a building storey',
       rules: [
         {desc:'Elements must be assigned to a storey', applicability:{ifcType:'(?!IfcSpace|IfcZone|IfcGroup|IfcSystem).*'}, requirement:{property:{pset:'',name:'Storey',pattern:'.+'}}, severity:'error'}
+      ]
+    },
+    {
+      name: 'NL-SfB Classification',
+      description: 'Validates that physical elements carry a NL-SfB classification code (checks NL-SfB, NLsfb, Classification.Reference and common Revit psets)',
+      rules: [
+        {desc:'Physical elements must have a NL-SfB code', applicability:{ifcType:'(?!IfcSpace|IfcZone|IfcGroup|IfcSystem|IfcSite|IfcBuilding|IfcBuildingStorey|IfcAnnotation|IfcGrid).*'}, requirement:{property:{pset:'',name:'NL-SfB',pattern:'.+'}}, severity:'error'},
+        {desc:'Physical elements must have a NL-SfB code (NLsfb variant)', applicability:{ifcType:'(?!IfcSpace|IfcZone|IfcGroup|IfcSystem|IfcSite|IfcBuilding|IfcBuildingStorey|IfcAnnotation|IfcGrid).*'}, requirement:{property:{pset:'',name:'NLsfb',pattern:'.+'}}, severity:'warning'},
+        {desc:'Physical elements must have a classification reference', applicability:{ifcType:'(?!IfcSpace|IfcZone|IfcGroup|IfcSystem|IfcSite|IfcBuilding|IfcBuildingStorey|IfcAnnotation|IfcGrid).*'}, requirement:{property:{pset:'Classification',name:'Reference',pattern:'.+'}}, severity:'warning'}
       ]
     }
   ];
@@ -16566,15 +16659,9 @@ function startApp() {
       </div>
 
       <!-- Self-clashes (matches standards tab) -->
-      <div style=${{display:'flex',alignItems:'center',gap:'.35rem',marginTop:'.35rem'}}>
-        <span style=${{fontSize:'0.72rem',color:'var(--text-primary)',whiteSpace:'nowrap'}}>Check within same model</span>
-        <select value=${rules.selfClashGroup||(rules.excludeSelf?'none':'both')} onChange=${function(e){upd('selfClashGroup',e.target.value);upd('excludeSelf',e.target.value==='none')}}
-          style=${{...S_INPUT,fontSize:'0.72rem',padding:'.2rem .3rem',flex:1}}>
-          <option value="none">No</option>
-          <option value="both">Yes, both groups</option>
-          <option value="a">Yes, first group only</option>
-          <option value="b">Yes, second group only</option>
-        </select>
+      <div style=${{display:'flex',alignItems:'flex-start',gap:'.35rem',marginTop:'.35rem'}}>
+        <span style=${{fontSize:'0.72rem',color:'var(--text-primary)',whiteSpace:'nowrap',paddingTop:'.25rem'}}>Check within</span>
+        ${_selfClashPicker(rules, allModels, function(upds){ Object.keys(upds).forEach(function(k){upd(k,upds[k]);}); })}
       </div>
 
       <!-- Min overlap volume (hard clashes only, matches standards tab) -->
