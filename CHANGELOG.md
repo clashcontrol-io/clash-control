@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.11.26 (2026-04-09)
+- Fix Expand all in Spatial view; add No level assigned row in Levels panel
+
 ## v4.11.25 (2026-04-09)
 - Chat panel: move Clear to centered 'Clear chat', bigger collapse button
 
