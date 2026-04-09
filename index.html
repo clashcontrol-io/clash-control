@@ -3567,6 +3567,20 @@ function startApp() {
   function _detectClashesCore(models, rules, onProgress, resolveAsync) {
     var _prof = {t0:performance.now(), phases:{}}; // profiling
     function _mark(name) { _prof.phases[name] = performance.now(); }
+    // Publish a human-readable phase label through the shared
+    // `_ccDetectProgress` channel. The chat panel listens on
+    // `cc-detect-progress` and renders the phase alongside the
+    // percentage bar — without this the UI showed nothing during
+    // sweep-and-prune, which for big models can be 5–15 s of
+    // apparent silence before the first chunk-tick arrives.
+    function _phase(label) {
+      try {
+        window._ccDetectProgress = window._ccDetectProgress || {done:0, total:0, pct:0};
+        window._ccDetectProgress.phase = label;
+        window.dispatchEvent(new Event('cc-detect-progress'));
+      } catch(e) {}
+    }
+    _phase('Preparing geometry');
     var pick = function(id) {
       if (id === 'all') return models;
       // Array of selectors: union all matches
@@ -3701,6 +3715,7 @@ function startApp() {
 
     // ── L0: Sweep and Prune — O(n log n + k) candidate pairs ───────
     _mark('sweep_start');
+    _phase('Finding candidate pairs');
     var candidates = _sweepAndPrune(grpA, grpB, rules, maxGapM);
     _mark('sweep_end');
 
@@ -3709,6 +3724,7 @@ function startApp() {
     _mark('bvh_build_end');
     _prof._nElements = 0; // updated incrementally per chunk
     _prof._nCandidates = candidates.length;
+    _phase(candidates.length.toLocaleString() + ' pairs to test');
 
     // ── Per-candidate timing accumulators ─────────────────────────
     var _tHard = 0, _tSoft = 0, _tFilters = 0, _nHardTests = 0, _nSoftTests = 0;
@@ -4119,6 +4135,7 @@ function startApp() {
       return _finalize();
     }
     // Async chunked path
+    _phase('Testing intersections');
     var chunkIdx = 0;
     var _myGen = _ccDetectGeneration; // snapshot generation at start
     function _runChunk() {
@@ -4145,6 +4162,7 @@ function startApp() {
       if (chunkIdx < totalCandidates) {
         setTimeout(_runChunk, 0); // yield to UI
       } else {
+        _phase('Classifying results');
         resolveAsync(_finalize());
       }
       } catch(e) { console.error('Detection chunk error:', e); resolveAsync(_finalize()); }
@@ -7871,15 +7889,62 @@ function startApp() {
     return s.models.length || s.clashes.length || s.issues.length;
   }
 
+  // Deep-scrub any value that IndexedDB's structured-clone algorithm
+  // would choke on. The local engine used to emit clashes with
+  // embedded THREE.Vector3 / full element references carrying
+  // Euler.setFromEuler callbacks, which made `put()` reject the
+  // whole transaction with "function ... could not be cloned" and
+  // silently lose the project save. We sanitise both the source
+  // (addon output now returns plain objects) and this boundary, so
+  // any future regression drops the bad field rather than trashing
+  // the save. Strips functions, DOM nodes, Three.js instances, and
+  // any prototype-heavy class that structuredClone can't handle.
+  function _cloneSafe(v, depth) {
+    if (v == null || typeof v === 'boolean' || typeof v === 'number' || typeof v === 'string') return v;
+    if (depth > 8) return null; // runaway cycles / very deep objects
+    if (typeof v === 'function') return undefined;
+    if (Array.isArray(v)) {
+      var out = [];
+      for (var i = 0; i < v.length; i++) {
+        var iv = _cloneSafe(v[i], depth + 1);
+        if (iv !== undefined) out.push(iv);
+      }
+      return out;
+    }
+    if (typeof v === 'object') {
+      // THREE.js sentinel objects carry class-specific flags and private
+      // callbacks. Convert the common ones to plain arrays on the way out.
+      if (v.isVector3) return [v.x, v.y, v.z];
+      if (v.isVector2) return [v.x, v.y];
+      if (v.isQuaternion || v.isEuler) return null;
+      if (v.isBox3 && v.min && v.max) return [v.min.x, v.min.y, v.min.z, v.max.x, v.max.y, v.max.z];
+      if (v.isMatrix4 && v.elements) return Array.from(v.elements);
+      if (v.isObject3D || v.isMesh || v.isBufferGeometry || v.isMaterial) return null;
+      if (typeof HTMLElement !== 'undefined' && v instanceof HTMLElement) return null;
+      var obj = {};
+      for (var k in v) {
+        if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
+        // Drop Three.js mesh references + private underscore caches
+        // that we don't persist anyway. Everything else goes through
+        // the recursive sanitiser.
+        if (k === 'meshes' || k === '_lodProxy' || k === '_wvCache' || k === '_triCache' || k === '_bvhCache') continue;
+        var cv = _cloneSafe(v[k], depth + 1);
+        if (cv !== undefined) obj[k] = cv;
+      }
+      return obj;
+    }
+    return undefined;
+  }
+
   function _saveCurrentProjectData(s) {
     var pid = s.activeProject||'default';
-    var data = {
+    var data = _cloneSafe({
       clashes:s.clashes, issues:s.issues, rules:s.rules, floors:s.floors,
       viewpoints:(s.viewpoints||[]).map(function(v){return Object.assign({},v,{snapshot:undefined})}),
       measurements:s.measurements||[], filters:s.filters,
       lastDeltaSummary:s.lastDeltaSummary||null,
       modelMeta:s.models.map(function(m){return {id:m.id,name:m.name,discipline:m.discipline,color:m.color,visible:m.visible,tag:m.tag||''};})
-    };
+    }, 0);
     return idbSaveProjectData(pid, data);
   }
 
@@ -16461,15 +16526,20 @@ function startApp() {
 
     // Detection progress
     var stPct = useState(0), detectPct = stPct[0], setDetectPct = stPct[1];
+    var stPhase = useState(''), detectPhase = stPhase[0], setDetectPhase = stPhase[1];
     useEffect(function() {
-      function onProg() { var p = window._ccDetectProgress; setDetectPct(p ? p.pct : 0); }
-      function onDone() { setDetectPct(0); window._ccDetectProgress = null; }
+      function onProg() {
+        var p = window._ccDetectProgress;
+        setDetectPct(p ? p.pct : 0);
+        setDetectPhase(p && p.phase ? p.phase : '');
+      }
+      function onDone() { setDetectPct(0); setDetectPhase(''); window._ccDetectProgress = null; }
       window.addEventListener('cc-detect-progress', onProg);
       // Reset when detection ends (clashes state changes)
       return function() { window.removeEventListener('cc-detect-progress', onProg); };
     }, []);
     // Reset progress when detection finishes
-    useEffect(function() { if (!s.detecting) { setDetectPct(0); window._ccDetectProgress = null; } }, [s.detecting]);
+    useEffect(function() { if (!s.detecting) { setDetectPct(0); setDetectPhase(''); window._ccDetectProgress = null; } }, [s.detecting]);
     // On project switch: load the chat history for the new project from
     // localStorage (keyed by project id) instead of wiping it — each project
     // keeps its own conversation so switching back-and-forth doesn't lose
@@ -17239,17 +17309,20 @@ function startApp() {
           animation:detectPct===0?'nlBorderPulse 2s ease-in-out infinite':'none'
         }}>
           <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
-          <span style=${{fontSize:'0.85rem',color:'#60a5fa',fontWeight:500}}>${(function(){
-            var p=detectPct, t=detectElapsed;
-            if(t>=240) return 'So… what movie are you watching?'+(p>0?' — '+p+'%':'')+'…';
-            if(t>=180) return 'Still going… maybe grab a coffee'+(p>0?' — '+p+'%':'')+'…';
-            if(t>=120) return 'This is a big one, hang in there'+(p>0?' — '+p+'%':'')+'…';
-            var msg;
-            if(t<10) msg='Running clash detection';
-            else if(t<30) msg=p<50?'Running clash detection':p<93?'Working hard':'Almost done';
-            else msg=p===0?'Running clash detection':p<15?'Running clash detection':p<30?'Crunching triangles':p<45?'Working hard':p<60?'Running as fast as I can':p<75?'Almost halfway… just kidding, past it':p<85?'So many clashes to check':p<93?'Wrapping things up':'Final stretch';
-            return msg+(p>0?' — '+p+'%':'')+'…';
-          }())}</span>
+          <span style=${{fontSize:'0.85rem',color:'#60a5fa',fontWeight:500,display:'flex',flexDirection:'column',gap:'.1rem'}}>
+            <span>${(function(){
+              var p=detectPct, t=detectElapsed;
+              if(t>=240) return 'So… what movie are you watching?'+(p>0?' — '+p+'%':'')+'…';
+              if(t>=180) return 'Still going… maybe grab a coffee'+(p>0?' — '+p+'%':'')+'…';
+              if(t>=120) return 'This is a big one, hang in there'+(p>0?' — '+p+'%':'')+'…';
+              var msg;
+              if(t<10) msg='Running clash detection';
+              else if(t<30) msg=p<50?'Running clash detection':p<93?'Working hard':'Almost done';
+              else msg=p===0?'Running clash detection':p<15?'Running clash detection':p<30?'Crunching triangles':p<45?'Working hard':p<60?'Running as fast as I can':p<75?'Almost halfway… just kidding, past it':p<85?'So many clashes to check':p<93?'Wrapping things up':'Final stretch';
+              return msg+(p>0?' — '+p+'%':'')+'…';
+            }())}</span>
+            ${detectPhase && html`<span style=${{fontSize:'0.66rem',color:'#93c5fd',opacity:0.85,fontWeight:400,fontStyle:'italic'}}>${detectPhase}</span>`}
+          </span>
         </div>
         <button onClick=${function(){cancelDetection()}}
           style=${{...S_BTN,padding:'.35rem .6rem',background:'#dc2626',color:'#fff',fontSize:'0.72rem',fontWeight:600,borderRadius:6,flexShrink:0}}>
@@ -17361,17 +17434,20 @@ function startApp() {
           animation:detectPct===0?'nlBorderPulse 2s ease-in-out infinite':'none'
         }}>
           <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(96,165,250,.3)',borderTopColor:'#60a5fa',flexShrink:0}}></span>
-          <span style=${{fontSize:'0.85rem',color:'#60a5fa',fontWeight:500}}>${(function(){
-            var p=detectPct, t=detectElapsed;
-            if(t>=240) return 'So… what movie are you watching?'+(p>0?' — '+p+'%':'')+'…';
-            if(t>=180) return 'Still going… maybe grab a coffee'+(p>0?' — '+p+'%':'')+'…';
-            if(t>=120) return 'This is a big one, hang in there'+(p>0?' — '+p+'%':'')+'…';
-            var msg;
-            if(t<10) msg='Running clash detection';
-            else if(t<30) msg=p<50?'Running clash detection':p<93?'Working hard':'Almost done';
-            else msg=p===0?'Running clash detection':p<15?'Running clash detection':p<30?'Crunching triangles':p<45?'Working hard':p<60?'Running as fast as I can':p<75?'Almost halfway… just kidding, past it':p<85?'So many clashes to check':p<93?'Wrapping things up':'Final stretch';
-            return msg+(p>0?' — '+p+'%':'')+'…';
-          }())}</span>
+          <span style=${{fontSize:'0.85rem',color:'#60a5fa',fontWeight:500,display:'flex',flexDirection:'column',gap:'.1rem'}}>
+            <span>${(function(){
+              var p=detectPct, t=detectElapsed;
+              if(t>=240) return 'So… what movie are you watching?'+(p>0?' — '+p+'%':'')+'…';
+              if(t>=180) return 'Still going… maybe grab a coffee'+(p>0?' — '+p+'%':'')+'…';
+              if(t>=120) return 'This is a big one, hang in there'+(p>0?' — '+p+'%':'')+'…';
+              var msg;
+              if(t<10) msg='Running clash detection';
+              else if(t<30) msg=p<50?'Running clash detection':p<93?'Working hard':'Almost done';
+              else msg=p===0?'Running clash detection':p<15?'Running clash detection':p<30?'Crunching triangles':p<45?'Working hard':p<60?'Running as fast as I can':p<75?'Almost halfway… just kidding, past it':p<85?'So many clashes to check':p<93?'Wrapping things up':'Final stretch';
+              return msg+(p>0?' — '+p+'%':'')+'…';
+            }())}</span>
+            ${detectPhase && html`<span style=${{fontSize:'0.66rem',color:'#93c5fd',opacity:0.85,fontWeight:400,fontStyle:'italic'}}>${detectPhase}</span>`}
+          </span>
         </div>
         <button onClick=${function(){cancelDetection()}}
           style=${{...S_BTN,padding:'.35rem .6rem',background:'#dc2626',color:'#fff',fontSize:'0.72rem',fontWeight:600,borderRadius:6,flexShrink:0}}>

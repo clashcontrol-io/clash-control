@@ -475,6 +475,85 @@ clashcontrol-engine --install</pre>
     return {elements:elements, rules:r};
   }
 
+  // Produce a clash-object shape that matches the browser engine's
+  // `_buildClashBase` output exactly: plain-JSON only (no Three.js
+  // instances), model ids + expressIds instead of full element
+  // references, and all the metadata columns the UI + IndexedDB
+  // persistence rely on. Historically this mapper stashed raw `elA`
+  // and `elB` element references and a THREE.Vector3 `point`; writing
+  // that state to IndexedDB then blew up with a DataCloneError —
+  // `function(){n.setFromEuler(e,!1)} could not be cloned` — because
+  // the mesh objects carried Quaternion / Euler internal callbacks
+  // that structuredClone can't serialise.
+  function _clashFromEngineResult(c, elA, elB, mA, mB, rules) {
+    var pA = (elA && elA.props) || {};
+    var pB = (elB && elB.props) || {};
+    var sameModel = mA.id === mB.id;
+    var tA = pA.ifcType || 'Element';
+    var tB = pB.ifcType || 'Element';
+    var nA = pA.name || ('#' + (elA.expressId || elA.id));
+    var nB = pB.name || ('#' + (elB.expressId || elB.id));
+    // Point: prefer the engine's mesh-accurate contact point. Fall
+    // back to the midpoint between element bbox centres if the engine
+    // didn't emit one.
+    var pt;
+    if (c.point && c.point.length >= 3) {
+      pt = [c.point[0], c.point[1], c.point[2]];
+    } else {
+      var cA = elA.box && elA.box.getCenter && elA.box.getCenter(new THREE.Vector3());
+      var cB = elB.box && elB.box.getCenter && elB.box.getCenter(new THREE.Vector3());
+      if (cA && cB) pt = [(cA.x+cB.x)/2, (cA.y+cB.y)/2, (cA.z+cB.z)/2];
+      else pt = [0, 0, 0];
+    }
+    // Distance: engine returns metres for clearance, negative for
+    // penetration. UI uses mm integers throughout.
+    var type = c.type || (rules.mode === 'soft' ? 'soft' : 'hard');
+    var rawDist = (typeof c.distance === 'number') ? c.distance : 0;
+    var distMm;
+    if (type === 'hard' || type === 'duplicate') {
+      // rawDist < 0 is signed penetration depth in metres; surface
+      // hits get -1 so the clash list still shows "touching".
+      distMm = rawDist < 0 ? Math.round(rawDist * 1000) : -1;
+    } else {
+      distMm = Math.round(Math.abs(rawDist) * 1000);
+    }
+    // Title: reuse the same "Wall × Pipe Segment" format the browser
+    // engine emits via _niceClashTitle so the clash list looks
+    // identical between backends.
+    function nice(t){ if(!t) return 'Element'; return String(t).replace(/^Ifc/i,'').replace(/([a-z])([A-Z])/g,'$1 $2')||'Element'; }
+    var la = nice(tA), lb = nice(tB);
+    var title = (la === lb ? (la + ' vs ' + lb) : (la + ' × ' + lb)) + (sameModel ? ' (self)' : '');
+    var description = tA + ': ' + nA + ' (' + mA.name + ') vs ' + tB + ': ' + nB + ' (' + mB.name + ')';
+    var discA = mA.discipline || '';
+    var discB = mB.discipline || '';
+    return {
+      id: c.id || ((elA.expressId||elA.id) + '_' + (elB.expressId||elB.id)),
+      source: 'local_engine',
+      status: 'open',
+      createdAt: new Date().toISOString(),
+      modelAId: mA.id, modelBId: mB.id,
+      elemA: elA.expressId || elA.id,
+      elemB: elB.expressId || elB.id,
+      point: pt,
+      elevation: Math.round(pt[1] * 1000) / 1000,
+      disciplines: [discA, discB].filter(Boolean),
+      selfClash: sameModel,
+      elemAType: tA, elemBType: tB,
+      elemAName: nA, elemBName: nB,
+      globalIdA: pA.globalId || '', globalIdB: pB.globalId || '',
+      revitIdA: pA.revitId || null, revitIdB: pB.revitId || null,
+      elemAStorey: pA.storey || '', elemBStorey: pB.storey || '',
+      elemAMaterial: pA.material || '', elemBMaterial: pB.material || '',
+      objectTypeA: pA.objectType || '', objectTypeB: pB.objectType || '',
+      type: type === 'clearance' ? 'soft' : type,
+      distance: distMm,
+      title: title,
+      description: description,
+      overlapVolM3: c.volume || 0,
+      clearanceMm: (type === 'soft' || type === 'clearance') ? Math.round(Math.abs(rawDist) * 1000) : null
+    };
+  }
+
   function _detectOnLocalEngine(models, rules, onProgress) {
     var payload = _serializeForLocalEngine(models, rules);
     var progressWs = null;
@@ -484,10 +563,27 @@ clashcontrol-engine --install</pre>
         try {
           var msg = JSON.parse(e.data);
           if (msg.type === 'progress' && onProgress && msg.total > 0) onProgress(msg.done, msg.total);
+          if (msg.type === 'phase' && msg.label) {
+            // Fan the engine's phase label out through the global
+            // progress channel so the chat bubble can show "Building
+            // BVH / Narrow phase / Finalising" just like the browser
+            // engine's internal phases.
+            window._ccDetectProgress = window._ccDetectProgress || {done:0,total:0,pct:0};
+            window._ccDetectProgress.phase = msg.label;
+            window.dispatchEvent(new Event('cc-detect-progress'));
+          }
           if (msg.type === 'complete') console.log('%c[Engine] Done: ' + msg.clashCount + ' clashes in ' + msg.duration_ms + 'ms', 'color:#4ade80');
         } catch(ex){}
       };
     } catch(ex){}
+
+    // Announce the pre-flight phase immediately — serialising 30k
+    // meshes takes a second or two, and without this nothing shows in
+    // the chat until the engine's first progress message.
+    try {
+      window._ccDetectProgress = {done:0, total:0, pct:0, phase:'Uploading geometry to engine'};
+      window.dispatchEvent(new Event('cc-detect-progress'));
+    } catch(e){}
 
     return fetch(_localEngineUrl + '/detect', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
     .then(function(r){ return r.json(); })
@@ -500,16 +596,34 @@ clashcontrol-engine --install</pre>
         console.log('%c[Engine] ' + result.stats.elementCount + ' elements, ' + result.stats.candidatePairs + ' candidates, ' +
           result.stats.clashCount + ' clashes, ' + result.stats.duration_ms + 'ms (' + result.stats.threads + ' threads)', 'color:#60a5fa');
       }
-      // Build lookup map for faster element resolution
-      var elMap = {};
-      models.forEach(function(m) { if (!m.elements) return; m.elements.forEach(function(el) { elMap[el.expressId||el.id] = el; }); });
+      // Build lookup maps keyed by (modelId, expressId). The engine's
+      // response annotates each clash with the originating model ids
+      // when available; fall back to "search all models" for backward
+      // compatibility with older engine builds.
+      var byModel = {};
+      models.forEach(function(m) {
+        if (!m.elements) return;
+        var map = byModel[m.id] = {};
+        m.elements.forEach(function(el) { map[el.expressId||el.id] = el; });
+      });
+      function resolve(modelHint, eid) {
+        if (modelHint && byModel[modelHint] && byModel[modelHint][eid]) {
+          return {model: models.find(function(m){return m.id===modelHint;}), el: byModel[modelHint][eid]};
+        }
+        for (var mi = 0; mi < models.length; mi++) {
+          var m = models[mi];
+          if (m.elements) {
+            var map2 = byModel[m.id];
+            if (map2 && map2[eid]) return {model: m, el: map2[eid]};
+          }
+        }
+        return null;
+      }
       return result.clashes.map(function(c) {
-        var elA = elMap[c.elementA], elB = elMap[c.elementB];
-        if (!elA || !elB) return null;
-        var pt = c.point ? new THREE.Vector3(c.point[0], c.point[1], c.point[2]) : new THREE.Vector3();
-        return {id:c.id||(c.elementA+'_'+c.elementB), elementA:elA, elementB:elB, point:pt,
-          distance:c.distance!=null?c.distance:0, volume:c.volume||0,
-          type:c.type||(rules.mode==='soft'?'clearance':'hard'), status:'open', source:'local_engine'};
+        var rA = resolve(c.modelA || c.modelAId, c.elementA);
+        var rB = resolve(c.modelB || c.modelBId, c.elementB);
+        if (!rA || !rB) return null;
+        return _clashFromEngineResult(c, rA.el, rB.el, rA.model, rB.model, rules);
       }).filter(Boolean);
     })
     .catch(function(err) {
