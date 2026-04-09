@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.11.12 (2026-04-09)
+- fix(issues): lock feedback summary, drop Verdict/Type/Edit
+
 ## v4.11.11 (2026-04-09)
 - feat(revit): rename Pull Model → Update Model + per-model dropdown
 
