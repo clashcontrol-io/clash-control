@@ -6169,7 +6169,7 @@ function startApp() {
         var cs = window._ccCurrentSection;
         if (!cs) return;
         if (e.button === 2) {
-          _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false, button: 2, mode:'move'};
+          _secDrag = {startX: e.clientX, startY: e.clientY, startPos: cs.pos, didDrag: false, button: 2, mode:'move'};
         } else if (e.button === 0) {
           var S2 = state3d.current;
           if (!S2._sectionPlaneVis) return;
@@ -6192,7 +6192,7 @@ function startApp() {
               var np = _getSecNormalAndPoint(cs);
               if (np) _secDrag = {startX: e.clientX, startPos: cs.pos, didDrag: false, button: 0, mode:'rotate', startNormal: np.normal, startPoint: np.point};
             } else {
-              _secDrag = {startY: e.clientY, startPos: cs.pos, didDrag: false, button: 0, mode:'move'};
+              _secDrag = {startX: e.clientX, startY: e.clientY, startPos: cs.pos, didDrag: false, button: 0, mode:'move'};
             }
           }
         }
@@ -6210,17 +6210,35 @@ function startApp() {
           if (window._ccDispatch) window._ccDispatch({t:A.SECTION_CUSTOM, v:{normal:rn, point:_secDrag.startPoint}, pos:_secDrag.startPos});
           renderer.domElement.style.cursor = 'ew-resize';
         } else {
+          var dx = e.clientX - (_secDrag.startX !== undefined ? _secDrag.startX : e.clientX);
           var dy = e.clientY - _secDrag.startY;
-          if (Math.abs(dy) < 3 && !_secDrag.didDrag) return;
+          if (Math.abs(dx) < 3 && Math.abs(dy) < 3 && !_secDrag.didDrag) return;
           _secDrag.didDrag = true;
-          // Flip dy so mouse-up moves the plane in the + direction of its
-          // normal (for Y-axis plane that means "up", which matches user
-          // expectation). Browser clientY grows downward so we subtract.
-          var newPos = Math.max(0, Math.min(1, _secDrag.startPos - dy * 0.003));
           var cs = window._ccCurrentSection;
+          var S2 = state3d.current;
+          var newPos;
+          // Project the plane's axis direction into screen space so the drag
+          // follows the mouse regardless of camera orientation.
+          if (cs && cs.axis && S2 && S2.camera) {
+            var axMap = {x:[1,0,0], y:[0,1,0], z:[0,0,1]};
+            var axArr = axMap[cs.axis] || [0,1,0];
+            var origin = new THREE.Vector3(0,0,0).project(S2.camera);
+            var tip    = new THREE.Vector3(axArr[0],axArr[1],axArr[2]).project(S2.camera);
+            var sx = tip.x - origin.x, sy = tip.y - origin.y;
+            var sLen = Math.sqrt(sx*sx + sy*sy) || 1;
+            sx /= sLen; sy /= sLen;
+            // Mouse delta in NDC units. clientY grows downward so flip dy.
+            var el = renderer.domElement;
+            var mdx =  dx / el.clientWidth  * 2;
+            var mdy = -dy / el.clientHeight * 2;
+            var dot = mdx * sx + mdy * sy;
+            newPos = Math.max(0, Math.min(1, _secDrag.startPos + dot));
+          } else {
+            newPos = Math.max(0, Math.min(1, _secDrag.startPos - dy * 0.003));
+          }
           if (cs && cs.axis && window._ccDispatch) window._ccDispatch({t:A.SECTION, axis:cs.axis, pos:newPos});
           else if (cs && cs.custom && window._ccDispatch) window._ccDispatch({t:A.SECTION_CUSTOM, v:cs.custom, pos:newPos});
-          renderer.domElement.style.cursor = 'ns-resize';
+          renderer.domElement.style.cursor = 'move';
         }
       });
       _wlAdd('mouseup', function(e) {
@@ -6717,6 +6735,7 @@ function startApp() {
         }
         cleanupSbox();
         window._ccCurrentSbox=null;
+        invalidate();
         return;
       }
       var sb=s.sectionBox;
@@ -7186,10 +7205,12 @@ function startApp() {
       <div class="cc-overlay-info cc-overlay-chrome" style=${{position:'absolute',top:'var(--space-3)',left:'var(--space-3)',padding:'var(--space-1) var(--space-3)',color:'var(--text-muted)',display:'flex',alignItems:'center',gap:'var(--space-2)',fontSize:'var(--text-xs)',pointerEvents:'auto'}}>
         <span>${s.models.length===0?'Load an IFC file to begin':s.models.length+' model'+(s.models.length>1?'s':'')+' loaded'}</span>
         ${s.clashes.length>0 && html`<span style=${{color:'var(--color-danger)'}}>· ${s.clashes.length} clashes</span>`}
-        <span style=${{color:perfData.fps>=50?'var(--color-success)':perfData.fps>=25?'var(--color-warning)':'var(--color-danger)',cursor:'pointer',pointerEvents:'auto',fontWeight:'var(--weight-medium)'}}
+      </div>
+      <div class="cc-overlay-chrome" style=${{position:'absolute',bottom:'var(--space-3)',right:'var(--space-3)',padding:'var(--space-1) var(--space-2)',pointerEvents:'auto',fontSize:'var(--text-xs)'}}>
+        <span style=${{color:perfData.fps>=50?'var(--color-success)':perfData.fps>=25?'var(--color-warning)':'var(--color-danger)',cursor:'pointer',fontWeight:'var(--weight-medium)'}}
           onClick=${function(){setPerfOpen(!perfOpen)}}>${perfData.fps} fps</span>
       </div>
-      ${perfOpen && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'2.4rem',left:'var(--space-3)',padding:'var(--space-2) var(--space-3)',pointerEvents:'auto',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',minWidth:180}}>
+      ${perfOpen && html`<div class="cc-overlay-chrome" style=${{position:'absolute',bottom:'2.4rem',right:'var(--space-3)',padding:'var(--space-2) var(--space-3)',pointerEvents:'auto',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',minWidth:180}}>
         <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'var(--space-1)'}}>
           <span style=${{fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',fontSize:'var(--text-xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>Performance</span>
           <button onClick=${function(){setPerfOpen(false)}} style=${{...S_BTN,padding:'0 var(--space-1)',background:'none',color:'var(--text-faint)',fontSize:'var(--text-xs)'}} aria-label="Close performance stats">✕</button>
@@ -12516,6 +12537,7 @@ function startApp() {
     var _sel = useState([]), selectedBundled = _sel[0], setSelectedBundled = _sel[1];
     var _vf = useState('all'), viewFilter = _vf[0], setViewFilter = _vf[1];
     var _showResults = useState(false), showResults = _showResults[0], setShowResults = _showResults[1];
+    var _selRes = useState(null), selectedResIdx = _selRes[0], setSelectedResIdx = _selRes[1];
 
     function handleFileUpload(e) {
       var file = e.target.files[0];
@@ -12579,7 +12601,8 @@ function startApp() {
         <span style=${{fontSize: '0.69rem', color: 'var(--text-muted)', display: 'block', marginBottom: '.25rem'}}>Built-in Rule Sets</span>
         ${IDS_BUNDLED_SPECS.map(function(spec, idx) {
           var isSelected = selectedBundled.indexOf(idx) !== -1;
-          return html`<label key=${idx} style=${{display: 'flex', alignItems: 'flex-start', gap: '.3rem', padding: '.2rem 0', cursor: 'pointer', fontSize: '0.69rem'}}>
+          var tooltip = spec.description + '\n\nRules:\n' + spec.rules.map(function(r){ return '• ' + r.desc + ' (' + (r.severity||'error') + ')'; }).join('\n');
+          return html`<label key=${idx} title=${tooltip} style=${{display: 'flex', alignItems: 'flex-start', gap: '.3rem', padding: '.2rem 0', cursor: 'pointer', fontSize: '0.69rem'}}>
             <input type="checkbox" checked=${isSelected} onChange=${function() { toggleBundled(idx); }}
               style=${{accentColor: 'var(--accent)', marginTop: '.1rem', flexShrink: 0}} />
             <div>
@@ -12660,9 +12683,18 @@ function startApp() {
         </div>
         <div style=${{maxHeight: '300px', overflowY: 'auto'}}>
           ${filteredResults.slice(0, 200).map(function(r, i) {
-            return html`<div key=${i} onClick=${function() { if (_highlightById) _highlightById(r.elementId); if (_fitToElement) _fitToElement(r.elementId); }}
+            var isSel = selectedResIdx === i;
+            return html`<div key=${i}
+              onClick=${function() {
+                setSelectedResIdx(isSel ? null : i);
+                if (_highlightById) _highlightById(r.elementId);
+                if (_fitToElement) _fitToElement(r.elementId);
+              }}
+              title=${r.ruleDesc + '\nStorey: ' + (r.storey||'—') + '\nGlobalId: ' + (r.globalId||'—')}
               style=${{padding: '.25rem .4rem', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontSize: '0.63rem',
-                display: 'flex', gap: '.3rem', alignItems: 'center'}}>
+                display: 'flex', gap: '.3rem', alignItems: 'center',
+                background: isSel ? 'rgba(124,58,237,.18)' : 'transparent',
+                borderLeft: isSel ? '2px solid #7c3aed' : '2px solid transparent'}}>
               <span style=${{flexShrink: 0, width: 6, height: 6, borderRadius: '50%',
                 background: r.severity === 'error' ? '#ef4444' : r.severity === 'warning' ? '#f59e0b' : '#60a5fa'}}></span>
               <span style=${{color: '#c084fc', flexShrink: 0}}>${r.ifcType}</span>
@@ -17808,16 +17840,19 @@ function startApp() {
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
         </button>
-        ${projOpen && html`<div style=${{position:'absolute',top:0,left:'100%',marginLeft:4,
-          background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,
-          boxShadow:'0 8px 24px rgba(0,0,0,.4)',minWidth:200,zIndex:200,overflow:'hidden'}}>
+        ${projOpen && html`<div>
+          <div onClick=${function(){setProjOpen(false);_setLrCreating(false);}}
+            style=${{position:'fixed',inset:0,zIndex:199}}></div>
+          <div style=${{position:'absolute',top:0,left:'100%',marginLeft:4,
+            background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,
+            boxShadow:'0 8px 24px rgba(0,0,0,.4)',minWidth:200,zIndex:200,overflow:'hidden'}}>
           <div style=${{padding:'.4rem .6rem',borderBottom:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
             <span style=${{fontSize:'0.75rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Projects</span>
-            ${!_lrCreating && html`<button onClick=${function(){_setLrCreating(true);_setLrName('');}}
-              style=${{...S_BTN,fontSize:'0.69rem',padding:'.1rem .35rem',background:'rgba(37,99,235,.15)',color:'var(--accent)'}}>+ New</button>`}
+            ${!_lrCreating && html`<button onClick=${function(){_setLrCreating(true);_setLrName('');setTimeout(function(){var el=document.getElementById('cc-proj-name-inp');if(el)el.focus();},30);}}
+              style=${{...S_BTN,fontSize:'0.72rem',padding:'.2rem .5rem',background:'var(--accent)',color:'#fff',fontWeight:600}}>+ New</button>`}
           </div>
           ${_lrCreating && html`<div style=${{padding:'.35rem .5rem',borderBottom:'1px solid var(--border-subtle)',display:'flex',gap:'.3rem',alignItems:'center'}}>
-            <input type="text" value=${_lrName} autofocus placeholder="Project name…"
+            <input id="cc-proj-name-inp" type="text" value=${_lrName} autoFocus placeholder="Project name…"
               onInput=${function(e){_setLrName(e.target.value)}}
               onKeyDown=${function(e){
                 if(e.key==='Enter'&&_lrName.trim()){
@@ -17863,6 +17898,7 @@ function startApp() {
               </div>`}
             </div>`;
           })}
+        </div>
         </div>`}
       </div>
       <div style=${{flex:1}}></div>
