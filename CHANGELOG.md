@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.11.15 (2026-04-09)
+- Remove Data Quality Engines from addons menu; restore Clash Engine addon
+
 ## v4.11.14 (2026-04-09)
 - feat(issues): obvious Export to BCF row in the Issues panel
 
