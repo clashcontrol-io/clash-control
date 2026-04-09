@@ -3,11 +3,14 @@
 // intersection. Falls back to the built-in browser OBB engine when
 // the server isn't running.
 //
+// Targets clashcontrol-engine v0.2.0 (see _engineReleaseTag below).
+//
 // Install (recommended):
 //   pip install clashcontrol-engine
 //   clashcontrol-engine --install   # registers clashcontrol:// handler + starts engine
 //
-// Standalone binaries are also available via the GitHub releases page.
+// Standalone binaries (v0.2.0) are also available via the GitHub
+// releases page — mac/linux as .tar.gz, Windows as .exe.
 
 (function() {
   'use strict';
@@ -20,9 +23,10 @@
   var _lastKnownVersion = null;
 
   // ── Download URLs for standalone executables ──────────────────
-  // mac/linux ship as tar.gz (preserves executable bit); Windows is a
-  // self-contained .exe. Matches clashcontrol-engine release assets.
-  var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlEngine/releases/latest/download/';
+  // Pinned to clashcontrol-engine v0.2.0. mac/linux ship as tar.gz
+  // (preserves executable bit); Windows is a self-contained .exe.
+  var _engineReleaseTag = 'v0.2.0';
+  var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlEngine/releases/download/' + _engineReleaseTag + '/';
   var _downloads = {
     win:   {url: _releaseBase + 'clashcontrol-engine-win.exe',       label: 'Windows (.exe)',    cmd: 'clashcontrol-engine.exe --install'},
     mac:   {url: _releaseBase + 'clashcontrol-engine-mac.tar.gz',    label: 'macOS (.tar.gz)',   cmd: 'tar -xzf clashcontrol-engine-mac.tar.gz\n./clashcontrol-engine --install'},
@@ -266,7 +270,10 @@
         </div>
 
         ${le.failed ? html`<div style=${{borderTop:'1px solid var(--border-subtle)',paddingTop:'.5rem'}}>
-          <div style=${{fontSize:'0.68rem',fontWeight:600,color:'var(--text-secondary)',marginBottom:'.3rem',textTransform:'uppercase',letterSpacing:'.04em'}}>Install</div>
+          <div style=${{display:'flex',alignItems:'center',gap:'.35rem',marginBottom:'.3rem'}}>
+            <div style=${{fontSize:'0.68rem',fontWeight:600,color:'var(--text-secondary)',textTransform:'uppercase',letterSpacing:'.04em'}}>Install</div>
+            <span style=${{fontSize:'0.58rem',fontWeight:600,padding:'1px 5px',borderRadius:4,background:'var(--tag-bg)',color:'var(--text-faint)'}}>engine ${_engineReleaseTag}</span>
+          </div>
           <div style=${{fontSize:'0.65rem',color:'var(--text-faint)',marginBottom:'.3rem',lineHeight:1.6}}>
             With Python (recommended):
           </div>
