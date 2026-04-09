@@ -648,9 +648,7 @@ function startApp() {
     // Bulk selection
     selected:{}, // {id:true} — selected clash/issue IDs
     selectMode:false,
-    // localEngine: available when the engine process is reachable on localhost:19800
-    localEngine: {available:false, active:(function(){try{return localStorage.getItem('cc_local_engine')==='1';}catch(e){return false;}}()), checking:false, connecting:false, wasInstalled:(function(){try{return !!localStorage.getItem('cc_local_engine');}catch(e){return false;}}()), version:null, cores:null, backends:null},
-    // Addon state (revitBridge, revitDirect, sharedProject) injected by addon initState
+    // Addon state (revitBridge, revitDirect, localEngine, sharedProject) injected by addon initState
     lastDeltaSummary: null, // {new, persisting, autoResolved, ts} — set after each merge run
     // IDS Validation
     idsValidation: {
@@ -672,7 +670,6 @@ function startApp() {
     AI_FEEDBACK:'AI_FEEDBACK', CLEAR_TRAINING_DATA:'CLEAR_TRAINING_DATA',
     UPD_CLASH:'UPD_CLASH', BATCH_UPD_CLASH:'BATCH_UPD_CLASH',
     ACTIVE:'ACTIVE', MODAL:'MODAL',
-    UPD_LOCAL_ENGINE:'UPD_LOCAL_ENGINE',
     UPD_RULES:'UPD_RULES', UPD_FILTERS:'UPD_FILTERS', RESET_FILTERS:'RESET_FILTERS',
     SECTION:'SECTION', SECTION_CUSTOM:'SECTION_CUSTOM', SECTION_BOX:'SECTION_BOX',
     TAB:'TAB', SETTINGS:'SETTINGS', TRAINING_MODE:'TRAINING_MODE',
@@ -1021,7 +1018,6 @@ function startApp() {
       case A.IDS_SET_SPECS:   return Object.assign({},s,{idsValidation:Object.assign({},s.idsValidation,{specs:a.specs})});
       case A.IDS_RUNNING:     return Object.assign({},s,{idsValidation:Object.assign({},s.idsValidation,{running:a.v})});
       // Addon dynamic state init
-      case A.UPD_LOCAL_ENGINE: return Object.assign({},s,{localEngine:Object.assign({},s.localEngine,a.u)});
       case '_ADDON_INIT_STATE': var asi={}; asi[a.k]=a.v; return Object.assign({},s,asi);
       default:
         // Let active addons handle unknown action types
@@ -13517,54 +13513,6 @@ function startApp() {
           <div><div style=${TLBL}>Reset filters after detection</div><div style=${TSUB}>Clear all filters when running a new clash detection</div></div>
           <${Toggle} on=${p.resetFiltersOnRun!==false} onToggle=${tog('resetFiltersOnRun')} />
         </div>
-
-        <div style=${SEC}>Clash Engine</div>
-        ${function(){
-          var le = s.localEngine || {};
-          if (le.available) {
-            return html`<div style=${TROW}>
-              <div>
-                <div style=${TLBL}><span style=${{display:'inline-flex',alignItems:'center',gap:'.3rem'}}>
-                  <span style=${{width:6,height:6,borderRadius:'50%',background:'#22c55e',display:'inline-block',flexShrink:0}}></span>
-                  Engine connected${le.version?' \u00b7 v'+le.version:''}
-                </span></div>
-                <div style=${TSUB}>Exact mesh intersection${le.cores?' \u00b7 '+le.cores+' cores':''}. Use for detection runs.</div>
-              </div>
-              <${Toggle} on=${le.active!==false} onToggle=${function(){
-                var n=!le.active; try{localStorage.setItem('cc_local_engine',n?'1':'0');}catch(e){}
-                d({t:A.UPD_LOCAL_ENGINE,u:{active:n}});
-              }} />
-            </div>`;
-          }
-          if (le.connecting) {
-            return html`<div style=${TROW}>
-              <div><div style=${TLBL}>Clash Engine</div><div style=${TSUB}>Starting engine\u2026</div></div>
-              <div style=${{width:16,height:16,border:'2px solid #eab308',borderTopColor:'transparent',borderRadius:'50%',animation:'cc-spin .6s linear infinite',flexShrink:0}}></div>
-            </div>`;
-          }
-          return html`<div>
-            <div style=${TROW}>
-              <div>
-                <div style=${TLBL}>Clash Engine</div>
-                <div style=${TSUB}>Local server for exact mesh intersection. 5-10\u00d7 faster on large models.</div>
-              </div>
-              <button onClick=${function(){
-                if(!window._connectLocalEngine) return;
-                window._connectLocalEngine(d).catch(function(){});
-              }} style=${{padding:'.3rem .65rem',borderRadius:6,fontSize:'0.8rem',fontWeight:600,cursor:'pointer',border:'none',background:'var(--accent)',color:'#fff',fontFamily:'inherit',flexShrink:0}}>
-                Connect</button>
-            </div>
-            ${le.checking && html`<div style=${{fontSize:'0.69rem',color:'var(--text-faint)',paddingBottom:'.3rem'}}>Checking\u2026</div>`}
-            ${!le.checking && !le.available && html`<div style=${{background:'var(--bg-secondary)',borderRadius:7,padding:'.45rem .55rem',marginBottom:'.4rem'}}>
-              <div style=${{fontSize:'0.65rem',fontWeight:600,color:'var(--text-muted)',marginBottom:'.2rem',textTransform:'uppercase',letterSpacing:'.04em'}}>Install</div>
-              <pre style=${{fontSize:'0.65rem',background:'var(--tag-bg)',padding:'.3rem .45rem',borderRadius:4,color:'var(--text-primary)',fontFamily:'var(--font-mono,monospace)',margin:'0 0 .25rem',whiteSpace:'pre-wrap',lineHeight:1.5}}>pip install clashcontrol-engine
-clashcontrol-engine --install</pre>
-              <div style=${{fontSize:'0.61rem',color:'var(--text-faint)',lineHeight:1.5}}>
-                Then click Connect. Or <a href="https://github.com/clashcontrol-io/ClashControlEngine/releases/latest" target="_blank" rel="noopener" style=${{color:'var(--accent)'}}>download a binary</a>.
-              </div>
-            </div>`}
-          </div>`;
-        }()}
 
         <div style=${SEC}>Shared Project</div>
         <div style=${TROW}>
