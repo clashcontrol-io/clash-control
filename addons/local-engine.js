@@ -204,7 +204,7 @@
               d({t:'UPD_LOCAL_ENGINE',u:{active:newActive}});
             }} style=${{padding:'.3rem .6rem',borderRadius:6,fontSize:'0.75rem',fontWeight:600,cursor:'pointer',border:'none',fontFamily:'inherit',
               background:le.active?'var(--bg-secondary)':'#2563eb',color:le.active?'var(--text-secondary)':'#fff'}}>
-              ${le.active?'Disable':'Enable for Detection'}</button>
+              ${le.active?'Disable for Detection':'Enable for Detection'}</button>
           </div>
         </div>`;
       }
