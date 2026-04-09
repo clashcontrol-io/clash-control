@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.11.6 (2026-04-09)
+- Multi-select sort and group for clashes and issues
+
 ## v4.11.5 (2026-04-08)
 - perf(nl): dual-prompt routing + expanded fast path for lower latency
 
