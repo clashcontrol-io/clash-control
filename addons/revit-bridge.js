@@ -141,9 +141,31 @@
     var targetProj = window._ccRevitTargetProject;
     if (targetProj) msg.projectId = targetProj;
     if (modelFilter) msg.modelFilter = modelFilter;
-    // Include known element hashes for content-addressable caching (delta export)
-    if (Object.keys(_elementHashCache).length > 0) {
-      msg.knownElements = _elementHashCache;
+    // Delta-export hashes: only send when there's actually a matching
+    // model already in state for the current project. On a first sync
+    // (no Revit model loaded yet for this project) sending a bag of
+    // 50k+ cached hashes from a PRIOR session forced the Revit plugin
+    // to walk every element checking "is this one unchanged?" before
+    // sending the first byte — which on big models froze Revit's UI
+    // thread for 30+ s while the browser showed nothing. Skipping the
+    // cache on first sync lets the plugin stream geometry straight
+    // away and the UI shows progress immediately.
+    var state = window._ccLatestState;
+    var hasExistingRevitModel = !!(state && state.models && state.models.some(function(m){
+      return m.stats && m.stats.source === 'revit-direct';
+    }));
+    if (hasExistingRevitModel && Object.keys(_elementHashCache).length > 0) {
+      // Additionally cap the hash payload at 20k entries so even a very
+      // large delta doesn't exceed the WebSocket frame budget or the
+      // plugin's JSON parser limits.
+      var keys = Object.keys(_elementHashCache);
+      if (keys.length > 20000) {
+        var trimmed = {};
+        for (var i = 0; i < 20000; i++) trimmed[keys[i]] = _elementHashCache[keys[i]];
+        msg.knownElements = trimmed;
+      } else {
+        msg.knownElements = _elementHashCache;
+      }
     }
     _revitWs.send(JSON.stringify(msg));
   }
