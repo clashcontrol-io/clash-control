@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.11.25 (2026-04-09)
+- Chat panel: move Clear to centered 'Clear chat', bigger collapse button
+
 ## v4.11.24 (2026-04-09)
 - Fix section box toggle, section plane drag, FPS position, IDS UX
 
