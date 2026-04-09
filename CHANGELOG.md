@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.11.23 (2026-04-09)
+- Also fix hover raycaster to skip hidden meshes
+
 ## v4.11.22 (2026-04-09)
 - Fix Navigator visibility, Color toggle, and overlay panel cleanup
 
