@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.22 (2026-04-10)
+- docs: document addon server CSP origins in index.html
+
 ## v4.14.21 (2026-04-10)
 - fix: match Smart Bridge icon color to other addon icons (#60a5fa)
 
