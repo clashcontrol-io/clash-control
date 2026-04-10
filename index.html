@@ -15086,10 +15086,71 @@ function startApp() {
       </select>`}
       <button onClick=${newSheet} style=${{ ...btn, background: '#065f46', color: '#6ee7b7' }} title="Create a new annotated floor plan from a storey">+ Sheet</button>
       ${activeSheet && html`<button onClick=${plotClashes} style=${{ ...btn, background: '#7f1d1d', color: '#fca5a5' }} title="Drop pins for every clash/issue whose location falls within this storey">Plot Clashes</button>`}
-      ${activeSheet && html`<button onClick=${function() { setShowTB(!showTB); }} style=${{ ...btn, background: 'var(--overlay-bg)', color: 'var(--text-muted)' }} title="Edit title block">Title…</button>`}
+      ${activeSheet && html`<button onClick=${function() { setShowTB(!showTB); }} style=${{ ...btn, background: 'var(--overlay-bg)', color: 'var(--text-muted)' }} title="Sheet settings: scale, paper, cut depth, title block">Settings</button>`}
       ${activeSheet && html`<button onClick=${delSheet} style=${{ ...btn, background: 'var(--overlay-bg)', color: '#ef4444' }} title="Delete this sheet">✕</button>`}
-      ${showTB && activeSheet && html`<div style=${{ position: 'absolute', top: '2.2rem', right: 0, background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '.6rem', zIndex: 20, width: 260, display: 'flex', flexDirection: 'column', gap: '.35rem' }}>
-        <div style=${{ fontSize: '.7rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '.2rem' }}>Title Block</div>
+      ${showTB && activeSheet && html`<div style=${{ position: 'absolute', top: '2.2rem', right: 0, background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '.6rem', zIndex: 20, width: 280, display: 'flex', flexDirection: 'column', gap: '.35rem', maxHeight:'70vh', overflowY:'auto' }}>
+        <div style=${{ fontSize: '.7rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '.2rem' }}>Sheet Settings</div>
+
+        <div style=${{ fontSize: '.6rem', fontWeight: 600, color: 'var(--accent)', marginTop: '.2rem' }}>Section Plane</div>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
+          Cut height above floor (m)
+          <input type="number" step="0.1" min="0.1" max="10" value=${activeSheet.cutHeight || 1.2}
+            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { cutHeight: Math.max(0.1, Number(e.target.value) || 1.2) } }); }}
+            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }} />
+        </label>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
+          View depth below floor (m)
+          <input type="number" step="0.1" min="0" max="20" value=${activeSheet.viewDepth != null ? activeSheet.viewDepth : 0}
+            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { viewDepth: Math.max(0, Number(e.target.value) || 0) } }); }}
+            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }} />
+          <span style=${{ fontSize: '.5rem', color: 'var(--text-faint)' }}>0 = cut plane only, &gt;0 shows elements below the cut</span>
+        </label>
+
+        <div style=${{ fontSize: '.6rem', fontWeight: 600, color: 'var(--accent)', marginTop: '.3rem' }}>Paper & Scale</div>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
+          Paper size
+          <select value=${(activeSheet.paper && activeSheet.paper.size) || 'A3'}
+            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { paper: Object.assign({}, activeSheet.paper || {}, { size: e.target.value }) } }); }}
+            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }}>
+            <option value="A4">A4 (210 × 297 mm)</option>
+            <option value="A3">A3 (297 × 420 mm)</option>
+            <option value="A2">A2 (420 × 594 mm)</option>
+            <option value="A1">A1 (594 × 841 mm)</option>
+            <option value="A0">A0 (841 × 1189 mm)</option>
+          </select>
+        </label>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
+          Orientation
+          <select value=${(activeSheet.paper && activeSheet.paper.orient) || 'landscape'}
+            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { paper: Object.assign({}, activeSheet.paper || {}, { orient: e.target.value }) } }); }}
+            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }}>
+            <option value="landscape">Landscape</option>
+            <option value="portrait">Portrait</option>
+          </select>
+        </label>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
+          Plotting scale
+          <select value=${(activeSheet.scale && activeSheet.scale.pxPerMeter) || 100}
+            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { scale: { pxPerMeter: Number(e.target.value) } } }); }}
+            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }}>
+            <option value=${500}>1:20</option>
+            <option value=${200}>1:50</option>
+            <option value=${100}>1:100</option>
+            <option value=${50}>1:200</option>
+            <option value=${20}>1:500</option>
+            <option value=${10}>1:1000</option>
+          </select>
+        </label>
+
+        <div style=${{ fontSize: '.6rem', fontWeight: 600, color: 'var(--accent)', marginTop: '.3rem' }}>Orientation</div>
+        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
+          North rotation (°)
+          <input type="number" step="1" min="-360" max="360" value=${activeSheet.northDeg || 0}
+            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { northDeg: Number(e.target.value) } }); }}
+            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }} />
+        </label>
+
+        <div style=${{ fontSize: '.6rem', fontWeight: 600, color: 'var(--accent)', marginTop: '.3rem' }}>Title Block</div>
         ${['project','author','date','revision','notes'].map(function(k) {
           return html`<label key=${k} style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
             ${k.charAt(0).toUpperCase() + k.slice(1)}
@@ -15098,29 +15159,6 @@ function startApp() {
               style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }} />
           </label>`;
         })}
-        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
-          Scale (px/m — 1:${Math.round(1000 / ((activeSheet.scale && activeSheet.scale.pxPerMeter) || 100) * 10)})
-          <select value=${(activeSheet.scale && activeSheet.scale.pxPerMeter) || 100}
-            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { scale: { pxPerMeter: Number(e.target.value) } } }); }}
-            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }}>
-            <option value=${200}>1:50 (200 px/m)</option>
-            <option value=${100}>1:100 (100 px/m)</option>
-            <option value=${50}>1:200 (50 px/m)</option>
-            <option value=${20}>1:500 (20 px/m)</option>
-          </select>
-        </label>
-        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
-          Cut height (m)
-          <input type="number" step="0.1" min="0.1" max="5" value=${activeSheet.cutHeight || 1.2}
-            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { cutHeight: Number(e.target.value) } }); }}
-            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }} />
-        </label>
-        <label style=${{ fontSize: '.55rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '.1rem' }}>
-          North (deg)
-          <input type="number" step="1" min="-360" max="360" value=${activeSheet.northDeg || 0}
-            onChange=${function(e) { d({ t: A.SHEET_UPD, id: activeSheet.id, u: { northDeg: Number(e.target.value) } }); }}
-            style=${{ ...S_INPUT, fontSize: '.6rem', padding: '.15rem .3rem' }} />
-        </label>
         <button onClick=${function() { setShowTB(false); }} style=${{ ...btn, marginTop: '.3rem', background: '#2563eb', color: '#fff' }}>Close</button>
       </div>`}
     </div>`;
@@ -15431,7 +15469,8 @@ function startApp() {
       // at zoom=1 → that's 1:100 at ~96dpi when us=1. For mm models
       // pxm=0.1, 1m (1000 model units) = 0.1*1000=100px → still 1:100.
       var scaleRatio = Math.round(1000 / ((sheet.scale && sheet.scale.pxPerMeter) || 100) * 10);
-      ctx.fillText('Scale 1:' + scaleRatio, x + 8, y + 80);
+      var paperLabel = (sheet.paper && sheet.paper.size || 'A3') + ' ' + (sheet.paper && sheet.paper.orient || 'landscape');
+      ctx.fillText('Scale 1:' + scaleRatio + '  ' + paperLabel, x + 8, y + 80);
       ctx.fillText(tb.author ? 'By ' + tb.author : '', x + 8, y + 94);
       ctx.fillText(tb.date || new Date(sheet.createdAt || Date.now()).toLocaleDateString(), x + bw * 0.6 + 8, y + 38);
       ctx.fillText(tb.revision ? 'Rev ' + tb.revision : 'Rev —', x + bw * 0.6 + 8, y + 52);
@@ -15550,7 +15589,7 @@ function startApp() {
           var sheet = getActiveSheet();
           if (!sheet) { alert('Create a sheet first.'); return; }
           var label = prompt('Pin label (optional):') || '';
-          d({ t: A.PIN_ADD, v: { id: uid(), sheetId: sheet.id, kind: 'manual', targetId: null, x: pt[0], z: -pt[1], color: '#f59e0b', label: label } });
+          d({ t: A.PIN_ADD, v: { id: uid(), sheetId: sheet.id, kind: 'manual', targetId: null, x: -pt[0], z: pt[1], color: '#f59e0b', label: label } });
           return;
         }
         if (sc.markupTool === 'text') {
@@ -15757,11 +15796,12 @@ function startApp() {
   // falls back to AABB projection when an element has no mesh geometry loaded.
   // Filters non-physical IFC types (IfcSpace / IfcVirtualElement / IfcAnnotation /
   // IfcGrid) — their geometry is already stripped at load time, but we double-check.
-  function generate2DOutlines(models, elevation, cutHeight) {
+  function generate2DOutlines(models, elevation, cutHeight, viewDepth) {
     var outlines = [];
     var cutAt = elevation + (cutHeight || 1.2);
+    var viewFloor = elevation - (viewDepth || 0); // how far below floor to include
     var _dbg = {total:0, noBox:0, empty:0, nonPhys:0, outOfRange:0, hasMesh:0, noMesh:0, meshSegs:0, aabb:0};
-    console.log('[2D Outlines] elevation=' + elevation + ', cutHeight=' + cutHeight + ', cutAt=' + cutAt + ', models=' + models.length);
+    console.log('[2D Outlines] elevation=' + elevation + ', cutAt=' + cutAt + ', viewFloor=' + viewFloor + ', models=' + models.length);
     models.forEach(function(m) {
       // Use strict check: only skip models the user explicitly hid.
       // m.visible can be undefined (not set during restore) which is truthy-ish.
@@ -15780,7 +15820,7 @@ function startApp() {
         }
         var ifcType = el.props && el.props.ifcType;
         if (ifcType && _NON_PHYSICAL_TYPES && _NON_PHYSICAL_TYPES[ifcType]) { _dbg.nonPhys++; return; }
-        if (b.min.y > cutAt || b.max.y < elevation) { _dbg.outOfRange++; return; }
+        if (b.min.y > cutAt || b.max.y < viewFloor) { _dbg.outOfRange++; return; }
         var layer = _ccFloorPlanLayerCode(ifcType);
         // True mesh cut: walk triangles and intersect with cut plane
         if (el.meshes && el.meshes.length) {
@@ -21055,8 +21095,8 @@ function startApp() {
             return; // effect will re-run with updated sheet
           }
         }
-        _cc2DOutlines = generate2DOutlines(s.models, sheet.elevation, sheet.cutHeight);
-        console.log('[2D Sheet] outlines generated: ' + (_cc2DOutlines ? _cc2DOutlines.length : 0) + ' segments, elev=' + sheet.elevation + ', cutH=' + sheet.cutHeight);
+        _cc2DOutlines = generate2DOutlines(s.models, sheet.elevation, sheet.cutHeight, sheet.viewDepth || 0);
+        console.log('[2D Sheet] outlines generated: ' + (_cc2DOutlines ? _cc2DOutlines.length : 0) + ' segments, elev=' + sheet.elevation + ', cutH=' + sheet.cutHeight + ', viewDepth=' + (sheet.viewDepth || 0));
         // Auto-fit view to outline extents on first generation
         setTimeout(function(){ if (window._ccFit2DOutlines) window._ccFit2DOutlines(); }, 50);
       } else if (s.underlayMode === 'compare' && s.floorPlan && s.models.length) {
