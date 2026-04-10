@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.7 (2026-04-10)
+- Fix 2D sheet: storey elevations are in mm but geometry is in metres
+
 ## v4.14.6 (2026-04-10)
 - Fix 2D sheets for mm/cm models + unit-aware elevation display
 
