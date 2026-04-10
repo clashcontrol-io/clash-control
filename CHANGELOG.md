@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.13 (2026-04-10)
+- Fix walk mode: use metres for speed, eye height, and clipping
+
 ## v4.14.12 (2026-04-10)
 - Add sheet settings: cut height, view depth, paper size, plot scale
 
