@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.1 (2026-04-10)
+- fix: walk mode unit scale + pointer lock + near/far planes
+
 ## v4.14.0 (2026-04-10)
 - fix: storey picker modal + auto-detect model unit scale for 2D outlines
 
