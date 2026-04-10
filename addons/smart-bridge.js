@@ -20,7 +20,7 @@
   var _connected = false;
 
   // ── Download URLs for standalone binaries ─────────────────────────
-  var _releaseTag = 'v0.1.1';
+  var _releaseTag = 'v0.1.3';
   var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlSmartBridge/releases/download/' + _releaseTag + '/';
   var _downloads = {
     win:   {url: _releaseBase + 'clashcontrol-smart-bridge-win.exe',
