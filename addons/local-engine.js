@@ -25,15 +25,36 @@
   var _updateInterval = null;   // periodic /update check handle
 
   // ── Download URLs for standalone executables ──────────────────
-  // Pinned to clashcontrol-engine v0.2.2. mac/linux ship as tar.gz
-  // (preserves executable bit); Windows is a self-contained .exe.
-  var _engineReleaseTag = 'v0.2.2';
-  var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlEngine/releases/download/' + _engineReleaseTag + '/';
-  var _downloads = {
-    win:   {url: _releaseBase + 'clashcontrol-engine-win.exe',       label: 'Windows (.exe)',    cmd: 'clashcontrol-engine.exe --install'},
-    mac:   {url: _releaseBase + 'clashcontrol-engine-mac.tar.gz',    label: 'macOS (.tar.gz)',   cmd: 'tar -xzf clashcontrol-engine-mac.tar.gz\n./clashcontrol-engine --install'},
-    linux: {url: _releaseBase + 'clashcontrol-engine-linux.tar.gz',  label: 'Linux (.tar.gz)',   cmd: 'tar -xzf clashcontrol-engine-linux.tar.gz\n./clashcontrol-engine --install'}
-  };
+  // mac/linux ship as tar.gz (preserves executable bit); Windows is a self-contained .exe.
+  // Release tag is fetched from GitHub API; falls back to v0.2.2 if unavailable.
+  var _engineReleaseTag = 'v0.2.2'; // fallback; will be updated from GitHub API
+
+  function _buildDownloads() {
+    var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlEngine/releases/download/' + _engineReleaseTag + '/';
+    return {
+      win:   {url: _releaseBase + 'clashcontrol-engine-win.exe',       label: 'Windows (.exe)',    cmd: 'clashcontrol-engine.exe --install'},
+      mac:   {url: _releaseBase + 'clashcontrol-engine-mac.tar.gz',    label: 'macOS (.tar.gz)',   cmd: 'tar -xzf clashcontrol-engine-mac.tar.gz\n./clashcontrol-engine --install'},
+      linux: {url: _releaseBase + 'clashcontrol-engine-linux.tar.gz',  label: 'Linux (.tar.gz)',   cmd: 'tar -xzf clashcontrol-engine-linux.tar.gz\n./clashcontrol-engine --install'}
+    };
+  }
+
+  // Initializes with fallback version, then updates if API succeeds.
+  // This ensures downloads work immediately without waiting for the API.
+  var _downloads = _buildDownloads();
+
+  function _fetchLatestReleaseTag() {
+    fetch('https://api.github.com/repos/clashcontrol-io/ClashControlEngine/releases/latest', {cache:'no-store'})
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(j) {
+        var newTag = (j && j.tag_name) || _engineReleaseTag;
+        if (newTag !== _engineReleaseTag) {
+          _engineReleaseTag = newTag;
+          _downloads = _buildDownloads(); // rebuild with new tag
+          console.log('%c[LocalEngine] Latest release: ' + _engineReleaseTag, 'color:#22c55e;font-weight:bold');
+        }
+      })
+      .catch(function() { /* silently ignore API failures */ });
+  }
 
   function _detectOS() {
     var ua = navigator.userAgent || '';
@@ -182,10 +203,8 @@
       document.body.appendChild(a);
       a.click();
       setTimeout(function(){ try { document.body.removeChild(a); } catch(e){} }, 100);
-      return true;
     } catch(e) {
       console.warn('[LocalEngine] download trigger failed:', e && e.message || e);
-      return false;
     }
   }
 
@@ -285,6 +304,7 @@
 
     init: function(dispatch) {
       console.log('[LocalEngine] Addon init');
+      _fetchLatestReleaseTag(); // fetch latest release tag from GitHub (non-blocking)
       var wasActive = false;
       try { wasActive = localStorage.getItem('cc_local_engine') === '1'; } catch(e){}
       if (wasActive) {

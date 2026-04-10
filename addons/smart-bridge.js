@@ -18,11 +18,11 @@
   var REST_URL = 'http://127.0.0.1:19803';
   var _ws = null;
   var _connected = false;
+  var _releaseTag = 'v0.1.3'; // fallback; will be updated from GitHub API
 
-  // ── Download URLs for standalone binaries ─────────────────────────
-  var _releaseTag = 'v0.1.3';
-  var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlSmartBridge/releases/download/' + _releaseTag + '/';
-  var _downloads = {
+  function _buildDownloads() {
+    var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlSmartBridge/releases/download/' + _releaseTag + '/';
+    return {
     win:   {url: _releaseBase + 'clashcontrol-smart-bridge-win.exe',
             label: 'Windows (.exe)',
             cmd: 'clashcontrol-smart-bridge-win.exe',
@@ -31,11 +31,31 @@
             label: 'macOS (.tar.gz)',
             cmd: 'tar -xzf clashcontrol-smart-bridge-mac.tar.gz && ./clashcontrol-smart-bridge',
             installPath: '~/Library/Application Support/ClashControl/clashcontrol-smart-bridge'},
-    linux: {url: _releaseBase + 'clashcontrol-smart-bridge-linux.tar.gz',
-            label: 'Linux (.tar.gz)',
-            cmd: 'tar -xzf clashcontrol-smart-bridge-linux.tar.gz && ./clashcontrol-smart-bridge',
-            installPath: '~/.local/share/clashcontrol/clashcontrol-smart-bridge'}
-  };
+      linux: {url: _releaseBase + 'clashcontrol-smart-bridge-linux.tar.gz',
+              label: 'Linux (.tar.gz)',
+              cmd: 'tar -xzf clashcontrol-smart-bridge-linux.tar.gz && ./clashcontrol-smart-bridge',
+              installPath: '~/.local/share/clashcontrol/clashcontrol-smart-bridge'}
+    };
+  }
+
+  // ── Fetch latest release tag from GitHub API ──────────────────────
+  // Initializes with fallback version, then updates if API succeeds.
+  // This ensures downloads work immediately without waiting for the API.
+  var _downloads = _buildDownloads();
+
+  function _fetchLatestReleaseTag() {
+    fetch('https://api.github.com/repos/clashcontrol-io/ClashControlSmartBridge/releases/latest', {cache:'no-store'})
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(j) {
+        var newTag = (j && j.tag_name) || _releaseTag;
+        if (newTag !== _releaseTag) {
+          _releaseTag = newTag;
+          _downloads = _buildDownloads(); // rebuild with new tag
+          console.log('%c[Smart Bridge] Latest release: ' + _releaseTag, 'color:#22c55e;font-weight:bold');
+        }
+      })
+      .catch(function() { /* silently ignore API failures */ });
+  }
 
   function _detectOS() {
     var ua = navigator.userAgent || '';
@@ -57,17 +77,20 @@
   // Must be called synchronously within a user gesture (click handler)
 
   function _triggerDownload() {
-    var os = _detectOS();
-    var dl = _downloads[os];
-    var a = document.createElement('a');
-    a.href = dl.url;
-    a.download = '';
-    a.rel = 'noopener';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function(){ document.body.removeChild(a); }, 100);
-    return true;
+    try {
+      var os = _detectOS();
+      var dl = _downloads[os];
+      var a = document.createElement('a');
+      a.href = dl.url;
+      a.download = '';
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){ document.body.removeChild(a); }, 100);
+    } catch(e) {
+      console.warn('[Smart Bridge] download trigger failed:', e && e.message || e);
+    }
   }
 
   // ── URL-scheme launch ─────────────────────────────────────────────
@@ -465,6 +488,7 @@
       init: function(dispatch) {
         console.log('[Smart Bridge] Addon activated');
         _updateChecked = false; // reset on activation
+        _fetchLatestReleaseTag(); // fetch latest release tag from GitHub (non-blocking)
         _doInit(dispatch);
         // Periodic update check every 30 minutes while the addon is active.
         _updateInterval = setInterval(function() {
