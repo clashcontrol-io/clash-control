@@ -447,15 +447,15 @@
             style=${{padding:'2px 7px',borderRadius:4,fontSize:'0.57rem',fontWeight:600,cursor:'pointer',border:'none',background:'var(--bg-tertiary)',color:'var(--text-muted)',fontFamily:'inherit',flexShrink:0}}>Copy name</button>
         </div>`;
 
-        // Claude Desktop MCP config snippet
-        var _claudeConfig = JSON.stringify({
-          mcpServers: {
-            clashcontrol: {
-              command: dl.installPath,
-              args: ['--mcp']
-            }
+        // Claude Desktop MCP config snippet — just the block to merge in,
+        // not a full JSON object (the file already has content).
+        var _claudeConfigBlock = JSON.stringify({
+          clashcontrol: {
+            command: dl.installPath,
+            args: ['--mcp']
           }
         }, null, 2);
+        var _claudeConfig = '"mcpServers": ' + _claudeConfigBlock;
 
         function _copyClaudeConfig() {
           navigator.clipboard.writeText(_claudeConfig).then(function() {
@@ -518,10 +518,10 @@
                   style=${{..._btnSmall,background:'#7c3aed',color:'#fff',flexShrink:0}}>Copy config</button>
               </div>
               <div style=${{fontSize:'0.58rem',color:'var(--text-faint)',lineHeight:1.4}}>
-                Paste into <code style=${{fontSize:'0.58rem',background:'var(--bg-tertiary)',padding:'1px 3px',borderRadius:2}}>${os === 'win' ? '%APPDATA%\\Claude\\claude_desktop_config.json' : '~/.claude/claude_desktop_config.json'}</code>, then restart Claude.
+                Add this block inside the <code style=${{fontSize:'0.58rem',background:'var(--bg-tertiary)',padding:'1px 3px',borderRadius:2}}>${'{'}</code> in <code style=${{fontSize:'0.58rem',background:'var(--bg-tertiary)',padding:'1px 3px',borderRadius:2}}>${os === 'win' ? 'claude_desktop_config.json' : '~/.claude/claude_desktop_config.json'}</code>, then restart Claude.
               </div>
               <details>
-                <summary style=${{fontSize:'0.58rem',color:'var(--text-faint)',cursor:'pointer',userSelect:'none'}}>Show config JSON</summary>
+                <summary style=${{fontSize:'0.58rem',color:'var(--text-faint)',cursor:'pointer',userSelect:'none'}}>Show block to add</summary>
                 <pre style=${{..._codeStyle,margin:'.3rem 0 0',padding:'.35rem .4rem',whiteSpace:'pre-wrap',lineHeight:1.4,fontSize:'0.57rem'}}>${_claudeConfig}</pre>
               </details>
             </div>
