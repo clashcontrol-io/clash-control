@@ -15015,6 +15015,28 @@ function startApp() {
     var s = props.s, d = props.d;
     var canvasRef = useRef(null);
     var panRef = useRef({ x: 0, y: 0, zoom: 1, dragging: false, lx: 0, ly: 0 });
+
+    // Expose a fit-to-outlines function so we can auto-center on sheet creation
+    window._ccFit2DOutlines = function() {
+      if (!_cc2DOutlines || !_cc2DOutlines.length || !canvasRef.current) return;
+      var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      _cc2DOutlines.forEach(function(seg) {
+        if (seg[0] < minX) minX = seg[0]; if (seg[2] < minX) minX = seg[2];
+        if (seg[0] > maxX) maxX = seg[0]; if (seg[2] > maxX) maxX = seg[2];
+        var y1 = -seg[1], y2 = -seg[3]; // flip Z→Y as in rendering
+        if (y1 < minY) minY = y1; if (y2 < minY) minY = y2;
+        if (y1 > maxY) maxY = y1; if (y2 > maxY) maxY = y2;
+      });
+      if (!isFinite(minX)) return;
+      var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      var w = canvasRef.current.width, h = canvasRef.current.height;
+      var extW = maxX - minX, extH = maxY - minY;
+      var zoom = Math.min(w / (extW * 1.2), h / (extH * 1.2), 2);
+      if (zoom <= 0 || !isFinite(zoom)) zoom = 1;
+      panRef.current.x = -cx * zoom;
+      panRef.current.y = -cy * zoom;
+      panRef.current.zoom = zoom;
+    };
     var markupPtsRef = useRef([]);
     // Keep a ref to latest state so event-handler closures always read fresh values
     var sRef = useRef(s);
@@ -19134,6 +19156,12 @@ function startApp() {
               </div>`}
             </div>`;
           })}
+        <div style=${{borderTop:'1px solid var(--border-subtle)',padding:'.3rem .4rem',display:'flex',gap:'.3rem'}}>
+          <button onClick=${function(){saveProject(s);setProjOpen(false);}}
+            style=${{...S_BTN,flex:1,fontSize:'0.69rem',padding:'.3rem .4rem',background:'var(--accent)',color:'#fff',fontWeight:600}}>Save</button>
+          <button onClick=${function(){loadProject(d);setProjOpen(false);}}
+            style=${{...S_BTN,flex:1,fontSize:'0.69rem',padding:'.3rem .4rem',background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>Open</button>
+        </div>
         </div>
         </div>`}
       </div>
@@ -19143,12 +19171,28 @@ function startApp() {
           '2D Views & Sheets')}
         ${show2dV && html`<div style=${{position:'absolute',left:'100%',top:0,marginLeft:4,zIndex:999,
           background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:8,
-          boxShadow:'0 4px 16px rgba(0,0,0,.25)',padding:'.25rem 0',minWidth:160}}
+          boxShadow:'0 4px 16px rgba(0,0,0,.25)',padding:'.25rem 0',minWidth:180}}
           onMouseLeave=${function(){setShow2dV(false);}}>
+          <button onClick=${function(){if(window._ccCreateSheet)window._ccCreateSheet();setShow2dV(false);}}
+            style=${{...S_BTN,width:'100%',padding:'.3rem .65rem',background:'none',color:'var(--text-primary)',fontSize:'.72rem',justifyContent:'flex-start',borderRadius:0}}>+ New Sheet</button>
           <button onClick=${function(){var is2D=s.underlayMode==='view2d'||s.underlayMode==='compare';d({t:'UNDERLAY_MODE',v:is2D?null:'view2d'});setShow2dV(false);}}
             style=${{...S_BTN,width:'100%',padding:'.3rem .65rem',background:'none',color:'var(--text-primary)',fontSize:'.72rem',justifyContent:'flex-start',borderRadius:0}}>${s.underlayMode?'Exit 2D View':'Enter 2D View'}</button>
-          <button onClick=${function(){if(window._ccCreateSheet)window._ccCreateSheet();setShow2dV(false);}}
-            style=${{...S_BTN,width:'100%',padding:'.3rem .65rem',background:'none',color:'var(--text-primary)',fontSize:'.72rem',justifyContent:'flex-start',borderRadius:0}}>Create 2D Sheet</button>
+          ${(s.sheets||[]).length>0 && html`<div style=${{borderTop:'1px solid var(--border-subtle)',margin:'.15rem 0'}}></div>
+            <div style=${{padding:'.15rem .65rem',fontSize:'0.63rem',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.05em',fontWeight:600}}>Sheets</div>`}
+          ${(s.sheets||[]).map(function(sh){
+            var isActive = sh.id === s.activeSheetId;
+            return html`<button key=${sh.id} onClick=${function(){
+                d({t:A.SHEET_SET_ACTIVE,v:sh.id});
+                d({t:'UNDERLAY_MODE',v:'view2d'});
+                setShow2dV(false);
+                setTimeout(function(){ if(window._ccFit2DOutlines) window._ccFit2DOutlines(); }, 100);
+              }}
+              style=${{...S_BTN,width:'100%',padding:'.3rem .65rem',
+                background:isActive?'rgba(37,99,235,.12)':'none',
+                color:isActive?'#60a5fa':'var(--text-primary)',fontSize:'.72rem',justifyContent:'flex-start',borderRadius:0}}>
+              ${sh.name}
+            </button>`;
+          })}
         </div>`}
       </div>
       ${iconBtn(function(){
@@ -19200,9 +19244,6 @@ function startApp() {
             style=${{...S_BTN,width:'100%',padding:'.3rem .65rem',background:'none',color:all.length?'var(--text-primary)':'var(--text-faint)',fontSize:'.72rem',justifyContent:'flex-start',borderRadius:0}}>Export BCF 2.1</button>
           <button onClick=${function(){exportBCF(all,'3.0',s.viewpoints,s);setShowBcf(false);}} disabled=${!all.length}
             style=${{...S_BTN,width:'100%',padding:'.3rem .65rem',background:'none',color:all.length?'var(--text-primary)':'var(--text-faint)',fontSize:'.72rem',justifyContent:'flex-start',borderRadius:0}}>Export BCF 3.0</button>
-          <div style=${{borderTop:'1px solid var(--border-subtle)',margin:'.15rem 0'}}></div>
-          <button onClick=${function(){saveProject(s);setShowBcf(false);}}
-            style=${{...S_BTN,width:'100%',padding:'.3rem .65rem',background:'none',color:'var(--text-primary)',fontSize:'.72rem',justifyContent:'flex-start',borderRadius:0}}>Save Project</button>
         </div>`}
       </div>
       ${iconBtn(function(){d({t:A.UPD_PREFS,u:{theme:isDark?'light':'dark'}});},
@@ -20811,6 +20852,8 @@ function startApp() {
       var sheet = s.activeSheetId && (s.sheets||[]).find(function(sh){return sh.id===s.activeSheetId;});
       if (sheet && s.models.length) {
         _cc2DOutlines = generate2DOutlines(s.models, sheet.elevation, sheet.cutHeight);
+        // Auto-fit view to outline extents on first generation
+        setTimeout(function(){ if (window._ccFit2DOutlines) window._ccFit2DOutlines(); }, 50);
       } else if (s.underlayMode === 'compare' && s.floorPlan && s.models.length) {
         _cc2DOutlines = generate2DOutlines(s.models, s.floorPlan.elevation, s.floorPlan.cutHeight);
       } else {
