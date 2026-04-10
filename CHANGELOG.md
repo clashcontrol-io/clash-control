@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.9 (2026-04-10)
+- Include all models in 2D outlines when none are marked visible
+
 ## v4.14.8 (2026-04-10)
 - Add auto-migration for old sheets + debug logging for 2D outlines
 
