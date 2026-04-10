@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.18 (2026-04-10)
+- Deduplicate IFC type names: build from IFC constants instead of raw IDs
+
 ## v4.14.17 (2026-04-10)
 - Smart Bridge: add LLM setup instructions + Copy Claude Config button
 
