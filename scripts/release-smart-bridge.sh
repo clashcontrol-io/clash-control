@@ -12,10 +12,11 @@
 
 set -euo pipefail
 
-REPO="clashcontrol-io/ClashControlSmartBridge"
+REPO="thomhoffer-arch/ClashControlSmartBridge"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-MCP_DIR="$PROJECT_DIR/mcp-server"
+# Smart Bridge lives in its own repo — clone or set SMART_BRIDGE_DIR
+MCP_DIR="${SMART_BRIDGE_DIR:-$PROJECT_DIR/../ClashControlSmartBridge}"
 DIST_DIR="$MCP_DIR/dist"
 
 # ── Version ──────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ node -e "
 "
 
 # Update release tag in smart-bridge addon
+# Also update the addon in the ClashControl repo if present
 ADDON="$PROJECT_DIR/addons/smart-bridge.js"
 if [ -f "$ADDON" ]; then
   sed -i.bak "s|var _releaseTag = '[^']*'|var _releaseTag = '$TAG'|" "$ADDON"
