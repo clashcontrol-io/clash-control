@@ -47,13 +47,16 @@
       .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(j) {
         var newTag = (j && j.tag_name) || _engineReleaseTag;
+        console.log('[LocalEngine] GitHub API returned:', newTag);
         if (newTag !== _engineReleaseTag) {
+          console.log('%c[LocalEngine] Updating release from ' + _engineReleaseTag + ' to ' + newTag, 'color:#22c55e;font-weight:bold');
           _engineReleaseTag = newTag;
           _downloads = _buildDownloads(); // rebuild with new tag
-          console.log('%c[LocalEngine] Latest release: ' + _engineReleaseTag, 'color:#22c55e;font-weight:bold');
         }
       })
-      .catch(function() { /* silently ignore API failures */ });
+      .catch(function(e) {
+        console.warn('[LocalEngine] Failed to fetch latest release:', e && e.message || e);
+      });
   }
 
   function _detectOS() {

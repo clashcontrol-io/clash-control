@@ -48,13 +48,16 @@
       .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(j) {
         var newTag = (j && j.tag_name) || _releaseTag;
+        console.log('[Smart Bridge] GitHub API returned:', newTag);
         if (newTag !== _releaseTag) {
+          console.log('%c[Smart Bridge] Updating release from ' + _releaseTag + ' to ' + newTag, 'color:#22c55e;font-weight:bold');
           _releaseTag = newTag;
           _downloads = _buildDownloads(); // rebuild with new tag
-          console.log('%c[Smart Bridge] Latest release: ' + _releaseTag, 'color:#22c55e;font-weight:bold');
         }
       })
-      .catch(function() { /* silently ignore API failures */ });
+      .catch(function(e) {
+        console.warn('[Smart Bridge] Failed to fetch latest release:', e && e.message || e);
+      });
   }
 
   function _detectOS() {
