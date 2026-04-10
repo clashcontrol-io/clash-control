@@ -18,7 +18,7 @@
   var REST_URL = 'http://127.0.0.1:19803';
   var _ws = null;
   var _connected = false;
-  var _releaseTag = 'v0.1.3'; // fallback; will be updated from GitHub API
+  var _releaseTag = 'v0.1.5'; // fallback; will be updated from GitHub API
 
   function _buildDownloads() {
     var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlSmartBridge/releases/download/' + _releaseTag + '/';
