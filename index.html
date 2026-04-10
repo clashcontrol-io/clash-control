@@ -6399,9 +6399,12 @@ function startApp() {
       renderer.domElement.addEventListener('mousedown', function(e) {
         var cs = window._ccCurrentSection;
         if (!cs) return;
-        if (e.button === 2) {
+        // Section plane interaction requires Ctrl (or Cmd on Mac) to avoid
+        // blocking orbit rotation on accidental clicks near the plane.
+        var ctrlHeld = e.ctrlKey || e.metaKey;
+        if (e.button === 2 && ctrlHeld) {
           _secDrag = {startX: e.clientX, startY: e.clientY, startPos: cs.pos, didDrag: false, button: 2, mode:'move'};
-        } else if (e.button === 0) {
+        } else if (e.button === 0 && ctrlHeld) {
           var S2 = state3d.current;
           if (!S2._sectionPlaneVis) return;
           var rect = renderer.domElement.getBoundingClientRect();
@@ -6483,10 +6486,11 @@ function startApp() {
       renderer.domElement.addEventListener('contextmenu', function(e) {
         if (_secDrag && _secDrag.didDrag) { e.preventDefault(); e.stopPropagation(); }
       }, true);
-      // Show grab cursor when hovering over section plane
+      // Show grab cursor when hovering over section plane (only while Ctrl/Cmd held)
       var _prevSecHover = false;
       renderer.domElement.addEventListener('mousemove', function(e) {
         if (_secDrag) return;
+        if (!(e.ctrlKey || e.metaKey)) { if(_prevSecHover){renderer.domElement.style.cursor='';_prevSecHover=false;} return; }
         var S2 = state3d.current;
         if (!S2._sectionPlaneVis) { if(_prevSecHover){renderer.domElement.style.cursor='';_prevSecHover=false;} return; }
         var rect = renderer.domElement.getBoundingClientRect();
