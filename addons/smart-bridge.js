@@ -511,15 +511,19 @@
               Smart Bridge is running. Connect your AI assistant:
             </div>
 
-            <div style=${{background:'var(--bg-secondary)',borderRadius:6,padding:'.5rem',display:'flex',flexDirection:'column',gap:'.4rem'}}>
-              <div style=${{fontSize:'0.69rem',fontWeight:600,color:'#c084fc'}}>Claude Desktop / Claude Code</div>
-              <div style=${{fontSize:'0.6rem',color:'var(--text-faint)',lineHeight:1.5}}>
-                Add this to your Claude config file, then restart Claude:<br/>
-                <span style=${{opacity:.7}}>${os === 'win' ? '%APPDATA%\\Claude\\claude_desktop_config.json' : '~/.claude/claude_desktop_config.json'}</span>
+            <div style=${{background:'var(--bg-secondary)',borderRadius:6,padding:'.45rem .5rem',display:'flex',flexDirection:'column',gap:'.35rem'}}>
+              <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
+                <span style=${{fontSize:'0.69rem',fontWeight:600,color:'#c084fc',flex:1}}>Claude Desktop / Claude Code</span>
+                <button id="cc-sb-copy-btn" onClick=${_copyClaudeConfig}
+                  style=${{..._btnSmall,background:'#7c3aed',color:'#fff',flexShrink:0}}>Copy config</button>
               </div>
-              <pre style=${{..._codeStyle,margin:0,padding:'.4rem',whiteSpace:'pre-wrap',lineHeight:1.4}}>${_claudeConfig}</pre>
-              <button id="cc-sb-copy-btn" onClick=${_copyClaudeConfig}
-                style=${{..._btnSmall,background:'#7c3aed',color:'#fff',width:'100%'}}>Copy Claude Config</button>
+              <div style=${{fontSize:'0.58rem',color:'var(--text-faint)',lineHeight:1.4}}>
+                Paste into <code style=${{fontSize:'0.58rem',background:'var(--bg-tertiary)',padding:'1px 3px',borderRadius:2}}>${os === 'win' ? '%APPDATA%\\Claude\\claude_desktop_config.json' : '~/.claude/claude_desktop_config.json'}</code>, then restart Claude.
+              </div>
+              <details>
+                <summary style=${{fontSize:'0.58rem',color:'var(--text-faint)',cursor:'pointer',userSelect:'none'}}>Show config JSON</summary>
+                <pre style=${{..._codeStyle,margin:'.3rem 0 0',padding:'.35rem .4rem',whiteSpace:'pre-wrap',lineHeight:1.4,fontSize:'0.57rem'}}>${_claudeConfig}</pre>
+              </details>
             </div>
 
             <div style=${{background:'var(--bg-secondary)',borderRadius:6,padding:'.5rem',display:'flex',flexDirection:'column',gap:'.3rem'}}>
