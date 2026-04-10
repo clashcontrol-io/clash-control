@@ -15137,21 +15137,25 @@ function startApp() {
       if (!_cc2DOutlines || !_cc2DOutlines.length || !canvasRef.current) return;
       var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       _cc2DOutlines.forEach(function(seg) {
-        if (seg[0] < minX) minX = seg[0]; if (seg[2] < minX) minX = seg[2];
-        if (seg[0] > maxX) maxX = seg[0]; if (seg[2] > maxX) maxX = seg[2];
+        var x1 = -seg[0], x2 = -seg[2]; // mirror X as in rendering
+        if (x1 < minX) minX = x1; if (x2 < minX) minX = x2;
+        if (x1 > maxX) maxX = x1; if (x2 > maxX) maxX = x2;
         var y1 = -seg[1], y2 = -seg[3]; // flip Z→Y as in rendering
         if (y1 < minY) minY = y1; if (y2 < minY) minY = y2;
         if (y1 > maxY) maxY = y1; if (y2 > maxY) maxY = y2;
       });
       if (!isFinite(minX)) return;
       var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-      var w = canvasRef.current.width, h = canvasRef.current.height;
+      // Use CSS dimensions (not device pixels) for pan/zoom calculation
+      var el = canvasRef.current.parentElement || canvasRef.current;
+      var cssW = el.clientWidth || canvasRef.current.width;
+      var cssH = el.clientHeight || canvasRef.current.height;
       var extW = maxX - minX, extH = maxY - minY;
-      // pxm converts model units to pixels at zoom=1; factor it
+      // pxm converts model units to CSS pixels at zoom=1; factor it
       // into the fit so the building fills the viewport regardless
       // of whether the model is in meters, mm or cm.
       var pxm = getSheetPxm(getActiveSheet());
-      var zoom = Math.min(w / (extW * pxm * 1.2), h / (extH * pxm * 1.2), 2);
+      var zoom = Math.min(cssW / (extW * pxm * 1.2), cssH / (extH * pxm * 1.2), 2);
       if (zoom <= 0 || !isFinite(zoom)) zoom = 1;
       panRef.current.x = -cx * pxm * zoom;
       panRef.current.y = -cy * pxm * zoom;
@@ -15187,16 +15191,17 @@ function startApp() {
       var cvs = canvasRef.current; if (!cvs) return;
       var s = sRef.current; // always use latest state
       var ctx = cvs.getContext('2d');
-      var w = cvs.width, h = cvs.height;
+      var dpr = window.devicePixelRatio || 1;
+      var w = cvs.width, h = cvs.height; // already in device pixels
       var pan = panRef.current;
       var sheet = getActiveSheet();
       var pxm = getSheetPxm(sheet);
-      var viewScale = pan.zoom * pxm; // pixels per world-meter (or per-pixel if no sheet)
+      var viewScale = pan.zoom * pxm * dpr; // device-pixels per world-metre
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, w, h);
       ctx.save();
-      ctx.translate(w / 2 + pan.x, h / 2 + pan.y);
+      ctx.translate(w / 2 + pan.x * dpr, h / 2 + pan.y * dpr);
       ctx.scale(viewScale, viewScale);
 
       // Draw grid — 1m when a sheet is active, 50 units otherwise
@@ -15265,8 +15270,8 @@ function startApp() {
           ctx.lineWidth = st.width / viewScale;
           if (st.dash) ctx.setLineDash(st.dash.map(function(v){return v/viewScale;})); else ctx.setLineDash([]);
           ctx.beginPath();
-          ctx.moveTo(seg[0], -seg[1]); // flip Z→Y
-          ctx.lineTo(seg[2], -seg[3]);
+          ctx.moveTo(-seg[0], -seg[1]); // mirror X + flip Z for plan view
+          ctx.lineTo(-seg[2], -seg[3]);
           ctx.stroke();
         });
         ctx.setLineDash([]);
@@ -15354,7 +15359,7 @@ function startApp() {
       if (sheet) {
         var pinsOnSheet = (s.sheetPins || []).filter(function(p) { return p.sheetId === activeSheetId; });
         pinsOnSheet.forEach(function(p, idx) {
-          var px = p.x, py = -p.z; // flip Z→Y
+          var px = -p.x, py = -p.z; // mirror X + flip Z for plan view
           var r = 0.35; // 35 cm radius
           ctx.beginPath();
           ctx.arc(px, py, r, 0, Math.PI * 2);
@@ -15384,10 +15389,15 @@ function startApp() {
       ctx.restore();
 
       // Screen-space overlays (title block, scale bar, north arrow) — only in sheet mode
+      // Scale canvas by DPR so overlay sizes/fonts stay constant across HiDPI screens
       if (sheet) {
-        _ccDrawTitleBlock(ctx, w, h, sheet);
-        _ccDrawScaleBar(ctx, w, h, sheet, pan.zoom);
-        _ccDrawNorthArrow(ctx, w, h, sheet);
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        var cssW = w / dpr, cssH = h / dpr;
+        _ccDrawTitleBlock(ctx, cssW, cssH, sheet);
+        _ccDrawScaleBar(ctx, cssW, cssH, sheet, pan.zoom);
+        _ccDrawNorthArrow(ctx, cssW, cssH, sheet);
+        ctx.restore();
       }
     }
 
@@ -15492,7 +15502,12 @@ function startApp() {
       var cvs = canvasRef.current; if (!cvs) return;
       window._cc2DCanvas = cvs;
       var el = cvs.parentElement;
-      function resize() { cvs.width = el.clientWidth; cvs.height = el.clientHeight; redraw(); }
+      function resize() {
+        var dpr = window.devicePixelRatio || 1;
+        cvs.width = Math.round(el.clientWidth * dpr);
+        cvs.height = Math.round(el.clientHeight * dpr);
+        redraw();
+      }
       resize();
       var obs = new ResizeObserver(resize);
       obs.observe(el);
@@ -15511,9 +15526,10 @@ function startApp() {
       var sheet = getActiveSheet();
       var pxm = getSheetPxm(sheet);
       var viewScale = pan.zoom * pxm;
-      var px = e.clientX - rect.left - cvs.width / 2 - pan.x;
-      var py = e.clientY - rect.top - cvs.height / 2 - pan.y;
-      var wx = px / viewScale, wy = py / viewScale;
+      // Mouse position relative to canvas centre, in CSS pixels
+      var px = e.clientX - rect.left - rect.width / 2 - pan.x;
+      var py = e.clientY - rect.top - rect.height / 2 - pan.y;
+      var wx = -px / viewScale, wy = py / viewScale; // negate X to match mirrored rendering
       // Snap to outline endpoints when a sheet is active and an index exists
       if (applySnap && sheet && window._cc2DSnapIndex) {
         // outline endpoints are stored as (x, z) but we draw with y = -z,
@@ -15586,7 +15602,7 @@ function startApp() {
       var pins = (sc.sheetPins || []).filter(function(p) { return p.sheetId === sheet.id; });
       var hit = null, hitD = thr2 + 0.35 * 0.35;
       pins.forEach(function(p) {
-        var px2 = p.x, py2 = -p.z;
+        var px2 = -p.x, py2 = -p.z;
         var d2 = (px2 - wx) * (px2 - wx) + (py2 - wy) * (py2 - wy);
         if (d2 < hitD) { hitD = d2; hit = p; }
       });
@@ -15597,7 +15613,20 @@ function startApp() {
     function onWheel(e) {
       e.preventDefault();
       var factor = e.deltaY > 0 ? 0.9 : 1.1;
-      panRef.current.zoom = Math.max(0.05, Math.min(50, panRef.current.zoom * factor));
+      var pan = panRef.current;
+      var oldZoom = pan.zoom;
+      var newZoom = Math.max(0.05, Math.min(50, oldZoom * factor));
+      // Zoom towards mouse position: keep the world point under the
+      // cursor stationary by adjusting the pan offset.
+      var rect = e.currentTarget.getBoundingClientRect();
+      var mx = e.clientX - rect.left - rect.width / 2;  // CSS-px from canvas centre
+      var my = e.clientY - rect.top  - rect.height / 2;
+      // mx = pan.x + worldX * oldZoom * pxm → worldX = (mx - pan.x) / (oldZoom * pxm)
+      // After zoom: mx = newPan.x + worldX * newZoom * pxm
+      // → newPan.x = mx - worldX * newZoom * pxm = mx - (mx - pan.x) * newZoom / oldZoom
+      pan.x = mx - (mx - pan.x) * newZoom / oldZoom;
+      pan.y = my - (my - pan.y) * newZoom / oldZoom;
+      pan.zoom = newZoom;
       redraw();
     }
 
@@ -15673,7 +15702,7 @@ function startApp() {
   function _ccFloorPlanLayerCode(ifcType) {
     if (!ifcType) return 'wall';
     if (/^Ifc(Wall|WallStandardCase|CurtainWall)/i.test(ifcType)) return 'wall';
-    if (/^Ifc(Slab|Roof|Footing|Stair|Ramp)/i.test(ifcType)) return 'structure';
+    if (/^Ifc(Slab|Roof|Footing|Stair|StairFlight|Ramp|RampFlight|Railing)/i.test(ifcType)) return 'structure';
     if (/^Ifc(Column|Beam|Member|Pile)/i.test(ifcType)) return 'structure';
     if (/^Ifc(Door|Window)/i.test(ifcType)) return 'opening';
     if (/^Ifc(Pipe|Duct|Cable|Flow|Distribution|Sanitary)/i.test(ifcType)) return 'mep';
@@ -15754,21 +15783,26 @@ function startApp() {
         if (b.min.y > cutAt || b.max.y < elevation) { _dbg.outOfRange++; return; }
         var layer = _ccFloorPlanLayerCode(ifcType);
         // True mesh cut: walk triangles and intersect with cut plane
-        var meshSegs = (el.meshes && el.meshes.length) ? _cutElementAtPlane(el, cutAt) : null;
-        if (el.meshes && el.meshes.length) _dbg.hasMesh++; else _dbg.noMesh++;
-        if (meshSegs && meshSegs.length) {
-          _dbg.meshSegs += meshSegs.length;
-          for (var si = 0; si < meshSegs.length; si++) {
-            outlines.push([meshSegs[si][0], meshSegs[si][1], meshSegs[si][2], meshSegs[si][3], layer]);
+        if (el.meshes && el.meshes.length) {
+          _dbg.hasMesh++;
+          var meshSegs = _cutElementAtPlane(el, cutAt);
+          if (meshSegs && meshSegs.length) {
+            _dbg.meshSegs += meshSegs.length;
+            for (var si = 0; si < meshSegs.length; si++) {
+              outlines.push([meshSegs[si][0], meshSegs[si][1], meshSegs[si][2], meshSegs[si][3], layer]);
+            }
           }
+          // No fallback when meshes exist — if the plane misses all
+          // triangles the element simply doesn't appear (correct).
         } else {
+          _dbg.noMesh++;
+          // AABB fallback only for metadata-only elements (no mesh geometry)
           _dbg.aabb++;
-          // AABB fallback — projects bounding box edges at cut level
           var x1 = b.min.x, z1 = b.min.z, x2 = b.max.x, z2 = b.max.z;
-          outlines.push([x1, z1, x2, z1, layer]); // bottom
-          outlines.push([x2, z1, x2, z2, layer]); // right
-          outlines.push([x2, z2, x1, z2, layer]); // top
-          outlines.push([x1, z2, x1, z1, layer]); // left
+          outlines.push([x1, z1, x2, z1, layer]);
+          outlines.push([x2, z1, x2, z2, layer]);
+          outlines.push([x2, z2, x1, z2, layer]);
+          outlines.push([x1, z2, x1, z1, layer]);
         }
       });
     });
@@ -15880,8 +15914,8 @@ function startApp() {
     (outlines || []).forEach(function(seg) {
       var layer = _layerNameForCode(seg[4]);
       dxf += '0\nLINE\n8\n' + layer + '\n';
-      dxf += '10\n' + seg[0].toFixed(4) + '\n20\n' + (-seg[1]).toFixed(4) + '\n30\n0.0\n';
-      dxf += '11\n' + seg[2].toFixed(4) + '\n21\n' + (-seg[3]).toFixed(4) + '\n31\n0.0\n';
+      dxf += '10\n' + (-seg[0]).toFixed(4) + '\n20\n' + (-seg[1]).toFixed(4) + '\n30\n0.0\n';
+      dxf += '11\n' + (-seg[2]).toFixed(4) + '\n21\n' + (-seg[3]).toFixed(4) + '\n31\n0.0\n';
     });
 
     // Markups → LINE / LWPOLYLINE / TEXT / DIMENSION fallback
@@ -15949,7 +15983,7 @@ function startApp() {
 
     // Pins → CIRCLE + TEXT (pin id stored as label; clash/issue id in comment)
     pins.forEach(function(p, idx) {
-      var px = p.x, py = -p.z;
+      var px = -p.x, py = -p.z;
       writeCircle('Pins', px, py, 0.35);
       writeText('Pins', px - 0.1, py - 0.12, String(idx + 1), 0.3);
       if (p.label) writeText('Pins', px + 0.45, py, String(p.label).slice(0, 40), 0.18);
@@ -16028,7 +16062,7 @@ function startApp() {
     var outlines = generate2DOutlines(state.models || [], sheet.elevation, sheet.cutHeight || 1.2);
     var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     outlines.forEach(function(seg) {
-      var ys = [-seg[1], -seg[3]], xs = [seg[0], seg[2]];
+      var ys = [-seg[1], -seg[3]], xs = [-seg[0], -seg[2]]; // mirror X
       xs.forEach(function(x) { if (x < minX) minX = x; if (x > maxX) maxX = x; });
       ys.forEach(function(y) { if (y < minY) minY = y; if (y > maxY) maxY = y; });
     });
@@ -16053,8 +16087,8 @@ function startApp() {
       ctx.lineWidth = st.width / pxm * 1.5;
       if (st.dash) ctx.setLineDash(st.dash); else ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(seg[0], -seg[1]);
-      ctx.lineTo(seg[2], -seg[3]);
+      ctx.moveTo(-seg[0], -seg[1]); // mirror X
+      ctx.lineTo(-seg[2], -seg[3]);
       ctx.stroke();
     });
     ctx.setLineDash([]);
@@ -16104,7 +16138,7 @@ function startApp() {
     // Draw pins
     var pins = (state.sheetPins || []).filter(function(p) { return p.sheetId === sheet.id; });
     pins.forEach(function(p, idx) {
-      var px = p.x, py = -p.z;
+      var px = -p.x, py = -p.z;
       ctx.beginPath(); ctx.arc(px, py, 0.35, 0, Math.PI * 2);
       ctx.fillStyle = p.color || (p.kind === 'issue' ? '#059669' : '#b91c1c'); ctx.fill();
       ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 0.08; ctx.stroke();
