@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.3 (2026-04-10)
+- Restore previous CC logo (mirrored C's) replacing chain-link icon
+
 ## v4.14.2 (2026-04-10)
 - improve error messages for DWG and Navisworks file imports
 
