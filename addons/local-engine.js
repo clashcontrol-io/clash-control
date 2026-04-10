@@ -69,10 +69,14 @@
     _engineCores = cores;
     _engineBackends = backends;
     _lastKnownVersion = version;
+    var updateAvailable = !!(j && j.update_available);
+    var updateVersion = (j && j.update_version) || null;
+    var updateUrl = (j && j.update_url) || null;
     if (d) d({t:'UPD_LOCAL_ENGINE', u:{
       available:true, checking:false, connecting:false, installing:false, failed:false,
       active:true, wasInstalled:true,
-      version:version, cores:cores, backends:backends
+      version:version, cores:cores, backends:backends,
+      updateAvailable:updateAvailable, updateVersion:updateVersion, updateUrl:updateUrl
     }});
     try { localStorage.setItem('cc_local_engine','1'); } catch(e){}
     return {versionChanged: versionChanged, version: version};
@@ -203,7 +207,7 @@
       // a connect attempt times out; `installing` is set when we've just
       // triggered a download and are waiting for the user to run the
       // installer. Both are cleared on every new Connect attempt.
-      localEngine: { available: false, active: false, checking: false, connecting: false, installing: false, failed: false, wasInstalled: false, version: null, cores: null, backends: null }
+      localEngine: { available: false, active: false, checking: false, connecting: false, installing: false, failed: false, wasInstalled: false, version: null, cores: null, backends: null, updateAvailable: false, updateVersion: null, updateUrl: null }
     },
 
     reducerCases: {
@@ -270,6 +274,14 @@
             ${le.version && html`<span style=${{fontSize:'0.63rem',color:'var(--text-faint)'}}>v${le.version}</span>`}
             ${le.cores && html`<span style=${{fontSize:'0.63rem',color:'var(--text-faint)'}}>\u00b7 ${le.cores} cores</span>`}
           </div>
+          ${le.updateAvailable && html`<div style=${{display:'flex',alignItems:'center',gap:'.5rem',padding:'.3rem .45rem',background:'rgba(234,179,8,.1)',border:'1px solid rgba(234,179,8,.25)',borderRadius:6,marginBottom:'.3rem'}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style=${{flexShrink:0}}><path d="M12 2v16M5 9l7-7 7 7"/></svg>
+            <span style=${{fontSize:'0.66rem',color:'#fbbf24',flex:1}}>
+              Update available${le.updateVersion ? ': v' + le.updateVersion : ''} — restart the engine to apply
+            </span>
+            ${(le.updateUrl || le.updateVersion) && html`<a href=${le.updateUrl || ('https://github.com/clashcontrol-io/ClashControlEngine/releases/tag/v' + le.updateVersion)} target="_blank" rel="noopener"
+              style=${{fontSize:'0.63rem',fontWeight:600,color:'#fbbf24',textDecoration:'none',background:'rgba(234,179,8,.15)',padding:'2px 7px',borderRadius:4,flexShrink:0}}>Download</a>`}
+          </div>`}
           ${le.backends && le.backends.length ? html`<div style=${{fontSize:'0.63rem',color:'var(--text-faint)',marginBottom:'.4rem'}}>
             Backends: ${le.backends.join(', ')}
           </div>` : null}

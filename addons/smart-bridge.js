@@ -300,9 +300,14 @@
       try {
         var msg = JSON.parse(evt.data);
         // Server-push notification: new bridge version available
+        // {"type":"update_available","version":"0.1.2","url":"https://github.com/.../releases/tag/v0.1.2"}
         if (msg.type === 'update_available') {
           console.log('%c[Smart Bridge] Update available:', 'color:#fbbf24;font-weight:bold', msg.version || '');
-          if (d) d({t:'UPD_SMART_BRIDGE', u:{updateAvailable: true, updateVersion: msg.version || null}});
+          if (d) d({t:'UPD_SMART_BRIDGE', u:{
+            updateAvailable: true,
+            updateVersion: msg.version || null,
+            updateUrl: msg.url || null
+          }});
           return;
         }
         // Tool call request
@@ -369,7 +374,7 @@
         smartBridge: { connected: false, available: false, checking: false,
           connecting: false, installing: false, failed: false,
           wasInstalled: false, version: null,
-          updateAvailable: false, updateVersion: null }
+          updateAvailable: false, updateVersion: null, updateUrl: null }
       },
 
       reducerCases: {
@@ -458,9 +463,8 @@
 
         // Connected state
         if (sb.connected) {
-          var _updateUrl = sb.updateVersion
-            ? 'https://github.com/clashcontrol-io/ClashControlSmartBridge/releases/download/' + sb.updateVersion + '/' + _installerFile
-            : null;
+          var _updateHref = sb.updateUrl ||
+            (sb.updateVersion ? 'https://github.com/clashcontrol-io/ClashControlSmartBridge/releases/tag/v' + sb.updateVersion : null);
           return html`<div style=${{display:'flex',flexDirection:'column',gap:'.5rem'}}>
             <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
               <span style=${{width:7,height:7,borderRadius:'50%',background:'#22c55e',flexShrink:0}}></span>
@@ -469,9 +473,10 @@
             ${sb.updateAvailable && html`<div style=${{display:'flex',alignItems:'center',gap:'.5rem',padding:'.3rem .45rem',background:'rgba(234,179,8,.1)',border:'1px solid rgba(234,179,8,.25)',borderRadius:6}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style=${{flexShrink:0}}><path d="M12 2v16M5 9l7-7 7 7"/></svg>
               <span style=${{fontSize:'0.66rem',color:'#fbbf24',flex:1}}>
-                Update available${sb.updateVersion ? ': ' + sb.updateVersion : ''} — restart the bridge to apply
+                Update available${sb.updateVersion ? ': v' + sb.updateVersion : ''} — restart the bridge to apply
               </span>
-              ${_updateUrl && html`<a href=${_updateUrl} download="" style=${{fontSize:'0.63rem',fontWeight:600,color:'#fbbf24',textDecoration:'none',background:'rgba(234,179,8,.15)',padding:'2px 7px',borderRadius:4,flexShrink:0}}>Download</a>`}
+              ${_updateHref && html`<a href=${_updateHref} target="_blank" rel="noopener"
+                style=${{fontSize:'0.63rem',fontWeight:600,color:'#fbbf24',textDecoration:'none',background:'rgba(234,179,8,.15)',padding:'2px 7px',borderRadius:4,flexShrink:0}}>Download</a>`}
             </div>`}
             <div style=${{fontSize:'0.63rem',color:'var(--text-faint)',lineHeight:1.6}}>
               Smart Bridge is running. Connect your AI assistant:
