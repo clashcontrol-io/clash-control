@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.8 (2026-04-10)
+- Add auto-migration for old sheets + debug logging for 2D outlines
+
 ## v4.14.7 (2026-04-10)
 - Fix 2D sheet: storey elevations are in mm but geometry is in metres
 
