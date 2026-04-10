@@ -15145,13 +15145,16 @@ function startApp() {
       });
       if (!isFinite(minX)) return;
       var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-      var w = canvasRef.current.width, h = canvasRef.current.height;
+      // Use CSS dimensions (not device pixels) for pan/zoom calculation
+      var el = canvasRef.current.parentElement || canvasRef.current;
+      var cssW = el.clientWidth || canvasRef.current.width;
+      var cssH = el.clientHeight || canvasRef.current.height;
       var extW = maxX - minX, extH = maxY - minY;
-      // pxm converts model units to pixels at zoom=1; factor it
+      // pxm converts model units to CSS pixels at zoom=1; factor it
       // into the fit so the building fills the viewport regardless
       // of whether the model is in meters, mm or cm.
       var pxm = getSheetPxm(getActiveSheet());
-      var zoom = Math.min(w / (extW * pxm * 1.2), h / (extH * pxm * 1.2), 2);
+      var zoom = Math.min(cssW / (extW * pxm * 1.2), cssH / (extH * pxm * 1.2), 2);
       if (zoom <= 0 || !isFinite(zoom)) zoom = 1;
       panRef.current.x = -cx * pxm * zoom;
       panRef.current.y = -cy * pxm * zoom;
@@ -15187,16 +15190,17 @@ function startApp() {
       var cvs = canvasRef.current; if (!cvs) return;
       var s = sRef.current; // always use latest state
       var ctx = cvs.getContext('2d');
-      var w = cvs.width, h = cvs.height;
+      var dpr = window.devicePixelRatio || 1;
+      var w = cvs.width, h = cvs.height; // already in device pixels
       var pan = panRef.current;
       var sheet = getActiveSheet();
       var pxm = getSheetPxm(sheet);
-      var viewScale = pan.zoom * pxm; // pixels per world-meter (or per-pixel if no sheet)
+      var viewScale = pan.zoom * pxm * dpr; // device-pixels per world-metre
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, w, h);
       ctx.save();
-      ctx.translate(w / 2 + pan.x, h / 2 + pan.y);
+      ctx.translate(w / 2 + pan.x * dpr, h / 2 + pan.y * dpr);
       ctx.scale(viewScale, viewScale);
 
       // Draw grid — 1m when a sheet is active, 50 units otherwise
@@ -15384,10 +15388,15 @@ function startApp() {
       ctx.restore();
 
       // Screen-space overlays (title block, scale bar, north arrow) — only in sheet mode
+      // Scale canvas by DPR so overlay sizes/fonts stay constant across HiDPI screens
       if (sheet) {
-        _ccDrawTitleBlock(ctx, w, h, sheet);
-        _ccDrawScaleBar(ctx, w, h, sheet, pan.zoom);
-        _ccDrawNorthArrow(ctx, w, h, sheet);
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        var cssW = w / dpr, cssH = h / dpr;
+        _ccDrawTitleBlock(ctx, cssW, cssH, sheet);
+        _ccDrawScaleBar(ctx, cssW, cssH, sheet, pan.zoom);
+        _ccDrawNorthArrow(ctx, cssW, cssH, sheet);
+        ctx.restore();
       }
     }
 
@@ -15492,7 +15501,12 @@ function startApp() {
       var cvs = canvasRef.current; if (!cvs) return;
       window._cc2DCanvas = cvs;
       var el = cvs.parentElement;
-      function resize() { cvs.width = el.clientWidth; cvs.height = el.clientHeight; redraw(); }
+      function resize() {
+        var dpr = window.devicePixelRatio || 1;
+        cvs.width = Math.round(el.clientWidth * dpr);
+        cvs.height = Math.round(el.clientHeight * dpr);
+        redraw();
+      }
       resize();
       var obs = new ResizeObserver(resize);
       obs.observe(el);
@@ -15511,8 +15525,9 @@ function startApp() {
       var sheet = getActiveSheet();
       var pxm = getSheetPxm(sheet);
       var viewScale = pan.zoom * pxm;
-      var px = e.clientX - rect.left - cvs.width / 2 - pan.x;
-      var py = e.clientY - rect.top - cvs.height / 2 - pan.y;
+      // Mouse position relative to canvas centre, in CSS pixels
+      var px = e.clientX - rect.left - rect.width / 2 - pan.x;
+      var py = e.clientY - rect.top - rect.height / 2 - pan.y;
       var wx = px / viewScale, wy = py / viewScale;
       // Snap to outline endpoints when a sheet is active and an index exists
       if (applySnap && sheet && window._cc2DSnapIndex) {
@@ -15597,7 +15612,20 @@ function startApp() {
     function onWheel(e) {
       e.preventDefault();
       var factor = e.deltaY > 0 ? 0.9 : 1.1;
-      panRef.current.zoom = Math.max(0.05, Math.min(50, panRef.current.zoom * factor));
+      var pan = panRef.current;
+      var oldZoom = pan.zoom;
+      var newZoom = Math.max(0.05, Math.min(50, oldZoom * factor));
+      // Zoom towards mouse position: keep the world point under the
+      // cursor stationary by adjusting the pan offset.
+      var rect = e.currentTarget.getBoundingClientRect();
+      var mx = e.clientX - rect.left - rect.width / 2;  // CSS-px from canvas centre
+      var my = e.clientY - rect.top  - rect.height / 2;
+      // mx = pan.x + worldX * oldZoom * pxm → worldX = (mx - pan.x) / (oldZoom * pxm)
+      // After zoom: mx = newPan.x + worldX * newZoom * pxm
+      // → newPan.x = mx - worldX * newZoom * pxm = mx - (mx - pan.x) * newZoom / oldZoom
+      pan.x = mx - (mx - pan.x) * newZoom / oldZoom;
+      pan.y = my - (my - pan.y) * newZoom / oldZoom;
+      pan.zoom = newZoom;
       redraw();
     }
 
@@ -15673,7 +15701,7 @@ function startApp() {
   function _ccFloorPlanLayerCode(ifcType) {
     if (!ifcType) return 'wall';
     if (/^Ifc(Wall|WallStandardCase|CurtainWall)/i.test(ifcType)) return 'wall';
-    if (/^Ifc(Slab|Roof|Footing|Stair|Ramp)/i.test(ifcType)) return 'structure';
+    if (/^Ifc(Slab|Roof|Footing|Stair|StairFlight|Ramp|RampFlight|Railing)/i.test(ifcType)) return 'structure';
     if (/^Ifc(Column|Beam|Member|Pile)/i.test(ifcType)) return 'structure';
     if (/^Ifc(Door|Window)/i.test(ifcType)) return 'opening';
     if (/^Ifc(Pipe|Duct|Cable|Flow|Distribution|Sanitary)/i.test(ifcType)) return 'mep';
