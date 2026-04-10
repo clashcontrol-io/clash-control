@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.19 (2026-04-10)
+- Strip ~1960 what-comments from index.html, keep section headers + why-comments
+
 ## v4.14.18 (2026-04-10)
 - Deduplicate IFC type names: build from IFC constants instead of raw IDs
 
