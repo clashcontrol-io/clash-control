@@ -20,12 +20,21 @@
   var _connected = false;
 
   // ── Download URLs for standalone binaries ─────────────────────────
-  var _releaseTag = 'v0.1.0';
+  var _releaseTag = 'v0.1.1';
   var _releaseBase = 'https://github.com/clashcontrol-io/ClashControlSmartBridge/releases/download/' + _releaseTag + '/';
   var _downloads = {
-    win:   {url: _releaseBase + 'clashcontrol-smart-bridge-win.exe',       label: 'Windows (.exe)',    cmd: 'clashcontrol-smart-bridge.exe'},
-    mac:   {url: _releaseBase + 'clashcontrol-smart-bridge-mac.tar.gz',    label: 'macOS (.tar.gz)',   cmd: 'tar -xzf clashcontrol-smart-bridge-mac.tar.gz\n./clashcontrol-smart-bridge'},
-    linux: {url: _releaseBase + 'clashcontrol-smart-bridge-linux.tar.gz',  label: 'Linux (.tar.gz)',   cmd: 'tar -xzf clashcontrol-smart-bridge-linux.tar.gz\n./clashcontrol-smart-bridge'}
+    win:   {url: _releaseBase + 'clashcontrol-smart-bridge-win.exe',
+            label: 'Windows (.exe)',
+            cmd: 'clashcontrol-smart-bridge-win.exe',
+            installPath: '%APPDATA%\\ClashControl\\clashcontrol-smart-bridge.exe'},
+    mac:   {url: _releaseBase + 'clashcontrol-smart-bridge-mac.tar.gz',
+            label: 'macOS (.tar.gz)',
+            cmd: 'tar -xzf clashcontrol-smart-bridge-mac.tar.gz && ./clashcontrol-smart-bridge',
+            installPath: '~/Library/Application Support/ClashControl/clashcontrol-smart-bridge'},
+    linux: {url: _releaseBase + 'clashcontrol-smart-bridge-linux.tar.gz',
+            label: 'Linux (.tar.gz)',
+            cmd: 'tar -xzf clashcontrol-smart-bridge-linux.tar.gz && ./clashcontrol-smart-bridge',
+            installPath: '~/.local/share/clashcontrol/clashcontrol-smart-bridge'}
   };
 
   function _detectOS() {
@@ -417,7 +426,7 @@
         var _claudeConfig = JSON.stringify({
           mcpServers: {
             clashcontrol: {
-              command: os === 'win' ? 'clashcontrol-smart-bridge.exe' : './clashcontrol-smart-bridge',
+              command: dl.installPath,
               args: ['--mcp']
             }
           }
@@ -494,9 +503,10 @@
             </div>
             ${sb.installing && html`<div style=${{fontSize:'0.63rem',color:'var(--text-faint)',lineHeight:1.5}}>
               <b>1.</b> Run the downloaded file<br/>
-              ${os === 'win' ? html`<code style=${{fontSize:'0.57rem',background:'var(--bg-tertiary)',padding:'2px 4px',borderRadius:3}}>${dl.cmd}</code>` :
-                html`<code style=${{fontSize:'0.57rem',background:'var(--bg-tertiary)',padding:'2px 4px',borderRadius:3,whiteSpace:'pre'}}>${dl.cmd}</code>`}
-              <br/><b>2.</b> The bridge will connect automatically
+              <code style=${{fontSize:'0.57rem',background:'var(--bg-tertiary)',padding:'2px 4px',borderRadius:3,wordBreak:'break-all'}}>${dl.cmd}</code>
+              <br/><b>2.</b> The bridge installs to:<br/>
+              <code style=${{fontSize:'0.57rem',background:'var(--bg-tertiary)',padding:'2px 4px',borderRadius:3,wordBreak:'break-all'}}>${dl.installPath}</code>
+              <br/><b>3.</b> It will connect automatically — you can then delete the downloaded file
             </div>`}
           </div>`;
         }
@@ -506,8 +516,8 @@
           return html`<div style=${{display:'flex',flexDirection:'column',gap:'.4rem'}}>
             <div style=${{fontSize:'0.69rem',color:'#fca5a5'}}>Could not connect to Smart Bridge.</div>
             <div style=${{fontSize:'0.6rem',color:'var(--text-faint)',lineHeight:1.5}}>
-              Make sure the bridge is running:<br/>
-              <code style=${{fontSize:'0.57rem',background:'var(--bg-tertiary)',padding:'2px 4px',borderRadius:3,wordBreak:'break-all'}}>${dl.cmd}</code>
+              Start the bridge manually:<br/>
+              <code style=${{fontSize:'0.57rem',background:'var(--bg-tertiary)',padding:'2px 4px',borderRadius:3,wordBreak:'break-all'}}>${dl.installPath}</code>
             </div>
             <div style=${{display:'flex',gap:'.3rem'}}>
               <button onClick=${function(){ _connectBridge(d); }}
