@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.16 (2026-04-10)
+- Make NL pre-block smarter: let conversational messages reach Gemma
+
 ## v4.14.15 (2026-04-10)
 - Fix walk mode navigation: orbit interference, nav cube, speed, up/down
 
