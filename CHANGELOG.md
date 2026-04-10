@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.10 (2026-04-10)
+- chore: bump version to 4.14.9
+
 ## v4.14.9 (2026-04-10)
 - Include all models in 2D outlines when none are marked visible
 
