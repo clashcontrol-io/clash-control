@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.28 (2026-04-13)
+- Fix set_view 'not available' when LLM calls before any chat interaction
+
 ## v4.14.26 (2026-04-13)
 - feat: IDS format export/import for Data Quality checks
 
