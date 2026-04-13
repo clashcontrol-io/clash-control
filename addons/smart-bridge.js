@@ -397,7 +397,67 @@
   handlers.color_by = function(p) { var v = p.by === 'none' ? null : 'by' + p.by.charAt(0).toUpperCase() + p.by.slice(1); _dispatch({ t: 'COLOR_BY_CLASS', v: v }); return p.by === 'none' ? 'Colors reset.' : 'Colored by ' + p.by + '.'; };
   handlers.set_theme = function(p) { document.documentElement.setAttribute('data-theme', p.theme); try { localStorage.setItem('cc_theme', p.theme); } catch (e) {} return p.theme.charAt(0).toUpperCase() + p.theme.slice(1) + ' theme.'; };
   handlers.set_visibility = function(p) { if (p.option === 'grid') _dispatch({ t: 'TOGGLE_GRID', v: p.visible }); else if (p.option === 'axes') _dispatch({ t: 'TOGGLE_AXES', v: p.visible }); else if (p.option === 'markers') _dispatch({ t: 'TOGGLE_MARKERS', v: p.visible }); return (p.visible ? 'Showing' : 'Hiding') + ' ' + p.option + '.'; };
-  handlers.restore_visibility = function() { if (window._ccUnghostAll) window._ccUnghostAll(); return 'All elements restored.'; };
+  handlers.restore_visibility = function() { if (window._unghostAll) window._unghostAll(); return 'All elements restored.'; };
+
+  handlers.isolate_elements = function(p) {
+    var s = _getState();
+    var models = s.models || [];
+    if (!models.length) return 'No models loaded.';
+
+    // Mode: 'ghost' (default) = ghost others, 'hide' = hide via class visibility, 'show_all' = reset
+    var mode = p.mode || 'ghost';
+
+    if (mode === 'show_all' || mode === 'reset') {
+      if (window._unghostAll) window._unghostAll();
+      _dispatch({ t: 'SHOW_ALL_CLASSES' });
+      return 'All elements visible.';
+    }
+
+    // Build list of target expressIds from filter criteria
+    var targets = [];
+    models.forEach(function(m) {
+      (m.elements || []).forEach(function(el) {
+        var pr = el.props || {};
+        var match = true;
+        if (p.ifcType && pr.ifcType !== p.ifcType) match = false;
+        if (p.storey && pr.storey !== p.storey) match = false;
+        if (p.discipline && m.discipline !== p.discipline) match = false;
+        if (p.material && (!pr.material || pr.material.indexOf(p.material) < 0)) match = false;
+        if (p.expressIds && p.expressIds.indexOf(el.expressId) < 0) match = false;
+        if (match) targets.push({ expressId: el.expressId, modelId: m.id });
+      });
+    });
+
+    if (!targets.length) return 'No elements matched the filter.';
+
+    if (mode === 'ghost') {
+      // Ghost everything except targets
+      if (window._ghostOthers) window._ghostOthers(targets);
+      return 'Isolated ' + targets.length + ' elements (others ghosted).';
+    }
+
+    if (mode === 'hide') {
+      // Use class visibility to hide matched elements
+      // Build class keys from targets
+      var s2 = _getState();
+      var cls = s2.classifications || {};
+      var viewKey = p.classView || 'byType';
+      var groups = cls[viewKey] || {};
+      var keysToHide = [];
+      Object.keys(groups).forEach(function(k) {
+        var grp = groups[k];
+        if (!grp || !grp.items) return;
+        var anyMatch = grp.items.some(function(it) {
+          return targets.some(function(t) { return t.expressId === it.expressId; });
+        });
+        if (anyMatch) keysToHide.push(viewKey + ':' + k);
+      });
+      keysToHide.forEach(function(key) { _dispatch({ t: 'TOGGLE_CLASS_VIS', key: key }); });
+      return 'Hidden ' + keysToHide.length + ' classification groups containing ' + targets.length + ' elements.';
+    }
+
+    return 'Unknown mode: ' + mode + '. Use ghost, hide, show_all, or reset.';
+  };
   handlers.fly_to_clash = function(p) { var s = _getState(); var cl = s.clashes || []; if (p.clashIndex < 0 || p.clashIndex >= cl.length) return 'Invalid clash index.'; _dispatch({ t: 'SELECT_CLASH', id: cl[p.clashIndex].id }); return 'Flying to clash ' + (p.clashIndex + 1) + '.'; };
   handlers.navigate_tab = function(p) { _dispatch({ t: 'TAB', v: p.tab }); return 'Switched to ' + p.tab + ' tab.'; };
   handlers.filter_clashes = function(p) { var u = {}; if (p.status) u.status = p.status; if (p.priority) u.priority = p.priority; _dispatch({ t: 'UPD_FILTERS', u: u }); return 'Filters updated.'; };
@@ -413,6 +473,211 @@
       if (window._ccWalkEnter) { var s = _getState(); var elev = 0; if (s.floorPlan) elev = s.floorPlan.elevation; else { var storeys = (typeof _ccCollectStoreys === 'function') ? _ccCollectStoreys(s.models || []) : []; if (storeys.length) { var gf = (typeof _ccStoreyToGeoFactor === 'function') ? _ccStoreyToGeoFactor(s.models || []) : 1; elev = storeys[0].elevation * gf; } } window._ccWalkEnter(elev); }
       return 'Walk mode activated.';
     } else { if (window._ccWalkExit) window._ccWalkExit(); _dispatch({ t: 'WALK_MODE', v: false }); return 'Walk mode deactivated.'; }
+  };
+
+  // ── 2D sheet / floor plan handlers ──────────────────────────────
+
+  handlers.create_2d_sheet = function(p) {
+    var s = _getState();
+    if (!s.models || !s.models.length) return 'No models loaded.';
+    var storeys = (typeof _ccCollectStoreys === 'function') ? _ccCollectStoreys(s.models) : [];
+    var elevation = null, storeyName = null;
+
+    if (p.floorName) {
+      // Match by storey name (fuzzy)
+      var match = storeys.find(function(st) { return st.name.toLowerCase().indexOf(p.floorName.toLowerCase()) >= 0; });
+      if (match) { elevation = match.elevation; storeyName = match.name; }
+      else return 'Storey "' + p.floorName + '" not found. Available: ' + storeys.map(function(st) { return st.name; }).join(', ');
+    } else if (p.height != null) {
+      elevation = p.height;
+      storeyName = 'Cut at ' + p.height;
+    } else if (storeys.length) {
+      elevation = storeys[0].elevation;
+      storeyName = storeys[0].name;
+    } else {
+      return 'No storey data and no height specified.';
+    }
+
+    var gf = (typeof _ccStoreyToGeoFactor === 'function') ? _ccStoreyToGeoFactor(s.models) : 1;
+    var geoElev = elevation * gf;
+    _dispatch({ t: 'FLOOR_PLAN', v: { storeyName: storeyName, elevation: geoElev, cutHeight: (p.cutHeight || 1.2) * gf } });
+
+    // Trigger export if format specified
+    if (p.exportFormat) {
+      var fmt = (p.exportFormat || '').toLowerCase();
+      setTimeout(function() {
+        if (fmt === 'dxf' && window._ccDoExportDXF) window._ccDoExportDXF();
+        else if (fmt === 'png' && window._ccDoExportPNG) window._ccDoExportPNG();
+        else if (fmt === 'pdf' && window._ccDoExportPDF) window._ccDoExportPDF();
+      }, 500); // slight delay to let floor plan render
+    }
+
+    return 'Floor plan "' + storeyName + '" at elevation ' + elevation + '.' + (p.exportFormat ? ' Exporting as ' + p.exportFormat.toUpperCase() + '.' : '');
+  };
+
+  handlers.list_storeys = function() {
+    var s = _getState();
+    var storeys = (typeof _ccCollectStoreys === 'function') ? _ccCollectStoreys(s.models || []) : [];
+    if (!storeys.length) return { storeys: [], note: 'No storey data found. IFC files need IfcBuildingStorey entities.' };
+    return { storeys: storeys.map(function(st) { return { name: st.name, elevation: st.elevation }; }) };
+  };
+
+  handlers.exit_floor_plan = function() {
+    _dispatch({ t: 'FLOOR_PLAN', v: null });
+    return 'Floor plan view exited.';
+  };
+
+  // ── Issue management handlers ─────────────────────────────────
+
+  handlers.create_issue = function(p) {
+    var id = (window._ccUid) ? window._ccUid() : 'i_' + Date.now();
+    _dispatch({ t: 'ADD_ISSUE', v: {
+      id: id, title: p.title || 'New Issue', description: p.description || '',
+      status: p.status || 'open', priority: p.priority || 'normal',
+      assignee: p.assignee || '', category: p.category || 'coordination',
+      createdAt: new Date().toISOString()
+    }});
+    return 'Issue "' + (p.title || 'New Issue') + '" created.';
+  };
+
+  handlers.update_issue = function(p) {
+    var s = _getState(); var issues = s.issues || [];
+    if (p.issueIndex < 0 || p.issueIndex >= issues.length) return 'Invalid issue index.';
+    var u = {};
+    if (p.status) u.status = p.status;
+    if (p.priority) u.priority = p.priority;
+    if (p.assignee != null) u.assignee = p.assignee;
+    if (p.title) u.title = p.title;
+    if (p.description != null) u.description = p.description;
+    _dispatch({ t: 'UPD_ISSUE', id: issues[p.issueIndex].id, u: u });
+    return 'Updated issue ' + (p.issueIndex + 1) + '.';
+  };
+
+  handlers.delete_issue = function(p) {
+    var s = _getState(); var issues = s.issues || [];
+    if (p.issueIndex < 0 || p.issueIndex >= issues.length) return 'Invalid issue index.';
+    _dispatch({ t: 'DEL_ISSUE', id: issues[p.issueIndex].id });
+    return 'Deleted issue ' + (p.issueIndex + 1) + '.';
+  };
+
+  // ── Data quality handler ──────────────────────────────────────
+
+  handlers.run_data_quality = function() {
+    var s = _getState();
+    if (!s.models || !s.models.length) return 'No models loaded.';
+    var allElements = [];
+    s.models.forEach(function(m) { (m.elements || []).forEach(function(el) { allElements.push(el); }); });
+    var results = {};
+    if (window._ccRunDataQualityChecks) results.general = window._ccRunDataQualityChecks(allElements);
+    if (window._ccRunBIMModelChecks) results.bim = window._ccRunBIMModelChecks(allElements);
+    return results;
+  };
+
+  // ── Section with position parameter ───────────────────────────
+
+  handlers.set_section_at = function(p) {
+    var axis = p.axis || 'y';
+    var position = p.position;
+    if (position == null) return 'Position required.';
+    // Use floor plan for horizontal cuts (Y axis)
+    if (axis === 'y') {
+      _dispatch({ t: 'FLOOR_PLAN', v: { storeyName: 'Section at ' + position, elevation: position, cutHeight: p.cutHeight || 1.2 } });
+      return 'Horizontal section at Y=' + position + '.';
+    }
+    // For X/Z, use standard section with custom plane
+    _dispatch({ t: 'SECTION', axis: axis, position: position });
+    return 'Section plane on ' + axis.toUpperCase() + ' at ' + position + '.';
+  };
+
+  // ── Model management handlers ───────────────────────────────────
+
+  handlers.delete_model = function(p) {
+    var s = _getState(); var models = s.models || [];
+    var match = models.find(function(m) { return m.name.toLowerCase() === (p.name || '').toLowerCase(); });
+    if (!match) {
+      match = models.find(function(m) { return m.name.toLowerCase().indexOf((p.name || '').toLowerCase()) >= 0; });
+    }
+    if (!match) return 'Model "' + p.name + '" not found. Loaded: ' + models.map(function(m) { return m.name; }).join(', ');
+    _dispatch({ t: 'DEL_MODEL', id: match.id });
+    return 'Removed model "' + match.name + '".';
+  };
+
+  handlers.rename_model = function(p) {
+    var s = _getState(); var models = s.models || [];
+    var match = models.find(function(m) { return m.name.toLowerCase() === (p.oldName || '').toLowerCase(); });
+    if (!match) {
+      match = models.find(function(m) { return m.name.toLowerCase().indexOf((p.oldName || '').toLowerCase()) >= 0; });
+    }
+    if (!match) return 'Model "' + p.oldName + '" not found.';
+    _dispatch({ t: 'UPD_MODEL', id: match.id, u: { name: p.newName } });
+    return 'Renamed "' + match.name + '" to "' + p.newName + '".';
+  };
+
+  handlers.get_model_info = function(p) {
+    var s = _getState(); var models = s.models || [];
+    var match = models.find(function(m) { return m.name.toLowerCase().indexOf((p.name || '').toLowerCase()) >= 0; });
+    if (!match && models.length === 1) match = models[0];
+    if (!match) return 'Model "' + (p.name || '') + '" not found.';
+    return {
+      name: match.name, discipline: match.discipline || 'Unknown',
+      elementCount: (match.elements || []).length,
+      meshCount: (match.meshes || []).length,
+      storeys: (match.storeyData || []).map(function(st) { return { name: st.name, elevation: st.elevation }; }),
+      visible: match.visible !== false,
+      stats: match.stats || {},
+      color: match.color || null
+    };
+  };
+
+  handlers.toggle_model = function(p) {
+    var s = _getState(); var models = s.models || [];
+    var match = models.find(function(m) { return m.name.toLowerCase().indexOf((p.name || '').toLowerCase()) >= 0; });
+    if (!match) return 'Model "' + p.name + '" not found.';
+    var newVis = p.visible != null ? !!p.visible : !(match.visible !== false);
+    _dispatch({ t: 'UPD_MODEL', id: match.id, u: { visible: newVis } });
+    return (newVis ? 'Showing' : 'Hiding') + ' model "' + match.name + '".';
+  };
+
+  // ── NL / AI handler ───────────────────────────────────────────
+
+  handlers.send_nl_command = function(p) {
+    if (window._ccProcessNLCommand) {
+      var result = window._ccProcessNLCommand(p.command || p.message || '');
+      return result || 'Command processed.';
+    }
+    return 'NL command processing not available.';
+  };
+
+  // ── Camera control handlers ─────────────────────────────────────
+
+  handlers.get_model_bounds = function() {
+    var vp = window._ccViewport;
+    if (vp) { var b = vp.getBounds(); if (b) return b; }
+    return 'No models loaded or bounds unavailable.';
+  };
+
+  handlers.get_camera = function() {
+    var vp = window._ccViewport;
+    if (vp) { var c = vp.getCamera(); if (c) return c; }
+    return 'Camera state unavailable.';
+  };
+
+  handlers.pan_camera = function(p) {
+    var vp = window._ccViewport;
+    if (vp) { vp.pan(p.x || 0, p.y || 0, p.z || 0); return 'Camera panned by [' + (p.x||0) + ', ' + (p.y||0) + ', ' + (p.z||0) + '].'; }
+    return 'Pan not available.';
+  };
+
+  handlers.set_camera = function(p) {
+    var vp = window._ccViewport;
+    if (vp) { vp.flyTo(p.px, p.py, p.pz, p.tx, p.ty, p.tz); return 'Camera moved.'; }
+    return 'Camera control not available.';
+  };
+
+  handlers.zoom_to_bounds = function(p) {
+    var vp = window._ccViewport;
+    if (vp) { vp.fitAll(p.padding || 1.0); return 'Zoomed to fit model bounds.'; }
+    return 'Zoom not available.';
   };
 
   // ── WebSocket connection ──────────────────────────────────────────
