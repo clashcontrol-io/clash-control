@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.32 (2026-04-13)
+- Add 90-day LinkedIn calendar and Phase 1 posts (LI-01 to LI-16)
+
 ## v4.14.31 (2026-04-13)
 - feat: 2D sheet tools + section plane position + raycast clipping fix
 
