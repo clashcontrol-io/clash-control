@@ -8470,9 +8470,10 @@ function startApp() {
         if (pairedBases[base]) return;
         if (ext === 'glb' || ext === 'gltf') return;
         if (ext === 'ifcmeta' || ext === 'ifcprops') {
-          var _existingModel = s.models.find(function(m){ return m.name === base; });
+          var _liveModels = (window._ccLatestState && window._ccLatestState.models) || s.models;
+          var _existingModel = _liveModels.find(function(m){ return m.name === base; });
           if (!_existingModel) {
-            errors.push(f.name + ': No matching model found. Load ' + base + '.glb first, or drop all files (' + base + '.glb + ' + f.name + ') together.');
+            errors.push(f.name + ': No matching model found. Load ' + base + '.glb or .ifc first, or drop all files together.');
             return;
           }
           chain = chain.then(function() {
