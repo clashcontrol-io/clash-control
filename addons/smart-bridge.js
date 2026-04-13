@@ -811,6 +811,124 @@
     return 'Zoom not available.';
   };
 
+  // ── Tool manifest ─────────────────────────────────────────────────
+  // Sent to the bridge on WebSocket connect so the binary can update its
+  // /tools and /openapi.json endpoints without requiring a rebuild.
+  // Schema format: JSON Schema subset (OpenAPI-compatible).
+
+  var _TOOL_MANIFEST = [
+    { name:'get_status',          description:'Returns a snapshot of the current session: models, clash/issue counts, detection rules, active tab, walk mode, theme.' },
+    { name:'get_clashes',         description:'Retrieves detected clash pairs with status, priority, severity, storey, element types/names, and distance.',
+      params:{ status:{type:'string',enum:['all','open','resolved','approved'],opt:1}, limit:{type:'number',opt:1} } },
+    { name:'get_issues',          description:'Retrieves coordination issues with status, priority, assignee, and description.',
+      params:{ status:{type:'string',enum:['all','open','in_progress','resolved','closed'],opt:1}, limit:{type:'number',opt:1} } },
+    { name:'run_detection',       description:'Starts clash detection between loaded IFC models. Results available via get_clashes.',
+      params:{ modelA:{type:'string',opt:1}, modelB:{type:'string',opt:1}, maxGap:{type:'number',opt:1}, hard:{type:'boolean',opt:1}, excludeSelf:{type:'boolean',opt:1} } },
+    { name:'set_detection_rules', description:'Updates detection parameters without running detection.',
+      params:{ maxGap:{type:'number',opt:1}, hard:{type:'boolean',opt:1}, excludeSelf:{type:'boolean',opt:1}, duplicates:{type:'boolean',opt:1} } },
+    { name:'update_clash',        description:'Updates a single clash by 0-based index: status, priority, assignee, or title.',
+      params:{ clashIndex:{type:'number'}, status:{type:'string',opt:1}, priority:{type:'string',opt:1}, assignee:{type:'string',opt:1}, title:{type:'string',opt:1} } },
+    { name:'batch_update_clashes',description:'Applies a batch action to clashes matching a natural-language filter.',
+      params:{ action:{type:'string'}, filter:{type:'string'} } },
+    { name:'filter_clashes',      description:'Applies status/priority filters to the clash list UI.',
+      params:{ status:{type:'string',opt:1}, priority:{type:'string',opt:1} } },
+    { name:'sort_clashes',        description:'Sorts the clash list by a field: status, priority, storey, typeA, typeB, distance, severity.',
+      params:{ sortBy:{type:'string'} } },
+    { name:'group_clashes',       description:"Groups the clash list by a field or 'none' to ungroup.",
+      params:{ groupBy:{type:'string'} } },
+    { name:'fly_to_clash',        description:'Animates the 3D camera to a specific clash by 0-based index.',
+      params:{ clashIndex:{type:'number'} } },
+    { name:'set_view',            description:"Changes the 3D camera to a standard view: top, front, back, left, right, isometric, or reset.",
+      params:{ view:{type:'string',enum:['top','front','back','left','right','isometric','reset']} } },
+    { name:'set_render_style',    description:'Changes 3D render mode: standard, shaded, rendered, wireframe.',
+      params:{ style:{type:'string',enum:['standard','shaded','rendered','wireframe']} } },
+    { name:'set_section',         description:'Creates a section cutting plane along an axis. Optional position sets absolute world-space coordinate.',
+      params:{ axis:{type:'string',enum:['x','y','z','none']}, position:{type:'number',opt:1} } },
+    { name:'set_section_at',      description:'Places a section plane at an absolute world-space position on the given axis.',
+      params:{ axis:{type:'string',enum:['x','y','z']}, position:{type:'number'}, cutHeight:{type:'number',opt:1} } },
+    { name:'color_by',            description:"Colors elements by a field: discipline, type, storey, model, status, or 'none' to reset.",
+      params:{ by:{type:'string'} } },
+    { name:'set_theme',           description:'Switches the UI between dark and light themes.',
+      params:{ theme:{type:'string',enum:['dark','light']} } },
+    { name:'set_visibility',      description:'Toggles visibility of UI overlays: grid, axes, or markers.',
+      params:{ option:{type:'string',enum:['grid','axes','markers']}, visible:{type:'boolean'} } },
+    { name:'restore_visibility',  description:'Unhides all ghosted/hidden IFC elements, restoring full model visibility.' },
+    { name:'isolate_elements',    description:'Ghosts or hides elements not matching a filter (ifcType, storey, discipline, material, expressIds). mode: ghost|hide|show_all.',
+      params:{ mode:{type:'string',enum:['ghost','hide','show_all'],opt:1}, ifcType:{type:'string',opt:1}, storey:{type:'string',opt:1}, discipline:{type:'string',opt:1}, material:{type:'string',opt:1}, expressIds:{type:'array',items:{type:'number'},opt:1} } },
+    { name:'navigate_tab',        description:'Switches the active sidebar tab: clashes, issues, models, settings, addons.',
+      params:{ tab:{type:'string'} } },
+    { name:'measure',             description:"Controls measurement tool: mode 'point', 'edge', 'stop', or 'clear'.",
+      params:{ mode:{type:'string',enum:['point','edge','stop','clear']} } },
+    { name:'walk_mode',           description:'Enables or disables first-person walk mode.',
+      params:{ enabled:{type:'boolean'} } },
+    { name:'get_model_bounds',    description:'Returns the bounding box of all loaded models: min, max, center, size (metres).' },
+    { name:'get_camera',          description:'Returns current camera position, target point, and orbit distance.' },
+    { name:'pan_camera',          description:'Pans the 3D camera by a world-space offset.',
+      params:{ x:{type:'number',opt:1}, y:{type:'number',opt:1}, z:{type:'number',opt:1} } },
+    { name:'set_camera',          description:'Flies the camera to a new position and look-at target.',
+      params:{ px:{type:'number'}, py:{type:'number'}, pz:{type:'number'}, tx:{type:'number'}, ty:{type:'number'}, tz:{type:'number'} } },
+    { name:'zoom_to_bounds',      description:'Fits the camera to show all model geometry.',
+      params:{ padding:{type:'number',opt:1} } },
+    { name:'send_nl_command',     description:'Sends a natural-language command directly to the ClashControl NL engine.',
+      params:{ command:{type:'string'} } },
+    { name:'list_storeys',        description:'Returns all building storeys with names and elevations. Call before create_2d_sheet.' },
+    { name:'create_2d_sheet',     description:'Creates a 2D floor plan sheet at a storey or elevation, switches to sheet view. Returns sheetId.',
+      params:{ floorName:{type:'string',opt:1}, height:{type:'number',opt:1}, scale:{type:'string',opt:1}, format:{type:'string',enum:['png','pdf','dxf'],opt:1} } },
+    { name:'list_2d_sheets',      description:'Returns all 2D sheets with IDs, names, elevations, annotation counts, and active sheet ID.' },
+    { name:'export_sheet',        description:'Exports a floor plan sheet as PNG, PDF, or DXF. Uses active sheet if sheetId omitted.',
+      params:{ sheetId:{type:'string',opt:1}, format:{type:'string',enum:['png','pdf','dxf'],opt:1} } },
+    { name:'delete_sheet',        description:'Permanently deletes a sheet and all its annotations.',
+      params:{ sheetId:{type:'string'} } },
+    { name:'exit_floor_plan',     description:'Returns from 2D floor plan mode to the standard 3D perspective view.' },
+    { name:'pan_2d_sheet',        description:'Pans the 2D floor plan canvas by a pixel offset.',
+      params:{ x:{type:'number',opt:1}, y:{type:'number',opt:1} } },
+    { name:'zoom_2d_sheet',       description:'Sets the 2D floor plan zoom level (0.05–50). 1.0 = natural size.',
+      params:{ level:{type:'number'} } },
+    { name:'fit_2d_bounds',       description:'Auto-fits the 2D floor plan to show all geometry.' },
+    { name:'add_annotation',      description:'Adds a markup annotation (text, pin, line, rect, arrow) to the active 2D sheet.',
+      params:{ type:{type:'string',enum:['text','pin','line','rect','arrow'],opt:1}, x:{type:'number'}, y:{type:'number'}, x2:{type:'number',opt:1}, y2:{type:'number',opt:1}, text:{type:'string',opt:1}, color:{type:'string',opt:1} } },
+    { name:'measure_on_sheet',    description:'Adds a dimension annotation between two world-space points on the active 2D sheet.',
+      params:{ points:{type:'array',items:{type:'number'},minItems:4,maxItems:4}, color:{type:'string',opt:1} } },
+    { name:'create_issue',        description:'Creates a coordination issue.',
+      params:{ title:{type:'string'}, description:{type:'string',opt:1}, status:{type:'string',opt:1}, priority:{type:'string',opt:1}, assignee:{type:'string',opt:1}, category:{type:'string',opt:1} } },
+    { name:'update_issue',        description:'Updates an issue by 0-based index.',
+      params:{ issueIndex:{type:'number'}, status:{type:'string',opt:1}, priority:{type:'string',opt:1}, assignee:{type:'string',opt:1}, title:{type:'string',opt:1}, description:{type:'string',opt:1} } },
+    { name:'delete_issue',        description:'Deletes an issue by 0-based index.',
+      params:{ issueIndex:{type:'number'} } },
+    { name:'export_bcf',          description:'Exports all clashes or issues as a BCF ZIP file.',
+      params:{ version:{type:'string',enum:['2.1','3.0'],opt:1} } },
+    { name:'create_project',      description:'Creates a new project.',
+      params:{ name:{type:'string'} } },
+    { name:'switch_project',      description:'Switches to a project by name (fuzzy match).',
+      params:{ name:{type:'string'} } },
+    { name:'delete_model',        description:'Removes a loaded IFC model by name.',
+      params:{ name:{type:'string'} } },
+    { name:'rename_model',        description:'Renames a loaded model.',
+      params:{ oldName:{type:'string'}, newName:{type:'string'}, discipline:{type:'string',opt:1} } },
+    { name:'get_model_info',      description:'Returns element list and metadata for a model.',
+      params:{ name:{type:'string'} } },
+    { name:'toggle_model',        description:'Shows or hides a model by name.',
+      params:{ name:{type:'string'}, visible:{type:'boolean'} } },
+    { name:'run_data_quality',    description:'Runs BIM/ILS data quality checks on all loaded models.' }
+  ];
+
+  // Convert compact schema to JSON Schema object format used by MCP/OpenAPI
+  function _buildSchema(params) {
+    if (!params) return { type: 'object', properties: {}, required: [] };
+    var props = {}, req = [];
+    Object.keys(params).forEach(function(k) {
+      var p = params[k];
+      var s = { type: p.type, description: p.description || k };
+      if (p.enum) s.enum = p.enum;
+      if (p.items) s.items = p.items;
+      if (p.minItems) s.minItems = p.minItems;
+      if (p.maxItems) s.maxItems = p.maxItems;
+      props[k] = s;
+      if (!p.opt) req.push(k);
+    });
+    return { type: 'object', properties: props, required: req };
+  }
+
   // ── WebSocket connection ──────────────────────────────────────────
 
   function _connectWs(d) {
@@ -822,6 +940,14 @@
       _connected = true;
       if (d) d({t:'UPD_SMART_BRIDGE', u:{connected:true, bridgeUpdating:false, bridgeReconnecting:false}});
       console.log('%c[Smart Bridge] Connected', 'color:#22c55e;font-weight:bold');
+      // Announce full tool manifest so the bridge can update /tools and /openapi.json
+      // without requiring a binary rebuild when new handlers are added.
+      try {
+        var manifest = _TOOL_MANIFEST.map(function(t) {
+          return { name: t.name, description: t.description, inputSchema: _buildSchema(t.params) };
+        });
+        _ws.send(JSON.stringify({ type: 'tool_manifest', tools: manifest }));
+      } catch (e) { console.warn('[Smart Bridge] Failed to send tool manifest:', e); }
     };
 
     _ws.onmessage = function(evt) {
