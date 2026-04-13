@@ -814,3 +814,118 @@ Free at clashcontrol.io
 
 #BIM #PWA #OpenBIM #Privacy
 
+
+---
+
+### LI-37 — Medium — W10 Monday
+*Visual: none*
+
+Browser-native tools are going to eat a significant share of the AEC software market in the next five years.
+
+Not because they're better in every dimension — desktop applications still have advantages in performance and OS integration. But because the browser has crossed a threshold.
+
+WebAssembly makes it possible to run IFC parsing at near-native speed in a browser tab. WebGL gives you 3D rendering. The File System Access API gives you local file access. Service workers give you offline capability.
+
+The technical objections to browser-based BIM tooling — "too slow," "can't handle large models," "needs internet" — are no longer categorically true.
+
+What remains is inertia. AEC software procurement decisions are made on 3-5 year cycles. The tools that won those decisions in 2020 will still be on the shortlist in 2025, not because they're the best technical solution but because they're the known quantity.
+
+The shift will be gradual. It will start with supplementary tools — free, low-friction alternatives for specific workflows. Then those tools will get better. Then the case for the expensive desktop application will get harder to make.
+
+ClashControl is one early signal of this. A clash detection tool that runs in a browser tab and costs nothing is a marginal experiment today. Give it three years.
+
+→ clashcontrol.io
+
+#BIM #AECTech #Browser #OpenBIM #FutureOfWork
+
+---
+
+### LI-38 — Long / Big Topic — W10 Tuesday
+*Visual: none*
+
+**What a good BIM coordination workflow actually looks like — step by step**
+
+Most coordination failures I've seen aren't caused by bad software or bad clash detection. They're caused by coordination processes that were set up informally and never properly documented.
+
+Here's what a solid coordination workflow looks like.
+
+**1. Agree the coordination protocol before any models are exchanged**
+
+Who produces which model? What IFC version? What coordinate system and survey point? What level of development is expected at each stage? What are the clash tolerance thresholds — how small a clash can be ignored?
+
+This document should exist before the first coordination meeting. In practice, it often doesn't.
+
+**2. Establish a model exchange schedule**
+
+Clash detection is only useful if the models are current. Set a fixed exchange cadence — weekly during detailed design is common — and enforce it. A coordination run on a model that's three weeks old is worse than no coordination run because it creates false confidence.
+
+**3. Run discipline pair checks systematically**
+
+MEP vs structure. Architecture vs MEP. Architecture vs structure. Don't run "everything vs everything" — it produces an unmanageable clash count and buries real issues in noise.
+
+**4. Triage before the coordination meeting, not during it**
+
+The coordination meeting should be for resolution decisions, not for going through a clash list. Someone needs to triage the output before the meeting — remove false positives, group related clashes, identify the critical issues.
+
+ClashControl's AI triage flags likely false positives automatically. That's a starting point, not a complete review.
+
+**5. Assign ownership and track resolution**
+
+Every clash that isn't waived needs an owner and a resolution date. BCF handles this — status, assignee, due date. Whatever platform you use, the discipline lead needs to know which clashes are theirs and when they need to be resolved.
+
+**6. Re-run after every model update**
+
+Clash detection is not a one-off activity. Every time a model is updated, new clashes may have been introduced and old ones may have been resolved. The detection run needs to happen on every model exchange.
+
+**7. Close the loop**
+
+At the end of a coordination stage, every clash should be either resolved or formally waived with a documented reason. Don't carry open clashes into the next stage without acknowledgement.
+
+None of this requires expensive software. It requires process discipline and a team that takes coordination seriously.
+
+The tools make it faster. The process makes it effective.
+
+→ clashcontrol.io
+
+#BIM #BIMCoordination #AECTech #Process #Architecture
+
+---
+
+### LI-39 — Simple — W10 Thursday
+
+What's your biggest pain point in clash review?
+
+A. Too many false positives to sort through
+B. Getting disciplines to acknowledge and resolve their clashes
+C. Keeping track of status across a long coordination programme
+D. Something else — comment below
+
+#BIM #BIMCoordination #Poll
+
+---
+
+### LI-40 — Medium — W10 Friday
+*Visual: none — or a roadmap teaser graphic*
+
+What's coming in ClashControl:
+
+We don't publish a fixed roadmap — this is an open-source project and priorities shift based on what users actually need. But here's what's on the table.
+
+Better multi-model coordination: more granular control over which element types participate in each clash rule.
+
+Improved BCF round-trip: bidirectional sync support for platforms that expose a BCF API.
+
+Performance improvements for large models: the OBB engine handles typical coordination models well, but very large federated models (10+ IFC files, complex MEP) push the limits of what works comfortably in-browser.
+
+Shared project improvements: better conflict resolution for teams using the folder-sync collaboration feature.
+
+And more AI: better clash grouping, automatic coordination report generation, smarter false positive detection.
+
+None of this has a ship date. All of it is directionally where we're heading.
+
+If there's something specific you want to see, open an issue on GitHub — that's the most direct input into what gets prioritised.
+
+→ github.com/clashcontrol-io/clashcontrol
+
+#BIM #OpenSource #AECTech #Roadmap
+
