@@ -358,7 +358,67 @@
   handlers.color_by = function(p) { var v = p.by === 'none' ? null : 'by' + p.by.charAt(0).toUpperCase() + p.by.slice(1); _dispatch({ t: 'COLOR_BY_CLASS', v: v }); return p.by === 'none' ? 'Colors reset.' : 'Colored by ' + p.by + '.'; };
   handlers.set_theme = function(p) { document.documentElement.setAttribute('data-theme', p.theme); try { localStorage.setItem('cc_theme', p.theme); } catch (e) {} return p.theme.charAt(0).toUpperCase() + p.theme.slice(1) + ' theme.'; };
   handlers.set_visibility = function(p) { if (p.option === 'grid') _dispatch({ t: 'TOGGLE_GRID', v: p.visible }); else if (p.option === 'axes') _dispatch({ t: 'TOGGLE_AXES', v: p.visible }); else if (p.option === 'markers') _dispatch({ t: 'TOGGLE_MARKERS', v: p.visible }); return (p.visible ? 'Showing' : 'Hiding') + ' ' + p.option + '.'; };
-  handlers.restore_visibility = function() { if (window._ccUnghostAll) window._ccUnghostAll(); return 'All elements restored.'; };
+  handlers.restore_visibility = function() { if (window._unghostAll) window._unghostAll(); return 'All elements restored.'; };
+
+  handlers.isolate_elements = function(p) {
+    var s = _getState();
+    var models = s.models || [];
+    if (!models.length) return 'No models loaded.';
+
+    // Mode: 'ghost' (default) = ghost others, 'hide' = hide via class visibility, 'show_all' = reset
+    var mode = p.mode || 'ghost';
+
+    if (mode === 'show_all' || mode === 'reset') {
+      if (window._unghostAll) window._unghostAll();
+      _dispatch({ t: 'SHOW_ALL_CLASSES' });
+      return 'All elements visible.';
+    }
+
+    // Build list of target expressIds from filter criteria
+    var targets = [];
+    models.forEach(function(m) {
+      (m.elements || []).forEach(function(el) {
+        var pr = el.props || {};
+        var match = true;
+        if (p.ifcType && pr.ifcType !== p.ifcType) match = false;
+        if (p.storey && pr.storey !== p.storey) match = false;
+        if (p.discipline && m.discipline !== p.discipline) match = false;
+        if (p.material && (!pr.material || pr.material.indexOf(p.material) < 0)) match = false;
+        if (p.expressIds && p.expressIds.indexOf(el.expressId) < 0) match = false;
+        if (match) targets.push({ expressId: el.expressId, modelId: m.id });
+      });
+    });
+
+    if (!targets.length) return 'No elements matched the filter.';
+
+    if (mode === 'ghost') {
+      // Ghost everything except targets
+      if (window._ghostOthers) window._ghostOthers(targets);
+      return 'Isolated ' + targets.length + ' elements (others ghosted).';
+    }
+
+    if (mode === 'hide') {
+      // Use class visibility to hide matched elements
+      // Build class keys from targets
+      var s2 = _getState();
+      var cls = s2.classifications || {};
+      var viewKey = p.classView || 'byType';
+      var groups = cls[viewKey] || {};
+      var keysToHide = [];
+      Object.keys(groups).forEach(function(k) {
+        var grp = groups[k];
+        if (!grp || !grp.items) return;
+        var anyMatch = grp.items.some(function(it) {
+          return targets.some(function(t) { return t.expressId === it.expressId; });
+        });
+        if (anyMatch) keysToHide.push(viewKey + ':' + k);
+      });
+      keysToHide.forEach(function(key) { _dispatch({ t: 'TOGGLE_CLASS_VIS', key: key }); });
+      return 'Hidden ' + keysToHide.length + ' classification groups containing ' + targets.length + ' elements.';
+    }
+
+    return 'Unknown mode: ' + mode + '. Use ghost, hide, show_all, or reset.';
+  };
   handlers.fly_to_clash = function(p) { var s = _getState(); var cl = s.clashes || []; if (p.clashIndex < 0 || p.clashIndex >= cl.length) return 'Invalid clash index.'; _dispatch({ t: 'SELECT_CLASH', id: cl[p.clashIndex].id }); return 'Flying to clash ' + (p.clashIndex + 1) + '.'; };
   handlers.navigate_tab = function(p) { _dispatch({ t: 'TAB', v: p.tab }); return 'Switched to ' + p.tab + ' tab.'; };
   handlers.filter_clashes = function(p) { var u = {}; if (p.status) u.status = p.status; if (p.priority) u.priority = p.priority; _dispatch({ t: 'UPD_FILTERS', u: u }); return 'Filters updated.'; };
