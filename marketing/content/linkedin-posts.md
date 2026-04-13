@@ -929,3 +929,101 @@ If there's something specific you want to see, open an issue on GitHub — that'
 
 #BIM #OpenSource #AECTech #Roadmap
 
+
+---
+
+### LI-41 — Long / Big Topic — W11 Monday
+*Visual: none*
+
+**The buildingSMART standards every BIM coordinator should actually know**
+
+BuildingSMART International maintains the open standards that make vendor-neutral BIM possible. Most coordinators know IFC. Fewer know the rest of the stack — and that knowledge gap matters.
+
+**IFC — Industry Foundation Classes**
+
+The model exchange format. IFC stores geometry, properties, and relationships in a structured, vendor-neutral container. Every major authoring platform exports IFC. Version 2x3 is most widely supported; IFC 4 is richer but less universally implemented. This is the foundation everything else builds on.
+
+**BCF — BIM Collaboration Format**
+
+The issue exchange format. BCF packages coordination issues — clash locations, camera viewpoints, status, assignee, notes — into a ZIP-based container that any BCF-compatible platform can open. The coordination tool that found the clash doesn't need to be the same tool that manages the issue.
+
+**IDS — Information Delivery Specification**
+
+The model validation format. IDS lets project teams define exactly what information a model must contain — which properties, which values, which element types — and validate IFC files against those requirements. This is how you enforce BIM Execution Plan requirements technically rather than manually.
+
+**bSDD — buildingSMART Data Dictionary**
+
+A shared library of standardised property names, definitions, and classifications. When a wall has a property called "FireRating" in your model, bSDD is where the canonical definition of that property lives. Relevant for anyone doing data quality checks or cross-project data standardisation.
+
+**IDM — Information Delivery Manual**
+
+Process maps for BIM workflows — who provides what information, when, and to whom. Less visible in day-to-day tool use but important for understanding how the standards fit together.
+
+**Why this matters practically**
+
+The coordinator who understands this stack can set up IDS validation for incoming models. They can specify BCF as the coordination handoff format and explain why it's better than PDFs. They can evaluate whether a tool is genuinely open or just IFC-capable.
+
+The coordinator who only knows "Navisworks and Revit" is dependent on whichever vendor those tools are built by.
+
+ClashControl supports IFC, BCF 2.1, and IDS. All three. All free.
+
+→ clashcontrol.io
+
+#BIM #BuildingSMART #IFC #BCF #IDS #OpenBIM
+
+---
+
+### LI-42 — Medium — W11 Tuesday
+*Replace with real user quote when available*
+
+We asked some ClashControl users what they use it for. The answers weren't what we expected.
+
+A university lecturer: "I use it to teach coordination workflows to 40 students who can't all get Autodesk licenses."
+
+A freelance structural engineer: "Quick sanity check before I send models to the main contractor. Takes 5 minutes."
+
+A BIM manager at a housing developer: "We run it for early-stage coordination checks before we commit to paying for a full Navisworks run."
+
+None of these are the "replace Navisworks entirely" use case. They're the gaps — the checks that weren't happening before because the tooling overhead wasn't worth it.
+
+That's what free unlocks. Not replacing the expensive tool. Making the checks that weren't happening, happen.
+
+→ clashcontrol.io
+
+#BIM #OpenBIM #AECTech #Education
+
+---
+
+### LI-43 — Simple — W11 Thursday
+
+ClashControl has saved teams real money on licensing this year.
+
+If it's saved yours, there's a way to support continued development:
+
+→ github.com/sponsors/clashcontrol-io
+
+Every sponsorship keeps the tool free for everyone else.
+
+#BIM #OpenSource #OpenBIM
+
+---
+
+### LI-44 — Medium — W11 Friday
+*Visual: none*
+
+The ClashControl codebase is a single HTML file.
+
+Not a build artifact. Not a compiled bundle. A single HTML file you can open in a text editor and read from top to bottom.
+
+This was a deliberate architectural choice. No build step means no build failures. No node_modules means no dependency vulnerabilities from packages you don't control. No bundler means the code that ships is the code you wrote.
+
+The tradeoff: the file is ~1.2MB and growing. Features that are optional or rarely used live in separate addon files loaded at runtime.
+
+The technical stack: Preact for the UI, Three.js for 3D, web-ifc WASM for IFC parsing. All loaded from CDN with integrity hashes. Everything else is hand-written.
+
+Is this the right architecture for a large team? Probably not. Is it the right architecture for an open-source tool that anyone should be able to audit, fork, and run locally without a computer science degree? I think so.
+
+Source: github.com/clashcontrol-io/clashcontrol
+
+#BIM #OpenSource #WebDev #AECTech
+
