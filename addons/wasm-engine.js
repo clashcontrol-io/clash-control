@@ -83,14 +83,19 @@
    * @param {Float32Array} vertsA - flat xyz vertices
    * @param {Float32Array} vertsB - flat xyz vertices
    * @param {number} threshold - max distance in model units
+   * @param {Float64Array} [outPair] - optional 6-element buffer [ax,ay,az, bx,by,bz]
    * @returns {number} distance, or Infinity if beyond threshold
    */
-  window._ccWasmMinDist = function(vertsA, vertsB, threshold) {
+  window._ccWasmMinDist = function(vertsA, vertsB, threshold, outPair) {
     if (!_wasm) return Infinity;
     try {
       var result = _wasm.mesh_min_distance(vertsA, vertsB, threshold);
-      if (!result || result.length === 0) return Infinity;
-      return result[0]; // distance
+      if (!result || result.length === 0 || result[0] === Infinity) return Infinity;
+      if (outPair && result.length >= 7) {
+        outPair[0]=result[1]; outPair[1]=result[2]; outPair[2]=result[3];
+        outPair[3]=result[4]; outPair[4]=result[5]; outPair[5]=result[6];
+      }
+      return result[0];
     } catch (e) {
       console.warn('[WASM Engine] minDist error:', e.message);
       return Infinity;
