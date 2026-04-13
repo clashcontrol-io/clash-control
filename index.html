@@ -5115,7 +5115,7 @@ function startApp() {
       window._flyToElements = _flyToElements;
       window._fitToElement  = _fitToElement;
 
-      // ── Camera control globals for SmartBridge / MCP ──
+      // ── Camera control globals (used by addons, NL commands, MCP) ──
       window._ccGetModelBounds = function() {
         if (!S.mg || !S.mg.children.length) return null;
         var box = new THREE.Box3().setFromObject(S.mg);
