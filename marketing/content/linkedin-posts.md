@@ -427,3 +427,97 @@ AI-generated titles ship with every clash run. Free at clashcontrol.io
 
 #BIM #BIMCoordination #AI #AECTech
 
+
+---
+
+### LI-21 — Simple — W6 Monday
+*Visual: GIF or screenshot of NL command being typed*
+
+You can now ask your model a question in plain English.
+
+"Show me all unresolved critical clashes on Level 3"
+"How many MEP clashes are still open?"
+"Filter to structural clashes only"
+
+No filter menus. No query syntax. Just ask.
+
+Free at clashcontrol.io
+
+#BIM #AI #OpenBIM #AECTech
+
+---
+
+### LI-22 — Medium — W6 Tuesday
+*Visual: BCF file in Revit import dialog*
+
+How to get ClashControl clash results into Revit in three steps:
+
+1. Run your clash detection in ClashControl and review the list
+2. Export → BCF 2.1 (top right of the clash panel)
+3. In Revit: Collaborate tab → Coordination → BCF Manager → Import
+
+Your clashes come in as coordination issues with camera viewpoints, statuses, and assignees intact. Revit users can navigate to each clash directly from the BCF issue.
+
+No plugin required on the ClashControl side. Standard BCF on the Revit side.
+
+This works the same way for BIMcollab, Solibri, and any other BCF-compatible platform.
+
+→ clashcontrol.io
+
+#BIM #Revit #BCF #BIMCoordination
+
+---
+
+### LI-23 — Long / Big Topic — W6 Thursday
+*Visual: none*
+
+**BCF is the most important open standard in BIM that most people still don't fully use**
+
+BCF — BIM Collaboration Format — is a file format for exchanging coordination issues between BIM tools. It packages clash locations, camera viewpoints, issue metadata (status, priority, assignee), and 3D snapshots into a single ZIP-based container.
+
+It was developed by buildingSMART International. It is free to use. It is supported by every major BIM platform. And it is dramatically underused in practice.
+
+Here's why that matters.
+
+**The problem BCF solves**
+
+Before BCF, clash coordination required everyone on the project to use the same tool. If the architect was on ArchiCAD and the structural engineer was on Tekla and the main contractor was on Navisworks, you had three tools, three issue lists, and three sets of viewpoints that couldn't talk to each other. Someone had to manually reconcile them, usually via email and a shared spreadsheet.
+
+BCF broke that lock-in. A clash found in ClashControl can be exported as BCF and opened in Revit. An issue created in BIMcollab can be imported into Solibri. The tools exchange data without requiring everyone to use the same software.
+
+**Why it's still underused**
+
+Three reasons.
+
+First, many project teams don't know it exists. BCF has been around since 2010 and is still not universally understood as a standard handoff format in the way that IFC is understood as the model exchange format.
+
+Second, implementations vary. BCF 2.1 is broadly supported. BCF 3.0 is not yet universal. Some platforms implement a subset of the spec. This means BCF files don't always round-trip perfectly between tools.
+
+Third, proprietary issue tracking is sticky. BIMcollab has a paid tier that adds features beyond raw BCF. Autodesk Docs has its own issue workflow. Once a team is in one of these platforms, there's friction in switching to BCF-based workflows even when BCF would serve them better.
+
+**What to actually do with this**
+
+Use BCF as your handoff format between disciplines. Don't send PDFs of clash reports. Don't send screenshots. Send BCF files. Every major tool can open them.
+
+If you're not sure whether your tools support BCF, test it: run a clash in ClashControl, export BCF, try to import it in whatever platform you use. If it works, that's now your coordination handoff workflow and it cost you nothing.
+
+→ clashcontrol.io — BCF 2.1 export included, free
+
+#BIM #BCF #OpenBIM #BuildingSMART #BIMCoordination
+
+---
+
+### LI-24 — Simple — W6 Friday
+*Visual: Screenshot of IDS import panel in Data Quality*
+
+ClashControl now supports IDS — the buildingSMART Information Delivery Specification.
+
+Import an IDS file to validate your IFC models against project-defined requirements.
+Export your data quality checks as IDS to share with consultants.
+
+Open standard. Free tool.
+
+→ clashcontrol.io
+
+#BIM #IDS #OpenBIM #BuildingSMART
+
