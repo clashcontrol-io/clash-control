@@ -43,7 +43,31 @@
   // This ensures downloads work immediately without waiting for the API.
   var _downloads = _buildDownloads();
 
-  function _fetchLatestReleaseTag() {
+  // Compare two semver strings (with or without leading 'v').
+  // Returns true if a > b.
+  function _semverGt(a, b) {
+    var pa = (a || '').replace(/^v/, '').split('.').map(Number);
+    var pb = (b || '').replace(/^v/, '').split('.').map(Number);
+    for (var i = 0; i < 3; i++) {
+      var na = pa[i] || 0, nb = pb[i] || 0;
+      if (na > nb) return true;
+      if (na < nb) return false;
+    }
+    return false;
+  }
+
+  // Trigger auto-update if latestTag is newer than runningVersion.
+  // Called from both the GitHub API callback and after bridge connection,
+  // whichever resolves last, to cover both orderings.
+  function _maybeAutoUpdate(d, runningVersion, latestTag) {
+    if (!runningVersion || !latestTag) return;
+    if (_semverGt(latestTag, runningVersion)) {
+      console.log('%c[Smart Bridge] Running v' + runningVersion + ' < latest ' + latestTag + ' — auto-updating', 'color:#fbbf24;font-weight:bold');
+      _applyBridgeUpdate(d);
+    }
+  }
+
+  function _fetchLatestReleaseTag(d) {
     fetch('https://api.github.com/repos/clashcontrol-io/ClashControlSmartBridge/releases/latest', {cache:'no-store'})
       .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(j) {
@@ -53,6 +77,11 @@
           console.log('%c[Smart Bridge] Updating release from ' + _releaseTag + ' to ' + newTag, 'color:#22c55e;font-weight:bold');
           _releaseTag = newTag;
           _downloads = _buildDownloads(); // rebuild with new tag
+        }
+        // Trigger A: GitHub resolved — compare against running bridge version (if already connected).
+        if (d) {
+          var sb = (window._ccLatestState || {}).smartBridge || {};
+          _maybeAutoUpdate(d, sb.version, newTag);
         }
       })
       .catch(function(e) {
@@ -215,7 +244,12 @@
           try { localStorage.setItem('cc_sb_downloaded','1'); } catch(e){}
           _connectWs(d);
           // Check for updates after successful connection
-          if (!_updateChecked) { _updateChecked = true; _checkForUpdate(d); }
+          if (!_updateChecked) {
+            _updateChecked = true;
+            _checkForUpdate(d);
+            // Trigger B: bridge version now known — compare against GitHub tag (if already resolved).
+            _maybeAutoUpdate(d, j.version, _releaseTag);
+          }
           return j;
         })
         .catch(function() {
@@ -235,7 +269,12 @@
           checking:false, available:true, version: j.version || null
         }});
         // Check for updates after successful connection
-        if (!_updateChecked) { _updateChecked = true; _checkForUpdate(d); }
+        if (!_updateChecked) {
+          _updateChecked = true;
+          _checkForUpdate(d);
+          // Trigger B: bridge version now known — compare against GitHub tag (if already resolved).
+          _maybeAutoUpdate(d, j.version, _releaseTag);
+        }
         return j;
       })
       .catch(function() {
@@ -493,12 +532,16 @@
       init: function(dispatch) {
         console.log('[Smart Bridge] Addon activated');
         _updateChecked = false; // reset on activation
-        _fetchLatestReleaseTag(); // fetch latest release tag from GitHub (non-blocking)
+        _fetchLatestReleaseTag(dispatch); // fetch latest release tag from GitHub (non-blocking)
         _doInit(dispatch);
         // Periodic update check every 30 minutes while the addon is active.
         _updateInterval = setInterval(function() {
           var sb = (window._ccLatestState || {}).smartBridge;
-          if (sb && sb.available && !sb.updating) _checkForUpdate(dispatch);
+          if (sb && sb.available && !sb.updating) {
+            _checkForUpdate(dispatch);
+            // Also re-fetch the GitHub tag so stale sessions catch new releases.
+            _fetchLatestReleaseTag(dispatch);
+          }
         }, 30 * 60 * 1000);
       },
 
