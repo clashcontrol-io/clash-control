@@ -19301,6 +19301,13 @@ function startApp() {
     useEffect(function() {
       try { if (!localStorage.getItem('cc_setup_seen')) return; if (localStorage.getItem('cc_seen_version') !== CC_VERSION.v) setShowWhatsNew(true); } catch(e) {}
     }, []);
+    var _whatsNewTimer = useRef(null);
+    function _dismissWhatsNew() { try{localStorage.setItem('cc_seen_version',CC_VERSION.v);}catch(e){} setShowWhatsNew(false); }
+    useEffect(function(){
+      if (!showWhatsNew) return;
+      _whatsNewTimer.current = setTimeout(_dismissWhatsNew, 5000);
+      return function(){ clearTimeout(_whatsNewTimer.current); };
+    }, [showWhatsNew]);
     var _storeyPicker = useState(false), storeyPickerOpen=_storeyPicker[0], setStoreyPickerOpen=_storeyPicker[1];
     window._ccShowStoreyPicker = setStoreyPickerOpen;
     useEffect(function(){
@@ -19556,10 +19563,10 @@ function startApp() {
       <${PrivacyBanner} />
       <${TutorialPortal} d=${d} />
       ${showMemWarn && html`<${MemoryWarningModal} s=${s} onDismiss=${function(){setShowMemWarn(false);}} />`}
-      ${showWhatsNew && html`<div style=${{position:'fixed',bottom:'1.2rem',right:'1rem',zIndex:9998,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:10,padding:'.7rem .9rem',display:'flex',flexDirection:'column',gap:'.35rem',boxShadow:'0 4px 28px rgba(0,0,0,.45)',maxWidth:'270px',width:'calc(100vw - 2rem)'}}>
+      ${showWhatsNew && html`<div onMouseEnter=${function(){ clearTimeout(_whatsNewTimer.current); }} onMouseLeave=${function(){ _whatsNewTimer.current = setTimeout(_dismissWhatsNew, 5000); }} style=${{position:'fixed',bottom:'1.2rem',right:'1rem',zIndex:9998,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:10,padding:'.7rem .9rem',display:'flex',flexDirection:'column',gap:'.35rem',boxShadow:'0 4px 28px rgba(0,0,0,.45)',maxWidth:'270px',width:'calc(100vw - 2rem)'}}>
         <div style=${{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem'}}>
           <span style=${{fontWeight:700,fontSize:'0.8rem',color:'var(--text-primary)'}}>What's new in v${CC_VERSION.v}</span>
-          <button onClick=${function(){ try{localStorage.setItem('cc_seen_version',CC_VERSION.v);}catch(e){} setShowWhatsNew(false); }} style=${{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:'1.1rem',lineHeight:1,padding:'0 .15rem',flexShrink:0}}>×</button>
+          <button onClick=${_dismissWhatsNew} style=${{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:'1.1rem',lineHeight:1,padding:'0 .15rem',flexShrink:0}}>×</button>
         </div>
         <ul style=${{margin:0,paddingLeft:'1.1rem',color:'var(--text-secondary)',fontSize:'0.72rem',lineHeight:1.6}}>
           <li>Walk mode — navigate at eye height</li>
