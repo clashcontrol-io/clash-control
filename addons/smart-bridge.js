@@ -1075,37 +1075,9 @@
         _fetchLatestReleaseTag(dispatch); // fetch latest release tag from GitHub (non-blocking)
         _doInit(dispatch);
 
-        // ── Intercept /smart command ──────────────────────────────────────
-        // Wrap the NL command processor to handle /smart {message} for direct
-        // bridge chat (no Claude Desktop needed).
-        var _originalProcessNL = window._ccProcessNLCommand;
-        window._ccProcessNLCommand = function(cmd) {
-          if (cmd && typeof cmd === 'string' && cmd.trim().startsWith('/smart')) {
-            var msg = cmd.trim().slice(6).trim();
-            if (!msg) return 'Use: /smart <message>  (e.g., /smart show me all clashes)';
-            if (!_connected) return 'Smart Bridge not connected. Enable the addon and wait for connection.';
-
-            // Show loading message
-            if (dispatch) dispatch({t:'UPD_SMART_BRIDGE', u:{chatBusy:true, chatError:null, chatMessages:(window._ccLatestState||{}).smartBridge.chatMessages.concat([{role:'user',content:msg}])}});
-
-            // Call bridge /chat endpoint
-            var history = ((window._ccLatestState||{}).smartBridge||{}).chatMessages || [];
-            fetch(REST_URL + '/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:msg, history:history})})
-              .then(function(r){ if (!r.ok) return r.json().then(function(j){ throw new Error(j.error||('HTTP '+r.status)); }); return r.json(); })
-              .then(function(j) {
-                if (dispatch) dispatch({t:'UPD_SMART_BRIDGE', u:{chatBusy:false, chatMessages:history.concat([{role:'user',content:msg},{role:'assistant',content:j.response}])}});
-                return j.response; // also return for display in chat
-              })
-              .catch(function(e) {
-                if (dispatch) dispatch({t:'UPD_SMART_BRIDGE', u:{chatBusy:false, chatError:e.message}});
-                return 'Error: ' + e.message;
-              });
-            return 'Sending to SmartBridge…';
-          }
-          // Not a /smart command — use original handler
-          if (typeof _originalProcessNL === 'function') return _originalProcessNL(cmd);
-          return 'Command not recognized.';
-        };
+        // /smart command handling lives in processNLCommandWithLLM (index.html) —
+        // it calls POST /chat on the bridge and feeds the async response back into
+        // the main chat. The addon panel mirrors those messages via UPD_SMART_BRIDGE.
 
         // Periodic update check every 30 minutes while the addon is active.
         _updateInterval = setInterval(function() {

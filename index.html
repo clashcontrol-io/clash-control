@@ -15437,6 +15437,47 @@ function startApp() {
       }
     }
 
+    // ── /smart — route to SmartBridge built-in LLM agent (Ollama / OpenAI) ───
+    if (/^\/smart\b/i.test(raw.trim())) {
+      var _sbMsg = raw.trim().slice(6).trim();
+      if (!_sbMsg) return Promise.resolve(
+        '/smart <message> — sends your message to the Smart Bridge LLM agent (Ollama / OpenAI).\n' +
+        'Example: /smart show me all structural clashes\n\n' +
+        'Requires the Smart Bridge addon to be connected with Ollama or OpenAI configured.'
+      );
+      var _sbHistory = (window._ccLatestState && window._ccLatestState.smartBridge && window._ccLatestState.smartBridge.chatMessages) || [];
+      return fetch('http://127.0.0.1:19803/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: _sbMsg,
+          history: _sbHistory.map(function(m) { return { role: m.role, content: m.content }; })
+        })
+      })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+        return r.json();
+      })
+      .then(function(j) {
+        // Mirror conversation into the Smart Bridge addon chat panel
+        if (d) d({ t: 'UPD_SMART_BRIDGE', u: {
+          chatMessages: _sbHistory.concat([
+            { role: 'user',      content: _sbMsg },
+            { role: 'assistant', content: j.response || '' }
+          ]),
+          chatBusy: false, chatError: null
+        }});
+        return _captureNL(j.response || '', 'smart-bridge');
+      })
+      .catch(function(e) {
+        var msg = e.message || String(e);
+        if (/fetch|Failed to fetch|ECONNREFUSED|refused|network/i.test(msg)) {
+          return 'Smart Bridge is not running. Enable the Smart Bridge addon and wait for it to connect.';
+        }
+        return 'Smart Bridge: ' + msg;
+      });
+    }
+
     if (!replyContext && _fastPathEnabled()) {
       var _fpt = raw.trim().toLowerCase();
       if (_isFastPathCommand(_fpt)) {
