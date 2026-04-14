@@ -17945,7 +17945,7 @@ function startApp() {
 
   function PrivacyBanner(props) {
     var stShow = useState(function(){
-      try { return !localStorage.getItem('cc_consent_banner_seen'); } catch(e){ return false; }
+      try { return !localStorage.getItem('cc_consent_banner_seen') && !!localStorage.getItem('cc_setup_seen'); } catch(e){ return false; }
     });
     var show = stShow[0], setShow = stShow[1];
     if (!show) return null;
@@ -18520,6 +18520,8 @@ function startApp() {
       setVis(false);
       setTimeout(function(){
         try { localStorage.setItem('cc_setup_seen','1'); } catch(e){}
+        try { localStorage.setItem('cc_consent_banner_seen','1'); } catch(e){}
+        try { localStorage.setItem('cc_seen_version', CC_VERSION.v); } catch(e){}
         setShow(false);
       }, 200);
     }
@@ -18631,8 +18633,9 @@ function startApp() {
             </button>
           </div>
 
-          <div style=${{fontSize:'0.65rem',color:'var(--text-faint)',marginTop:'.6rem',textAlign:'center'}}>
+          <div style=${{fontSize:'0.65rem',color:'var(--text-faint)',marginTop:'.6rem',textAlign:'center',lineHeight:1.7}}>
             ClashControl v${CC_VERSION.v} \u2014 Free & open source
+            <span style=${{display:'block'}}>Anonymous IFC type data is shared to improve detection. <button onClick=${function(){ try{localStorage.setItem('cc_data_consent','denied');}catch(e){} window.dispatchEvent(new Event('cc-consent-change')); }} style=${{background:'none',border:'none',color:'var(--accent)',cursor:'pointer',fontSize:'inherit',padding:0,textDecoration:'underline'}}>Opt out</button></span>
           </div>
         </div>
       </div>
@@ -19296,7 +19299,7 @@ function startApp() {
     var _pwaDismissed = useState(false), pwaDismissed=_pwaDismissed[0], setPwaDismissed=_pwaDismissed[1];
     var _whatsNew = useState(false), showWhatsNew=_whatsNew[0], setShowWhatsNew=_whatsNew[1];
     useEffect(function() {
-      try { if (localStorage.getItem('cc_seen_version') !== CC_VERSION.v) setShowWhatsNew(true); } catch(e) {}
+      try { if (!localStorage.getItem('cc_setup_seen')) return; if (localStorage.getItem('cc_seen_version') !== CC_VERSION.v) setShowWhatsNew(true); } catch(e) {}
     }, []);
     var _storeyPicker = useState(false), storeyPickerOpen=_storeyPicker[0], setStoreyPickerOpen=_storeyPicker[1];
     window._ccShowStoreyPicker = setStoreyPickerOpen;
