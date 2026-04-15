@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.15.1 (2026-04-15)
+- feat: Revit-style 2D sheet view with paper rectangle, polygon chaining, SVG export
+
 ## v4.15.0 (2026-04-15)
 - Refine section plane UX and improve renderer performance
 
