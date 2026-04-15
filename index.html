@@ -2455,6 +2455,7 @@ function startApp() {
   var _underlayImgCache = {};
   var _underlayImgDataCache = {};
   var _cc2DOutlines = null;
+  var _cc2DContentCenter = null; // {x, z} in canvas world space (x = -worldX, z = worldZ)
 
   function _hashElement(el) {
     var b = el.box;
@@ -13866,28 +13867,56 @@ function startApp() {
     var panRef = useRef({ x: 0, y: 0, zoom: 1, dragging: false, lx: 0, ly: 0 });
 
     window._ccFit2DOutlines = function() {
-      if (!_cc2DOutlines || !_cc2DOutlines.length || !canvasRef.current) return;
-      var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      _cc2DOutlines.forEach(function(seg) {
-        var x1 = -seg[0], x2 = -seg[2]; // mirror X as in rendering
-        if (x1 < minX) minX = x1; if (x2 < minX) minX = x2;
-        if (x1 > maxX) maxX = x1; if (x2 > maxX) maxX = x2;
-        var y1 = seg[1], y2 = seg[3]; // Z directly to screen Y
-        if (y1 < minY) minY = y1; if (y2 < minY) minY = y2;
-        if (y1 > maxY) maxY = y1; if (y2 > maxY) maxY = y2;
-      });
-      if (!isFinite(minX)) return;
-      var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      if (!canvasRef.current) return;
       var el = canvasRef.current.parentElement || canvasRef.current;
       var cssW = el.clientWidth || canvasRef.current.width;
       var cssH = el.clientHeight || canvasRef.current.height;
-      var extW = maxX - minX, extH = maxY - minY;
-      var pxm = getSheetPxm(getActiveSheet());
-      var zoom = Math.min(cssW / (extW * pxm * 1.2), cssH / (extH * pxm * 1.2), 2);
-      if (zoom <= 0 || !isFinite(zoom)) zoom = 1;
-      panRef.current.x = -cx * pxm * zoom;
-      panRef.current.y = -cy * pxm * zoom;
-      panRef.current.zoom = zoom;
+      var pan = panRef.current;
+      var sheet = getActiveSheet();
+      var pxm = getSheetPxm(sheet);
+
+      // Compute content bounding box in canvas world space (x = -worldX, z = worldZ)
+      var minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      if (_cc2DOutlines && _cc2DOutlines.length) {
+        _cc2DOutlines.forEach(function(seg) {
+          var x1 = -seg[0], x2 = -seg[2], z1 = seg[1], z2 = seg[3];
+          if (x1 < minX) minX = x1; if (x2 < minX) minX = x2;
+          if (x1 > maxX) maxX = x1; if (x2 > maxX) maxX = x2;
+          if (z1 < minZ) minZ = z1; if (z2 < minZ) minZ = z2;
+          if (z1 > maxZ) maxZ = z1; if (z2 > maxZ) maxZ = z2;
+        });
+      }
+      var hasBounds = isFinite(minX);
+      if (hasBounds) {
+        _cc2DContentCenter = { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+      }
+
+      var zoom;
+      if (sheet) {
+        // Revit-style: fit the paper rectangle to the screen, not the content
+        var paper = (_PAPER_MM || {})[(sheet.paper && sheet.paper.size) || 'A3'] || { w: 420, h: 297 };
+        var orient = (sheet.paper && sheet.paper.orient) || 'landscape';
+        var pw_mm = orient === 'landscape' ? paper.w : paper.h;
+        var ph_mm = orient === 'landscape' ? paper.h : paper.w;
+        // Paper in world units: pw_mm * 10 / pxm  (pxm * scaleRatio = 10000 invariant)
+        var pw_w = pw_mm * 10 / pxm;
+        var ph_w = ph_mm * 10 / pxm;
+        zoom = Math.min(cssW / (pw_w * pxm * 1.1), cssH / (ph_w * pxm * 1.1));
+      } else if (hasBounds) {
+        // No sheet: fit content bounds
+        var extW = maxX - minX, extH = maxZ - minZ;
+        zoom = Math.min(cssW / (extW * pxm * 1.2), cssH / (extH * pxm * 1.2), 2);
+      } else {
+        return;
+      }
+      if (!isFinite(zoom) || zoom <= 0) zoom = 1;
+      pan.zoom = zoom;
+
+      // Centre the content (or paper centre = content centre) on screen
+      var cx = _cc2DContentCenter ? _cc2DContentCenter.x : 0;
+      var cz = _cc2DContentCenter ? _cc2DContentCenter.z : 0;
+      pan.x = -cx * pxm * zoom;
+      pan.y = -cz * pxm * zoom;
       redraw();
     };
     window._cc2DSetPan = function(dx, dy) {
@@ -13965,6 +13994,33 @@ function startApp() {
       ctx.strokeStyle = '#22c55e';
       ctx.beginPath(); ctx.moveTo(0, -15 / viewScale); ctx.lineTo(0, 15 / viewScale); ctx.stroke();
 
+      // ── Paper rectangle (Revit-style sheet view) ──────────────────
+      if (sheet && _cc2DContentCenter) {
+        var _paper = (_PAPER_MM || {})[(sheet.paper && sheet.paper.size) || 'A3'] || { w: 420, h: 297 };
+        var _orient = (sheet.paper && sheet.paper.orient) || 'landscape';
+        var _pw_mm = _orient === 'landscape' ? _paper.w : _paper.h;
+        var _ph_mm = _orient === 'landscape' ? _paper.h : _paper.w;
+        var _pw = _pw_mm * 10 / pxm; // paper width in world units
+        var _ph = _ph_mm * 10 / pxm; // paper height in world units
+        var _pcx = _cc2DContentCenter.x, _pcz = _cc2DContentCenter.z;
+        var _pl = _pcx - _pw / 2, _pt = _pcz - _ph / 2;
+        // Drop shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(_pl + 4 / viewScale, _pt + 4 / viewScale, _pw, _ph);
+        // White paper background
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(_pl, _pt, _pw, _ph);
+        // Inner margin lines (5mm equivalent)
+        var _mg = 5 * 10 / pxm; // 5mm in world units
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 0.6 / viewScale;
+        ctx.strokeRect(_pl + _mg, _pt + _mg, _pw - 2 * _mg, _ph - 2 * _mg);
+        // Outer border
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 1.5 / viewScale;
+        ctx.strokeRect(_pl, _pt, _pw, _ph);
+      }
+
       s.underlays.forEach(function(ul) {
         if (!ul.visible || !ul.canvasData) return;
         ctx.save();
@@ -13990,19 +14046,54 @@ function startApp() {
 
       var showOutlines = (sheet && _cc2DOutlines) || (s.underlayMode === 'compare' && s.floorPlan && _cc2DOutlines);
       if (showOutlines) {
-        ctx.lineCap = 'butt';
-        _cc2DOutlines.forEach(function(seg) {
-          var layer = seg[4] || 'wall';
-          var st = LAYER_STYLES[layer] || LAYER_STYLES.wall;
-          ctx.strokeStyle = st.color;
-          ctx.lineWidth = st.width / viewScale;
-          if (st.dash) ctx.setLineDash(st.dash.map(function(v){return v/viewScale;})); else ctx.setLineDash([]);
-          ctx.beginPath();
-          ctx.moveTo(-seg[0], seg[1]); // mirror X for plan view
-          ctx.lineTo(-seg[2], seg[3]);
-          ctx.stroke();
-        });
-        ctx.setLineDash([]);
+        // Use chained segments when available (better performance + filled polygons)
+        var chains = typeof _chainSegments === 'function' ? _chainSegments(_cc2DOutlines) : null;
+        if (chains && chains.length) {
+          // Layer fill colours for closed polygons (e.g. wall cross-sections)
+          var LAYER_FILL = {
+            wall:      'rgba(100,116,139,0.25)',
+            structure: 'rgba(71,85,105,0.35)',
+            opening:   'rgba(96,165,250,0.12)',
+            mep:       'rgba(249,115,22,0.1)',
+            furniture: 'rgba(100,116,139,0.08)'
+          };
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          chains.forEach(function(chain) {
+            var layer = chain.layer || 'wall';
+            var st = LAYER_STYLES[layer] || LAYER_STYLES.wall;
+            var pts = chain.pts;
+            if (pts.length < 4) return;
+            ctx.beginPath();
+            ctx.moveTo(pts[0], pts[1]);
+            for (var pi = 2; pi < pts.length; pi += 2) ctx.lineTo(pts[pi], pts[pi + 1]);
+            if (chain.closed) ctx.closePath();
+            if (chain.closed && LAYER_FILL[layer]) {
+              ctx.fillStyle = LAYER_FILL[layer];
+              ctx.fill();
+            }
+            ctx.strokeStyle = st.color;
+            ctx.lineWidth = st.width / viewScale;
+            if (st.dash) ctx.setLineDash(st.dash.map(function(v) { return v / viewScale; }));
+            else ctx.setLineDash([]);
+            ctx.stroke();
+          });
+          ctx.setLineDash([]);
+        } else {
+          // Fallback: individual segment rendering
+          ctx.lineCap = 'butt';
+          _cc2DOutlines.forEach(function(seg) {
+            var layer = seg[4] || 'wall';
+            var st = LAYER_STYLES[layer] || LAYER_STYLES.wall;
+            ctx.strokeStyle = st.color;
+            ctx.lineWidth = st.width / viewScale;
+            if (st.dash) ctx.setLineDash(st.dash.map(function(v) { return v / viewScale; })); else ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(-seg[0], seg[1]); // mirror X
+            ctx.lineTo(-seg[2], seg[3]);
+            ctx.stroke();
+          });
+          ctx.setLineDash([]);
+        }
       }
 
       ctx.lineWidth = 2 / viewScale; ctx.lineCap = 'round';
@@ -14105,17 +14196,91 @@ function startApp() {
         }
         ctx.setLineDash([]);
       }
-      ctx.restore();
+      // ── Paper annotations (title block, scale bar, north arrow) in world coords ──
+      if (sheet && _cc2DContentCenter) {
+        var _pp = (_PAPER_MM || {})[(sheet.paper && sheet.paper.size) || 'A3'] || { w: 420, h: 297 };
+        var _po = (sheet.paper && sheet.paper.orient) || 'landscape';
+        var _pwmm = _po === 'landscape' ? _pp.w : _pp.h, _phmm = _po === 'landscape' ? _pp.h : _pp.w;
+        var _u = 10 / pxm; // 1 mm on paper in world units
+        var _papW = _pwmm * _u, _papH = _phmm * _u;
+        var _papL = _cc2DContentCenter.x - _papW / 2, _papT = _cc2DContentCenter.z - _papH / 2;
 
-      if (sheet) {
-        ctx.save();
-        ctx.scale(dpr, dpr);
-        var cssW = w / dpr, cssH = h / dpr;
-        _ccDrawTitleBlock(ctx, cssW, cssH, sheet);
-        _ccDrawScaleBar(ctx, cssW, cssH, sheet, pan.zoom);
-        _ccDrawNorthArrow(ctx, cssW, cssH, sheet);
-        ctx.restore();
+        // Title block — bottom-right 65 mm × 32 mm
+        (function() {
+          var tbW = 65 * _u, tbH = 32 * _u;
+          var tbX = _papL + _papW - tbW, tbY = _papT + _papH - tbH;
+          var tb = sheet.titleBlock || {};
+          ctx.save();
+          ctx.fillStyle = '#f1f5f9'; ctx.strokeStyle = '#475569'; ctx.lineWidth = 0.5 * _u;
+          ctx.fillRect(tbX, tbY, tbW, tbH);
+          ctx.strokeRect(tbX, tbY, tbW, tbH);
+          ctx.beginPath(); ctx.moveTo(tbX, tbY + 10 * _u); ctx.lineTo(tbX + tbW, tbY + 10 * _u); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(tbX + tbW * 0.55, tbY + 10 * _u); ctx.lineTo(tbX + tbW * 0.55, tbY + tbH); ctx.stroke();
+          ctx.fillStyle = '#1e293b';
+          ctx.font = 'bold ' + (3.5 * _u) + 'px sans-serif';
+          ctx.fillText((tb.project || sheet.name || 'ClashControl Plan').slice(0, 28), tbX + 1.5 * _u, tbY + 7 * _u);
+          ctx.font = (2.5 * _u) + 'px sans-serif'; ctx.fillStyle = '#334155';
+          var _scR = Math.round(10000 / pxm);
+          ctx.fillText('Scale 1:' + _scR, tbX + 1.5 * _u, tbY + 13.5 * _u);
+          ctx.fillText('Storey: ' + (sheet.storeyName || '—'), tbX + 1.5 * _u, tbY + 17.5 * _u);
+          var _us = sheet._unitScale || 1;
+          var _dElev = sheet._storeyElevation != null ? sheet._storeyElevation : sheet.elevation;
+          ctx.fillText('Elev: ' + _ccFormatElev(_dElev, _us), tbX + 1.5 * _u, tbY + 21.5 * _u);
+          ctx.fillText('Cut: ' + ((sheet.cutHeight || 1.2).toFixed(2)) + ' m', tbX + 1.5 * _u, tbY + 25.5 * _u);
+          ctx.fillText((tb.author ? 'By ' + tb.author : ''), tbX + 1.5 * _u, tbY + 29.5 * _u);
+          ctx.fillText(tb.date || new Date(sheet.createdAt || Date.now()).toLocaleDateString(), tbX + tbW * 0.55 + 1.5 * _u, tbY + 13.5 * _u);
+          if (tb.revision) ctx.fillText('Rev ' + tb.revision, tbX + tbW * 0.55 + 1.5 * _u, tbY + 17.5 * _u);
+          if (tb.notes) ctx.fillText(String(tb.notes).slice(0, 22), tbX + tbW * 0.55 + 1.5 * _u, tbY + 21.5 * _u);
+          ctx.restore();
+        }());
+
+        // Scale bar — bottom-left of paper, 5 mm up from edge
+        (function() {
+          var targetW = 30 * _u; // ~30mm bar
+          var niceMs = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500];
+          var mPerBar = targetW * (pxm / 10); // world units → building meters
+          var chosen = niceMs[0];
+          for (var _ni = 0; _ni < niceMs.length; _ni++) if (niceMs[_ni] <= mPerBar) chosen = niceMs[_ni];
+          var barW = chosen * (10 / pxm); // chosen meters → world units
+          var barLabel = chosen < 1 ? (chosen * 1000) + ' mm' : chosen + ' m';
+          var bx = _papL + 5 * _u, by = _papT + _papH - 8 * _u;
+          ctx.save();
+          ctx.fillStyle = 'rgba(241,245,249,0.9)';
+          ctx.fillRect(bx - 1 * _u, by - 4.5 * _u, barW + 2 * _u, 6 * _u);
+          ctx.strokeStyle = '#334155'; ctx.lineWidth = 0.5 * _u;
+          ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + barW, by); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(bx, by - 1 * _u); ctx.lineTo(bx, by + 1 * _u); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(bx + barW, by - 1 * _u); ctx.lineTo(bx + barW, by + 1 * _u); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(bx + barW / 2, by - 0.7 * _u); ctx.lineTo(bx + barW / 2, by + 0.7 * _u); ctx.stroke();
+          ctx.font = (2.5 * _u) + 'px sans-serif'; ctx.fillStyle = '#1e293b';
+          ctx.textAlign = 'center';
+          ctx.fillText(barLabel, bx + barW / 2, by - 1.5 * _u);
+          ctx.textAlign = 'start';
+          ctx.restore();
+        }());
+
+        // North arrow — top-right corner of paper
+        (function() {
+          var r = 5 * _u; // 5mm radius
+          var cx = _papL + _papW - 9 * _u, cy = _papT + 12 * _u;
+          var angRad = ((sheet.northDeg || 0) - 90) * Math.PI / 180;
+          ctx.save();
+          ctx.fillStyle = 'rgba(241,245,249,0.9)';
+          ctx.beginPath(); ctx.arc(cx, cy, r + 1 * _u, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 0.3 * _u; ctx.stroke();
+          ctx.translate(cx, cy); ctx.rotate(angRad);
+          ctx.beginPath();
+          ctx.moveTo(0, -r); ctx.lineTo(r * 0.4, r * 0.55); ctx.lineTo(0, r * 0.25); ctx.lineTo(-r * 0.4, r * 0.55); ctx.closePath();
+          ctx.fillStyle = '#ef4444'; ctx.fill();
+          ctx.strokeStyle = '#475569'; ctx.lineWidth = 0.25 * _u; ctx.stroke();
+          ctx.rotate(-angRad);
+          ctx.font = 'bold ' + (3 * _u) + 'px sans-serif'; ctx.fillStyle = '#1e293b'; ctx.textAlign = 'center';
+          ctx.fillText('N', 0, -r - 1.5 * _u);
+          ctx.textAlign = 'start';
+          ctx.restore();
+        }());
       }
+      ctx.restore();
     }
 
     function _ccDrawTitleBlock(ctx, w, h, sheet) {
@@ -14526,6 +14691,76 @@ function startApp() {
     return segs;
   }
 
+  // ── Polygon chaining: merge line segments into polylines / closed polygons ──
+  // segs: [[worldX1,worldZ1,worldX2,worldZ2,layer], ...]  (same as _cc2DOutlines)
+  // Returns: [{pts:[canvasX1,canvasZ1,...], closed:bool, layer:string}, ...]
+  // Canvas coords: canvasX = -worldX, canvasZ = worldZ
+  function _chainSegments(segs, eps) {
+    if (!segs || !segs.length) return [];
+    eps = eps == null ? 1e-4 : eps;
+    function key(x, z) { return Math.round(x / eps) + '|' + Math.round(z / eps); }
+    // adj[key] = [[segIdx, side], ...]  side 0=segment start, 1=segment end (canvas coords)
+    var adj = {};
+    function addAdj(k, si, side) { if (!adj[k]) adj[k] = []; adj[k].push([si, side]); }
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      addAdj(key(-s[0], s[1]), i, 0);
+      addAdj(key(-s[2], s[3]), i, 1);
+    }
+    var visited = new Uint8Array(segs.length);
+    var chains = [];
+
+    // Walk from a given segment end, returning array of subsequent [x,z] pairs
+    function walkDir(startSegIdx, enterSide, layer) {
+      var pts = [];
+      var curIdx = startSegIdx, curEnter = enterSide;
+      while (true) {
+        var cs = segs[curIdx];
+        var ex, ez; // exit point (opposite end from entry)
+        if (curEnter === 0) { ex = -cs[2]; ez = cs[3]; }
+        else                 { ex = -cs[0]; ez = cs[1]; }
+        pts.push(ex, ez);
+        var k = key(ex, ez);
+        var nb = adj[k] || [];
+        var found = false;
+        for (var j = 0; j < nb.length; j++) {
+          var ni = nb[j][0], ns = nb[j][1];
+          if (visited[ni]) continue;
+          if ((segs[ni][4] || 'wall') !== layer) continue;
+          visited[ni] = 1;
+          curIdx = ni; curEnter = ns; // enter ni at side ns, exit at 1-ns
+          curEnter = 1 - ns;
+          found = true;
+          break;
+        }
+        if (!found) break;
+      }
+      return pts;
+    }
+
+    for (var i = 0; i < segs.length; i++) {
+      if (visited[i]) continue;
+      visited[i] = 1;
+      var s0 = segs[i];
+      var layer = s0[4] || 'wall';
+      // Walk backward from start of s0 (entering at side 0, so we exit back)
+      var backPts = walkDir(i, 0, layer);
+      // Walk forward from end of s0 (entering at side 1, so we exit forward)
+      var fwdPts = walkDir(i, 1, layer);
+      // Assemble: reverse(backPts) + s0.start + s0.end + fwdPts
+      var pts = [];
+      for (var j = backPts.length - 2; j >= 0; j -= 2) pts.push(backPts[j], backPts[j + 1]);
+      pts.push(-s0[0], s0[1]); // s0 start
+      pts.push(-s0[2], s0[3]); // s0 end
+      for (var j = 0; j < fwdPts.length; j++) pts.push(fwdPts[j]);
+      var closed = pts.length >= 6 &&
+        Math.abs(pts[0] - pts[pts.length - 2]) < eps * 2 &&
+        Math.abs(pts[1] - pts[pts.length - 1]) < eps * 2;
+      chains.push({ pts: pts, closed: closed, layer: layer });
+    }
+    return chains;
+  }
+
   function generate2DOutlines(models, elevation, cutHeight, viewDepth) {
     var outlines = [];
     var cutAt = elevation + (cutHeight || 1.2);
@@ -14630,6 +14865,95 @@ function startApp() {
       case 'furniture': return 'FloorPlan-Furniture';
       default:          return 'FloorPlan';
     }
+  }
+
+  // ── SVG export ───────────────────────────────────────────────────
+  function exportSVG(outlines, sheet) {
+    if (!outlines || !outlines.length) { alert('No outlines to export.'); return; }
+    var paper = (_PAPER_MM || {})[(sheet && sheet.paper && sheet.paper.size) || 'A3'] || { w: 420, h: 297 };
+    var orient = (sheet && sheet.paper && sheet.paper.orient) || 'landscape';
+    var pw = orient === 'landscape' ? paper.w : paper.h; // paper width mm
+    var ph = orient === 'landscape' ? paper.h : paper.w; // paper height mm
+    var pxm = (sheet && sheet.scale && sheet.scale.pxPerMeter) || 100;
+    // Scale factor: 1 world meter → how many mm on paper
+    // pxm = 10000/scaleRatio, so 1m on building = (1000/scaleRatio) mm on paper = pxm/10 mm
+    var mmPerM = pxm / 10;
+    // Content bounding box (canvas coords: cx=-worldX, cz=worldZ)
+    var minX=Infinity, maxX=-Infinity, minZ=Infinity, maxZ=-Infinity;
+    outlines.forEach(function(s) {
+      var x1=-s[0],x2=-s[2],z1=s[1],z2=s[3];
+      if(x1<minX)minX=x1;if(x2<minX)minX=x2;if(x1>maxX)maxX=x1;if(x2>maxX)maxX=x2;
+      if(z1<minZ)minZ=z1;if(z2<minZ)minZ=z2;if(z1>maxZ)maxZ=z1;if(z2>maxZ)maxZ=z2;
+    });
+    var cx=(minX+maxX)/2, cz=(minZ+maxZ)/2;
+    // Transform: world coord → SVG mm (paper centred on content, Y flipped for SVG)
+    function toSvgX(x) { return pw/2 + (x-cx)*mmPerM; }
+    function toSvgY(z) { return ph/2 + (z-cz)*mmPerM; } // SVG Y same direction as canvas Z
+    // Chain segments for polylines
+    var chains = typeof _chainSegments === 'function' ? _chainSegments(outlines) : null;
+    var STROKE = { wall:'#94a3b8', structure:'#64748b', opening:'#60a5fa', mep:'#f97316', furniture:'#475569' };
+    var STROKE_W = { wall:0.35, structure:0.25, opening:0.2, mep:0.2, furniture:0.15 };
+    var FILL = { wall:'rgba(100,116,139,0.18)', structure:'rgba(71,85,105,0.22)' };
+    var lines = [];
+    lines.push('<?xml version="1.0" encoding="UTF-8"?>');
+    lines.push('<svg xmlns="http://www.w3.org/2000/svg" width="'+pw+'mm" height="'+ph+'mm" viewBox="0 0 '+pw+' '+ph+'">');
+    lines.push('<rect width="'+pw+'" height="'+ph+'" fill="#f8fafc"/>');
+    // Inner margin rect
+    var mg=5; lines.push('<rect x="'+mg+'" y="'+mg+'" width="'+(pw-2*mg)+'" height="'+(ph-2*mg)+'" fill="none" stroke="#cbd5e1" stroke-width="0.15"/>');
+    // Group per layer
+    var layerOrder = ['structure','wall','opening','mep','furniture'];
+    layerOrder.forEach(function(layer) {
+      var stroke = STROKE[layer]||'#94a3b8', sw = STROKE_W[layer]||0.25;
+      var fill = FILL[layer];
+      lines.push('<g id="layer-'+layer+'" stroke="'+stroke+'" stroke-width="'+sw+'" stroke-linecap="round" stroke-linejoin="round" fill="'+(fill||'none')+'">');
+      if (chains) {
+        chains.forEach(function(ch) {
+          if (ch.layer !== layer) return;
+          var pts = ch.pts; if (pts.length < 4) return;
+          var d = 'M'+toSvgX(pts[0]).toFixed(3)+','+toSvgY(pts[1]).toFixed(3);
+          for (var pi=2; pi<pts.length; pi+=2) d += ' L'+toSvgX(pts[pi]).toFixed(3)+','+toSvgY(pts[pi+1]).toFixed(3);
+          if (ch.closed) d += ' Z';
+          lines.push('<path d="'+d+'"/>');
+        });
+      } else {
+        outlines.forEach(function(seg) {
+          if ((seg[4]||'wall') !== layer) return;
+          lines.push('<line x1="'+toSvgX(-seg[0]).toFixed(3)+'" y1="'+toSvgY(seg[1]).toFixed(3)+
+                     '" x2="'+toSvgX(-seg[2]).toFixed(3)+'" y2="'+toSvgY(seg[3]).toFixed(3)+'"/>');
+        });
+      }
+      lines.push('</g>');
+    });
+    // Title block
+    if (sheet) {
+      var tb = sheet.titleBlock || {};
+      var tbW=65, tbH=32, tbX=pw-tbW, tbY=ph-tbH;
+      var scR = Math.round(10000/pxm);
+      var _us=sheet._unitScale||1; var _dE=sheet._storeyElevation!=null?sheet._storeyElevation:sheet.elevation;
+      lines.push('<g id="titleblock" font-family="sans-serif">');
+      lines.push('<rect x="'+tbX+'" y="'+tbY+'" width="'+tbW+'" height="'+tbH+'" fill="#f1f5f9" stroke="#475569" stroke-width="0.3"/>');
+      lines.push('<line x1="'+tbX+'" y1="'+(tbY+10)+'" x2="'+(tbX+tbW)+'" y2="'+(tbY+10)+'" stroke="#475569" stroke-width="0.2"/>');
+      lines.push('<line x1="'+(tbX+tbW*0.55)+'" y1="'+(tbY+10)+'" x2="'+(tbX+tbW*0.55)+'" y2="'+(tbY+tbH)+'" stroke="#475569" stroke-width="0.2"/>');
+      function svgText(x,y,t,bold,sz){ return '<text x="'+x+'" y="'+y+'" font-size="'+(sz||2.5)+'"'+(bold?' font-weight="bold"':'')+' fill="#1e293b">'+String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</text>'; }
+      lines.push(svgText(tbX+1.5,tbY+7,(tb.project||sheet.name||'ClashControl Plan').slice(0,28),true,3.5));
+      lines.push(svgText(tbX+1.5,tbY+13.5,'Scale 1:'+scR));
+      lines.push(svgText(tbX+1.5,tbY+17.5,'Storey: '+(sheet.storeyName||'—')));
+      lines.push(svgText(tbX+1.5,tbY+21.5,'Elev: '+_ccFormatElev(_dE,_us)));
+      lines.push(svgText(tbX+1.5,tbY+25.5,'Cut: '+((sheet.cutHeight||1.2).toFixed(2))+' m'));
+      if(tb.author) lines.push(svgText(tbX+1.5,tbY+29.5,'By '+tb.author));
+      lines.push(svgText(tbX+tbW*0.55+1.5,tbY+13.5,tb.date||new Date(sheet.createdAt||Date.now()).toLocaleDateString()));
+      if(tb.revision) lines.push(svgText(tbX+tbW*0.55+1.5,tbY+17.5,'Rev '+tb.revision));
+      lines.push('</g>');
+    }
+    // Paper border
+    lines.push('<rect width="'+pw+'" height="'+ph+'" fill="none" stroke="#64748b" stroke-width="0.5"/>');
+    lines.push('</svg>');
+    var blob = new Blob([lines.join('\n')], { type: 'image/svg+xml' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'floorplan_' + ((sheet && (sheet.storeyName || sheet.name)) || 'sheet') + '.svg';
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   function exportDXF(outlines, models, elevation, opts) {
@@ -14999,9 +15323,26 @@ function startApp() {
       else alert('No 2D view canvas found.');
     }
 
+    function doExportSVG() {
+      var sheet = s.activeSheetId && (s.sheets || []).find(function(sh) { return sh.id === s.activeSheetId; });
+      if (!sheet && !s.floorPlan && !s.models.length) {
+        alert('Load a model and create a Sheet first.'); return;
+      }
+      var outlines = _cc2DOutlines;
+      if (!outlines || !outlines.length) {
+        // Generate on-demand if not cached
+        var elev = sheet ? sheet.elevation : (s.floorPlan ? s.floorPlan.elevation : 0);
+        var cutH = sheet ? (sheet.cutHeight || 1.2) : (s.floorPlan ? (s.floorPlan.cutHeight || 1.2) : 3);
+        outlines = generate2DOutlines(s.models, elev, cutH);
+      }
+      if (!outlines || !outlines.length) { alert('No geometry found at this elevation.'); return; }
+      exportSVG(outlines, sheet || null);
+    }
+
     window._ccDoExportDXF = doExportDXF;
     window._ccDoExportPNG = doExportPNG;
     window._ccDoExportPDF = doExportPDF;
+    window._ccDoExportSVG = doExportSVG;
 
     var EBTN = Object.assign({}, S_BTN, { fontSize: '.65rem', padding: '.25rem .6rem', border: '1px solid var(--border)' });
     return html`<div style=${{ background: 'var(--bg-primary)', borderTop: '1px solid var(--border-subtle)', padding: '.45rem 1rem', display: 'flex', alignItems: 'center', gap: '.6rem', flexShrink: 0, flexWrap: 'wrap' }}>
@@ -15009,7 +15350,8 @@ function startApp() {
       <button onClick=${doExportDXF} style=${{ ...EBTN, background: '#1e3a5f', color: '#93c5fd' }}>DXF (AutoCAD)</button>
       <button onClick=${doExportPNG} style=${{ ...EBTN, background: '#1e3a5f', color: '#93c5fd' }}>PNG (Image)</button>
       <button onClick=${doExportPDF} style=${{ ...EBTN, background: '#1e3a5f', color: '#93c5fd' }}>PDF (Print)</button>
-      <span style=${{ fontSize: '.55rem', color: 'var(--text-faint)', marginLeft: 'auto' }}>${s.activeSheetId ? 'Exporting active Sheet (layers + markups + pins + title block)' : 'DXF generates outlines from 3D at the active cut · PNG/PDF exports the live 2D view'}</span>
+      <button onClick=${doExportSVG} style=${{ ...EBTN, background: '#1e3a5f', color: '#6ee7b7' }}>SVG (Vector)</button>
+      <span style=${{ fontSize: '.55rem', color: 'var(--text-faint)', marginLeft: 'auto' }}>${s.activeSheetId ? 'Exporting active Sheet (layers + markups + pins + title block)' : 'DXF/SVG generate outlines from 3D at the active cut · PNG/PDF exports the live 2D view'}</span>
     </div>`;
   }
 
