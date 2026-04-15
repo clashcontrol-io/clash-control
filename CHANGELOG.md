@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.34 (2026-04-15)
+- Add level Show button, fix section plane and section box UX
+
 ## v4.14.33 (2026-04-14)
 - Auto-dismiss What's New toast after 5 s, pause on hover
 
