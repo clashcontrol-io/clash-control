@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.14.35 (2026-04-15)
+- fix: move /smart command into processNLCommandWithLLM for correct async handling
+
 ## v4.14.34 (2026-04-15)
 - Add level Show button, fix section plane and section box UX
 
