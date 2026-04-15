@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.15.2 (2026-04-15)
+- feat: polygon-face section cut for 2D floor plans
+
 ## v4.15.1 (2026-04-15)
 - feat: Revit-style 2D sheet view with paper rectangle, polygon chaining, SVG export
 
