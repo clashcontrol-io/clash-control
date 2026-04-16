@@ -14419,13 +14419,15 @@ function startApp() {
       var viewScale = pan.zoom * pxm;
       var px = e.clientX - rect.left - rect.width / 2 - pan.x;
       var py = e.clientY - rect.top - rect.height / 2 - pan.y;
-      var wx = -px / viewScale, wy = py / viewScale; // negate X to match mirrored rendering
+      var wx = -px / viewScale, wy = py / viewScale;
+      // Return canvas coordinates (canvasX = -worldX) so markup drawing is consistent
+      var cx = -wx; // canvas X = px / viewScale
       if (applySnap && sheet && window._cc2DSnapIndex) {
         var threshold = 12 / viewScale; // screen 12px
-        var hit = window._cc2DSnapIndex.query(-wx, wy, threshold);
+        var hit = window._cc2DSnapIndex.query(-cx, wy, threshold);
         if (hit) return [-hit[0], hit[1], true];
       }
-      return [wx, wy, false];
+      return [cx, wy, false];
     }
 
     function onDown(e) {
@@ -20130,10 +20132,10 @@ function startApp() {
 
         // ── Single-key shortcuts (non-chord keys) ──
         if(!ctrl && !e.altKey && !e.shiftKey){
-          if(e.key==='1'){ d({t:A.TAB,v:'clashes'}); return; }
-          if(e.key==='2'){ d({t:A.TAB,v:'issues'}); return; }
-          if(e.key==='3'){ d({t:A.TAB,v:'navigator'}); return; }
-          if(e.key==='4'){ d({t:A.TAB,v:'standards'}); return; }
+          if(e.key==='1'){ d({t:A.UPD_PREFS,u:{renderStyle:'standard'}}); return; }
+          if(e.key==='2'){ d({t:A.UPD_PREFS,u:{renderStyle:'shaded'}}); return; }
+          if(e.key==='3'){ d({t:A.UPD_PREFS,u:{renderStyle:'rendered'}}); return; }
+          if(e.key==='4'){ d({t:A.UPD_PREFS,u:{renderStyle:'wireframe'}}); return; }
         }
 
         if(e.key==='m'&&!ctrl){ d({t:A.MEASURE_MODE,v:s.measureMode?null:'length'}); return; }
