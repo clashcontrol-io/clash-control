@@ -733,11 +733,7 @@ function startApp() {
     if (item._groupedElems) item._groupedElems.forEach(function(eid){ refs.push({modelId: null, expressId: eid, role: 'grouped'}); });
     return refs;
   }
-  function _clearElCaches(model) {
-    if (model && model.elements) model.elements.forEach(function(el) {
-      delete el._wvCache; delete el._triCache; delete el._bvhCache;
-    });
-  }
+  function _clearElCaches(model) { _bvhLRURemoveModel(model); }
 
   function reducer(s,a) {
     switch(a.t) {
@@ -2646,6 +2642,33 @@ function startApp() {
             Math.sqrt(sdx*sdx+sdy*sdy+sdz*sdz)];
   }
 
+  // ── BVH LRU cache — bounded cross-run reuse ──────────────────────
+  // Keeps the last _BVH_CACHE_MAX element BVHs alive between detection runs so
+  // re-runs on the same model don't rebuild. Evicts the oldest entry when full,
+  // bounding total memory to roughly _BVH_CACHE_MAX × avg-element-mesh-size.
+  var _BVH_CACHE_MAX = 300;
+  var _bvhLRUList = []; // [oldest … newest] element references
+
+  function _bvhLRUTouch(el) {
+    var idx = _bvhLRUList.indexOf(el);
+    if (idx !== -1) _bvhLRUList.splice(idx, 1);
+    _bvhLRUList.push(el);
+  }
+  function _bvhLRUEvict() {
+    while (_bvhLRUList.length >= _BVH_CACHE_MAX) {
+      var old = _bvhLRUList.shift();
+      delete old._wvCache; delete old._triCache; delete old._bvhCache;
+    }
+  }
+  function _bvhLRURemoveModel(model) {
+    if (!model || !model.elements) return;
+    model.elements.forEach(function(el) {
+      var idx = _bvhLRUList.indexOf(el);
+      if (idx !== -1) _bvhLRUList.splice(idx, 1);
+      delete el._wvCache; delete el._triCache; delete el._bvhCache;
+    });
+  }
+
   // ── BVH (Bounding Volume Hierarchy) for triangles ───────────────
 
   function _buildBVHNode(tris, indices, lo, hi) {
@@ -2678,13 +2701,15 @@ function startApp() {
   }
 
   function _getBVH(el) {
-    if (el._bvhCache !== undefined) return el._bvhCache;
+    if (el._bvhCache !== undefined) { _bvhLRUTouch(el); return el._bvhCache; }
+    _bvhLRUEvict();
     var tris = _getWorldTris(el);
     if (!tris.length) return (el._bvhCache = null);
     var n = tris.length/9;
     var indices = new Int32Array(n);
     for (var i=0; i<n; i++) indices[i]=i;
     el._bvhCache = { tris:tris, root:_buildBVHNode(tris, indices, 0, n) };
+    _bvhLRUList.push(el);
     return el._bvhCache;
   }
 
