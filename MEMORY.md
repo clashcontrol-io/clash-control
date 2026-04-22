@@ -98,6 +98,21 @@ On branch `claude/review-clashcontrol-optimization-QhAYx` (review pass): wiring 
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-04-22
+**Summary:** 5 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- 4ffff92 chore: daily memory sync 2026-04-21
+- 0dcb06b chore: bump version to 4.16.1
+- 1b6c65e chore: update MEMORY.md active work log
+- f88c625 feat: wire unused data paths — DQ→Issues, feedback badge, BCF revit IDs, shared viewpoints
+- 4175de7 perf: O(1) BVH LRU + prune ghost mat cache on model unload
+
+</details>
+
 ### 2026-04-21
 **Summary:** 8 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
