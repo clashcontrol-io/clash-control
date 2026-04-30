@@ -643,3 +643,228 @@ visual patterns. Applied to tool design, this means:
    actionable.
 
 *End of Chapter 3.*
+
+---
+
+## Chapter 4: Visual Language & Tone
+
+### The Design Direction
+
+The existing DESIGN.md establishes the component system — tokens, spacing,
+motion, button variants. This chapter does not replace it. It specifies the
+*direction* of the visual update: what changes, what is added, and why.
+
+The target atmosphere is **an architectural sketchbook digitized**. Not a
+dark SaaS dashboard. Not a game engine interface. A space where you could
+imagine annotating a building elevation with a pen, flipping through section
+cuts, and sending a screenshot to a client. Focused, calm, a little tactile.
+
+The existing dark theme (`--bg-primary: #0f172a`) is a good foundation — it
+makes rendered IFC models look dramatically better than a white background.
+The accent color is the biggest change: blue (`#2563eb`) is replaced by
+violet (`#7c3aed`). Violet is associated with design tools (Figma's dark
+purple, Framer's violet), not engineering tools (Autodesk blue, Bentley blue).
+This single change shifts the perceived category of the product.
+
+---
+
+### Updated CSS Token Set
+
+The following tokens update or extend the current `:root` block in
+`index.html` (line 141). Tokens not listed here remain unchanged.
+
+**Shape — rounder, friendlier**
+
+```css
+--radius-sm:   8px;    /* was 6px — buttons, small chips */
+--radius-md:   14px;   /* was 8px — inputs, popovers */
+--radius-lg:   20px;   /* new — modals, drawer header */
+--radius-pill: 999px;  /* unchanged */
+```
+
+Rounding up from 6→8 and 8→14 is a meaningful shift. At 6px, elements feel
+precise and engineering-coded. At 14px, they feel approachable and considered.
+Figma uses 8–12px. Notion uses 6–10px. We land slightly above both because
+our content is 3D architectural geometry — the shell should soften the
+contrast with the technical model.
+
+**Brand — violet replaces blue**
+
+```css
+--accent:          #7c3aed;                       /* violet-700 */
+--accent-light:    #8b5cf6;                       /* violet-500 */
+--accent-hover:    #6d28d9;                       /* violet-800 */
+--accent-dim:      rgba(124,58,237,.12);          /* soft fill */
+--accent-bg:       rgba(124,58,237,.1);           /* was #1e3a5f */
+--accent-bg-deep:  rgba(124,58,237,.2);           /* was #172554 */
+--accent-subtle:   #c4b5fd;                       /* violet-300 for dark bg */
+```
+
+The logo gradient stays: `linear-gradient(135deg, #00e5ff 0%, #7c3aed 100%)`
+(cyan → violet). The cyan endpoint is kept for contrast — a pure violet
+gradient is heavy. The brand mark reads "design precision" (cyan) meeting
+"spatial thinking" (violet).
+
+**Glass surfaces — new set of tokens**
+
+Glass is used for the top bar, mode toolbar pill, right drawer, and any
+floating HUD. It is a functional choice, not a decorative one: glass signals
+"this panel is in front of the canvas" without covering the model with an
+opaque white box. The blur reinforces depth.
+
+```css
+--glass-bg:        rgba(15,15,20,.72);
+--glass-border:    rgba(255,255,255,.08);
+--glass-blur:      blur(16px);
+--glass-bg-light:  rgba(250,248,245,.88);  /* light theme variant */
+--glass-border-light: rgba(0,0,0,.08);
+```
+
+Usage rule: apply glass only to elements that float over the canvas. Panel
+interiors (left panel, right drawer interior) use `--bg-secondary` — a solid
+surface, not glass. Glass on every surface creates visual noise. Glass only
+where depth is being communicated.
+
+**Light theme — warm parchment, not clinical white**
+
+The light theme currently uses `--bg-primary: #f8fafc` (a cool grey-white).
+Update to a warm off-white:
+
+```css
+[data-theme=light] {
+  --bg-primary:   #faf8f5;   /* warm parchment */
+  --bg-secondary: #ffffff;
+  --bg-tertiary:  #f3f1ee;   /* warm recess */
+  --glass-bg:     var(--glass-bg-light);
+  --glass-border: var(--glass-border-light);
+  --scene-bg:     #e8e4de;   /* warm canvas background */
+}
+```
+
+Warm light mode feels like a printed architectural drawing or a physical
+model on a white table. Cool grey-white feels like a generic SaaS product.
+This is a small change with a disproportionate effect on perceived warmth.
+
+---
+
+### Typography — What Changes
+
+The font families are unchanged (Syne, DM Sans, DM Mono). The type scale
+tokens in DESIGN.md remain in place. Two specific changes:
+
+**Display headings** — the CC wordmark and modal titles already use Syne 700.
+Extend this to the mode toolbar chip labels when no model is loaded and
+the app is in its welcome state. The large "Drop an IFC file" heading on the
+first-run card uses Syne 800 at 1.75rem. This is the single "hero moment"
+where display typography is visible at scale.
+
+**Mono labels** — expand usage of DM Mono. The render style chip text
+("Lines", "Shaded", etc.), the FOV display ("75°"), the FPS counter, and
+all measurement readouts use mono. These are numbers and technical labels
+that benefit from fixed-width spacing. This is a subtle signal: mono =
+precise readout, sans-serif = human label. The distinction helps users parse
+information faster.
+
+---
+
+### Motion — No Decorative Animation
+
+The existing motion tokens (`--duration-fast: 120ms`, `--duration-base: 200ms`)
+are correct. The rule for this redesign: **animate only state transitions
+that communicate information**. Do not animate to delight.
+
+What gets animated:
+- The left panel sliding in when a tab is clicked (communicates: this panel
+  came from the left, it will return to the left)
+- The right drawer sliding in from the right (same)
+- Mode toolbar chips transitioning from inactive to active fill (communicates:
+  the active mode changed)
+- Comment pins appearing with a brief scale animation (communicates: the pin
+  was placed here)
+- The first-run card fading in when no model is loaded (communicates: you are
+  at the beginning)
+
+What does not get animated:
+- Hover states on most elements (120ms transition is enough; keyframe
+  animations on hover are decorative)
+- The canvas fly-to camera movement (this is already smooth from the existing
+  tween system; no change needed)
+- The ViewCube rotation (already smooth; no change)
+- Loading spinners (a single CSS spin animation is sufficient; no lottie,
+  no multi-step loader)
+
+The `@media (prefers-reduced-motion: reduce)` block must cover all of the
+above transitions by setting their duration to 1ms. Users who set this
+preference do so because motion causes discomfort. Respect it.
+
+---
+
+### Iconography — Specific Over Generic
+
+The current icon set uses a mix of Lucide icons (already inlined as SVG
+strings in the HTML) and custom paths. The redesign does not replace the
+icon library — it refines which icon is chosen for each concept.
+
+Rules for icon selection:
+1. The icon should have one obvious meaning. A funnel icon means "filter".
+   A magnifying glass means "search". Do not use a magnifying glass for
+   "zoom in" — that conflicts with its search meaning.
+2. Icons that represent physical tools should look like those tools. The
+   Slice knife icon should look like a scalpel, not an abstract line. The
+   Measure icon should look like a ruler, not a resize handle.
+3. Icon-only buttons outside the mode toolbar must have `aria-label` and
+   show a text tooltip on hover (already enforced in DESIGN.md).
+4. The mode toolbar chips show icon + label always (not icon-only). Labels
+   are hidden only on screens narrower than 480px, where they collapse to
+   icon-only with a bottom-edge label bar.
+
+The existing icons that need replacement:
+- Section plane button: currently a polygon icon → replace with scalpel/knife
+- Walk mode button: currently footsteps → keep (it is clear)
+- Comment/pin: currently a speech bubble → replace with pin/thumbtack
+- Addons (now Integrations): currently a puzzle piece → replace with a
+  plug icon (universal for "connect to external service")
+
+---
+
+### Copy Tone — Plain, Specific, Human
+
+The research in Chapter 1 referenced Gov.uk, Mailchimp, and Shopify Polaris
+as the benchmarks for copy that sounds human rather than AI-generated. The
+specific test from Polaris: "Read it out loud. Does it sound like something
+a human would say?"
+
+Applied to ClashControl, the principle is: **say what it does, not what it
+is**. A label is not a product description. It is a direction.
+
+**Words and phrases to avoid in the UI:**
+
+| Avoid               | Use instead                              |
+|---------------------|------------------------------------------|
+| Seamless            | (never use — say what is smooth)         |
+| Intuitive           | (never use — show, don't claim)          |
+| Powerful            | (never use — be specific about the power)|
+| Leverage            | Use                                      |
+| Navigate            | Go to, move to, open                     |
+| Utilize             | Use                                      |
+| Capture viewpoint   | Save this view                           |
+| Activate            | Turn on, start, open                     |
+| Functionality       | Feature, tool, option                    |
+| End user            | You, the user                            |
+| Surface             | Show, display                            |
+
+**Empty states** should always name the specific thing that is empty and say
+what to do about it:
+
+| Panel | Empty state text (current) | Empty state text (new) |
+|---|---|---|
+| Model tab — conflicts | "No clashes detected" | "No conflicts yet. Run a conflict check to find overlapping elements." |
+| Model tab — issues | "No issues" | "No issues added. Click any element and mark it as an issue." |
+| Views tab | "No viewpoints saved" | "No saved views. Set up a view you like, then click Save view." |
+| Search tab | (no model loaded) | "Open a model to search its elements." |
+| Note mode — no comments | "No comments" | "Click anywhere on the model to leave a note." |
+| Right drawer — nothing selected | (no state shown) | "Click any element to see its details." |
+
+Every empty state tells the user what to do next. No empty state is a dead end.
+
+*End of Chapter 4.*
