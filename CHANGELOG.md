@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.19.0 (2026-04-30)
+- feat(PR-A): TransformControls section gizmo
+
 ## v4.18.0 (2026-04-30)
 - chore: bump version to 4.17.1
 
