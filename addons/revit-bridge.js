@@ -303,7 +303,7 @@
   function _handleRevitMessage(msg, d) {
     // Debug: log all incoming messages (except high-frequency element-batch)
     if (msg.type !== 'element-batch' && msg.type !== 'pong') {
-      console.log('%c[Revit→CC] ' + msg.type, 'color:#60a5fa', msg);
+      console.log('%c[Revit→CC] %s', 'color:#60a5fa', msg.type, msg);
     }
     switch (msg.type) {
       case 'pong':
