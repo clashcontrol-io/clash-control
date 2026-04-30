@@ -868,3 +868,136 @@ what to do about it:
 Every empty state tells the user what to do next. No empty state is a dead end.
 
 *End of Chapter 4.*
+
+---
+
+## Chapter 5: Feature Remapping & Naming Pass
+
+### The Problem with the Current Feature Map
+
+The current UI has 28 distinct entry points to features. No user discovers
+all of them without reading documentation. Some features have been added
+progressively over time and ended up where there was space, not where they
+logically belong. The walk mode button is in the header next to the BCF
+import button. The comments icon is in the left rail next to the Data Quality
+tab. There is no coherent information architecture — just accumulation.
+
+This chapter maps every current entry point to its new home and specifies
+the correct label for each.
+
+---
+
+### Full Feature Remapping Table
+
+| Feature | Current location | Current label | New location | New label |
+|---|---|---|---|---|
+| File open / drag-drop | Welcome popup + header | Open file | Canvas drop zone + top bar "Open ▾" | Open |
+| BCF import | Header icon | Import BCF | Top bar "Open ▾" dropdown | Import BCF report |
+| Model list | Left rail — Models | Models | Left panel — Model tab (top) | Models |
+| Model visibility | Model list toggle | Eye icon | Model tab — visibility toggle | Hide / Show |
+| Model color | Model list color swatch | Color swatch | Model tab — color chip | Colour |
+| Model discipline | Model list dropdown | Discipline | Model tab — category chip | Category |
+| Conflict detection | Left rail — Clashes | Clashes | Left panel — Model tab, Conflicts section | Check for conflicts |
+| Conflict list | Left rail — Clashes | Clashes | Model tab — Conflicts section | Conflicts |
+| Issue list | Left rail — Issues | Issues | Model tab — Issues section | Issues |
+| Issue create | Clash row "+ issue" | Create issue | Element right-click → "Add issue" | Add issue |
+| Data quality | Left rail — Data Quality | Data Quality | Model tab — Quality section | Quality |
+| Viewpoints | Left rail — Viewpoints | Viewpoints | Left panel — Views tab, list | Saved views |
+| Save viewpoint | Viewpoints panel button | Save view | Views tab → "Save view" button | Save view |
+| Smart views | SmartViewsModal | Smart Views | Left panel — Views tab, grid (top) | Views |
+| Element search | Header search input | Search… | Left panel — Search tab | Search elements |
+| Element properties | Right click → properties | Properties | Right drawer — Details tab | Details |
+| Walk mode | Header button | Walk | Mode toolbar chip | Walk |
+| FOV controls | Walk HUD (auto-shown) | Narrow/Normal/Wide | Walk sub-tool row | Narrow / Natural / Wide |
+| Section plane | Header button ✂ | Section | Mode toolbar chip → Slice | Slice |
+| Section box | Header button □ | Section Box | Slice sub-tool row → Box | Slice box |
+| Section reset | Section controls | Reset | Slice context menu | Remove cut |
+| Measure | Header button | Measure | Mode toolbar chip | Measure |
+| Floor plan | Left rail icon | Floor Plan | Mode toolbar chip | Plan |
+| Floor plan export | Floor plan panel | Export SVG | Plan sub-tool row | Export as SVG |
+| Comment pins | Left rail icon | Comments | Mode toolbar chip | Note |
+| AI chat | Left rail icon | AI Chat | Right drawer — Ask AI tab | Ask AI |
+| Share | Header icon (16px) | Share | Top bar accent button | Share |
+| Share folder link | Share modal | Link Folder | Share modal — Overview tab | Link a folder |
+| Presentation mode | Keyboard P only | (hidden) | Top bar — Share ▾ dropdown | Present |
+| BCF export | Header icon | Export BCF | Share ▾ dropdown | Export BCF report |
+| Screenshot | (no explicit UI) | — | Share ▾ dropdown | Copy screenshot |
+| Render style | Keys 1–4 only | (hidden) | Canvas bottom-right HUD chip | Lines / Shaded / Rendered / Skeleton |
+| Theme toggle | Header icon | Theme | Top bar utility group | (sun/moon icon, no label) |
+| Help | Header ? icon | Help | Top bar utility group | (? icon) |
+| Keyboard shortcuts | Help modal | Shortcuts | Help overlay — Shortcuts tab | Shortcuts |
+| Integrations (addons) | Settings panel | Addons | Left panel — Settings tab | Integrations |
+| Shared project settings | Addon panel | Shared Project | Settings tab — top section | Sharing |
+| User name | Shared project panel | Your name | Settings tab — Sharing | Your name |
+| Training data | Settings panel | Training Data | Settings tab — Advanced | Training data |
+| Changelog | Settings panel | Changelog | Settings tab — About | What's new |
+| Version number | Settings panel | Version | Settings tab — About | Version |
+| Revit connector | Addons | Revit Bridge | Settings tab — Integrations | Revit |
+
+---
+
+### Naming Principles Applied
+
+The table above follows four naming rules:
+
+**1. Verbs for actions, nouns for places.** "Check for conflicts" is an
+action (verb phrase). "Conflicts" is a section label (noun). "Save view" is
+an action. "Saved views" is a list label. Do not mix these — "Clashes" as a
+tab label was a noun used where a verb belonged: clicking it detects clashes,
+it does not show a list of them. The redesign separates the detection action
+("Check for conflicts" button) from the list label ("Conflicts").
+
+**2. Plain English, no BIM jargon.** "Storey" → "Floor". "Discipline" →
+"Category". "Viewpoint" → "Saved view". "BCF" stays as-is in labels aimed at
+BIM coordinators (the third persona) but disappears from primary navigation.
+"Express ID" stays in the Details drawer (it is a technical reference for
+the secondary persona) but never appears in the Model tab or mode toolbar.
+
+**3. No generic labels.** "Settings" is acceptable for the settings tab
+because it is a universal convention. "Addons" is not — it is a developer
+term. "Options" would also be wrong — it is too generic to be useful. The
+correct label is "Integrations" because that is exactly what they are:
+connections to external tools (Revit, shared folders, training data).
+
+**4. Consistent tense for modal actions.** Buttons in modals that perform
+an action use present tense: "Share", "Save", "Export", "Import", "Check".
+Not "Sharing", "Saving", "Exporting". Not "Share it", "Save the view". Just
+the verb. This is the Mailchimp principle: short, direct, active.
+
+---
+
+### Terminology Reference Card
+
+This card is for anyone writing UI copy in `index.html`. Pin it.
+
+**Model content**
+- The building is a **model**. Multiple models are loaded into the **scene**.
+- Geometric overlaps are **conflicts** (not clashes, not intersections).
+- Resolved conflicts become **resolved** (not closed, not fixed).
+- A tracked problem is an **issue** (not a ticket, not a task).
+- A building level is a **floor** (not storey, not level, not Etage).
+- A collection of similar elements is a **category** (not discipline, not type group).
+- An element type is its **type** (not IFC type, not entity type).
+
+**Navigation and views**
+- A saved camera position is a **saved view** (not viewpoint, not bookmark).
+- Preset configurations are **views** (not smart views — "smart" is jargon).
+- Rotating around the model is **orbiting** (verb: orbit, pan, zoom).
+- Moving through the building is **walking** (not flying, not first-person).
+- Cutting the model is **slicing** (not sectioning, not clipping).
+
+**Collaboration and sharing**
+- Sending access to others is **sharing** (not publishing, not exporting a link).
+- A linked sync folder is a **shared folder** (not a shared project, not a link).
+- A text pin on the model is a **note** (not a comment, not an annotation).
+- A resolved note is **resolved** (not closed, not done, not fixed).
+- Your identity in shared notes is your **name** (not username, not handle).
+
+**Technical (Details drawer only — never in primary navigation)**
+- An element's numeric identifier is its **ID** (Express ID is the technical term;
+  use "ID" in the UI).
+- A file format is an **IFC file** (spell it out: "Open an IFC file", not "Open IFC").
+- BCF is always spelled "BCF" in labels aimed at BIM coordinators; avoid it
+  entirely in labels aimed at the architectural office personas.
+
+*End of Chapter 5.*
