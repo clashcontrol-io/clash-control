@@ -4444,6 +4444,7 @@ function startApp() {
   // ── Orbit Controls (inline) ──────────────────────────────────── INTERNALS.md §13
 
   var _sboxDragging = false;
+  var _orbitDragging = false; // true while left/middle mouse button or touch is held in orbit mode
   var _needsRender = 2; // start with a couple frames to initialize
   function invalidate(frames) { _needsRender = Math.max(_needsRender, frames||2); }
 
@@ -4476,8 +4477,8 @@ function startApp() {
 
     el.addEventListener('mousedown', function(e) {
       if(_sboxDragging || _walkActive) return; // don't orbit while dragging section box handles or in walk mode
-      if (e.button===0) { dragging=true; var _s3d=window._ccState3d; if(_s3d&&_s3d._sectionCutLines) _s3d._sectionCutLines.visible=false; }
-      if (e.button===1) { panning=true; e.preventDefault(); el.style.cursor='move'; var _s3d2=window._ccState3d; if(_s3d2&&_s3d2._sectionCutLines) _s3d2._sectionCutLines.visible=false; }
+      if (e.button===0) { dragging=true; _orbitDragging=true; var _s3d=window._ccState3d; if(_s3d&&_s3d._sectionCutLines) _s3d._sectionCutLines.visible=false; }
+      if (e.button===1) { panning=true; _orbitDragging=true; e.preventDefault(); el.style.cursor='move'; var _s3d2=window._ccState3d; if(_s3d2&&_s3d2._sectionCutLines) _s3d2._sectionCutLines.visible=false; }
       if (e.button===2) return; // reserved for context menu
       lx=e.clientX; ly=e.clientY; e.preventDefault();
     });
@@ -4500,6 +4501,7 @@ function startApp() {
     _wlAdd('mouseup', function(){
       var wasActive=dragging||panning;
       dragging=false;if(panning){panning=false;el.style.cursor='';}
+      _orbitDragging=false;
       if(wasActive){var _s3d=window._ccState3d;if(_s3d&&_s3d._sectionCutLines){_s3d._sectionCutLines.visible=true;invalidate();}}
     });
     el.addEventListener('wheel', function(e){
@@ -4546,6 +4548,7 @@ function startApp() {
     el.addEventListener('touchstart', function(e) {
       if(_sboxDragging || _walkActive) return;
       e.preventDefault();
+      _orbitDragging=true;
       var _s3d=window._ccState3d; if(_s3d&&_s3d._sectionCutLines) _s3d._sectionCutLines.visible=false;
       var t = e.touches;
       if(t.length===1) {
@@ -4586,7 +4589,7 @@ function startApp() {
       }
     },{passive:false});
     el.addEventListener('touchend', function(e) {
-      if(e.touches.length===0) { touchState.type=null; var _s3d=window._ccState3d; if(_s3d&&_s3d._sectionCutLines){_s3d._sectionCutLines.visible=true;invalidate();} }
+      if(e.touches.length===0) { touchState.type=null; _orbitDragging=false; var _s3d=window._ccState3d; if(_s3d&&_s3d._sectionCutLines){_s3d._sectionCutLines.visible=true;invalidate();} }
       else if(e.touches.length===1) {
         touchState.type='rotate'; touchState.lx=e.touches[0].clientX; touchState.ly=e.touches[0].clientY;
       }
@@ -6101,6 +6104,7 @@ function startApp() {
           _walkTick(S);
           if (Object.keys(_walkKeys).length > 0 || _walkPointerLocked) invalidate(3);
         }
+        if (_orbitDragging) invalidate(2);
         if(_needsRender <= 0) return;
         _needsRender--;
         cullFrame++;
@@ -7240,6 +7244,8 @@ function startApp() {
     var theme = props.theme || 'dark';
     var canvasRef = useRef(null);
     var vcState = useRef(null);
+    var activeFaceRef = useRef(-1);
+    var afArr = useState(-1); var activeFace = afArr[0]; var setActiveFace = afArr[1];
 
     // Face definitions: label + normal. Order MUST stay fixed (BOX_FACE_MAP depends on it).
     var FACES = [
@@ -7254,6 +7260,17 @@ function startApp() {
     var FACE_CLR = theme==='light'
       ? {FRONT:0x8494a7, BACK:0x7a8a9d, RIGHT:0x8494a7, LEFT:0x7a8a9d, TOP:0x8ea0b5, BOTTOM:0x708090}
       : {FRONT:0x3a5f8a, BACK:0x34537a, RIGHT:0x3a5f8a, LEFT:0x34537a, TOP:0x406690, BOTTOM:0x2e4a6e};
+
+    // Adjacent face normals for each face index: used by navigation arrows.
+    // right/left = rotate around world-Y; up/down = toward top/bottom face.
+    var FACE_ADJACENTS = [
+      {right:[1,0,0],  left:[-1,0,0], up:[0,1,0],  down:[0,-1,0]},  // 0 FRONT
+      {right:[-1,0,0], left:[1,0,0],  up:[0,1,0],  down:[0,-1,0]},  // 1 BACK
+      {right:[0,0,-1], left:[0,0,1],  up:[0,1,0],  down:[0,-1,0]},  // 2 RIGHT
+      {right:[0,0,1],  left:[0,0,-1], up:[0,1,0],  down:[0,-1,0]},  // 3 LEFT
+      {right:[1,0,0],  left:[-1,0,0], up:[0,0,-1], down:[0,0,1]},   // 4 TOP
+      {right:[1,0,0],  left:[-1,0,0], up:[0,0,1],  down:[0,0,-1]},  // 5 BOTTOM
+    ];
 
     function flyToDir(dir) {
       var S=state3d.current; if(!S||!S.orbit) return;
@@ -7354,10 +7371,12 @@ function startApp() {
       vcState.current = {renderer:renderer, scene:scene, camera:camera,
         cubeGroup:cubeGroup, cubeMesh:cubeMesh, materials:materials,
         edgeLines:edgeLines,
-        raycaster:raycaster, mouse:mouse, hoveredKey:null};
+        raycaster:raycaster, mouse:mouse, hoveredKey:null,
+        dirty:true};
 
-      // ── Animation loop ──────────────────────────────────────────
+      // ── Animation loop (render-on-demand) ──────────────────────
       var animId;
+      var _lastTheta = null, _lastPhi = null;
       function animate() {
         animId = requestAnimationFrame(animate);
         var S = state3d.current;
@@ -7365,6 +7384,30 @@ function startApp() {
         if(!S || !vc || !S.orbit) return;
         var theta = S.orbit.sph.theta;
         var phi   = S.orbit.sph.phi;
+
+        // Track which face the camera is roughly aligned with for navigation arrows.
+        // Camera direction = (sin(phi)*sin(theta), cos(phi), sin(phi)*cos(theta))
+        var cx = Math.sin(phi)*Math.sin(theta);
+        var cy = Math.cos(phi);
+        var cz = Math.sin(phi)*Math.cos(theta);
+        var newFace = -1, maxDot = 0.82; // ~34° threshold
+        for(var fi=0; fi<FACES.length; fi++){
+          var n = FACES[fi].normal;
+          var dot = n[0]*cx + n[1]*cy + n[2]*cz;
+          if(dot > maxDot){ maxDot = dot; newFace = fi; }
+        }
+        if(newFace !== activeFaceRef.current){
+          activeFaceRef.current = newFace;
+          setActiveFace(newFace);
+          vc.dirty = true;
+        }
+
+        // Skip GPU work if nothing changed.
+        if(!vc.dirty && theta === _lastTheta && phi === _lastPhi) return;
+        _lastTheta = theta;
+        _lastPhi   = phi;
+        vc.dirty   = false;
+
         _qY.setFromAxisAngle(_AY, theta);
         _qX.setFromAxisAngle(_AX, phi - Math.PI/2);
         _qCam.multiplyQuaternions(_qY, _qX);
@@ -7424,6 +7467,7 @@ function startApp() {
           mat.map.needsUpdate = true;
           mat.color.setHex(isHov ? 0x2563eb : (FACE_CLR[FACES[fi].label]||0x3a5f8a));
         });
+        vc.dirty = true;
       }
 
       // ── Drag-to-orbit / click (mouse + touch) ────────────────
@@ -7489,10 +7533,33 @@ function startApp() {
       });
       // Update edge color
       if(vc.edgeLines) vc.edgeLines.material.color.setHex(light ? 0x64748b : 0x94a3b8);
+      vc.dirty = true;
     }, [theme]);
 
-    return html`<div class="cc-viewcube-wrap" style=${{position:'absolute',top:'3rem',right:'1rem',pointerEvents:'auto',width:98,height:98}}>
+    var light = theme==='light';
+    var adjBtnBase = {
+      position:'absolute', display:'flex', alignItems:'center', justifyContent:'center',
+      background: light ? 'rgba(226,232,240,0.88)' : 'rgba(15,30,60,0.82)',
+      color: light ? '#334155' : '#93c5fd',
+      border: '1px solid ' + (light ? 'rgba(100,116,139,0.45)' : 'rgba(96,165,250,0.35)'),
+      borderRadius:'3px', cursor:'pointer', fontSize:'11px', lineHeight:1,
+      padding:0, userSelect:'none', fontFamily:'inherit',
+      transition:'background .12s,color .12s'
+    };
+    var adj = activeFace >= 0 ? FACE_ADJACENTS[activeFace] : null;
+
+    return html`<div class="cc-viewcube-wrap" style=${{position:'absolute',top:'3rem',right:'1rem',pointerEvents:'auto',width:98,height:98,overflow:'visible'}}>
       <canvas ref=${canvasRef} width="84" height="84" style=${{cursor:'pointer',position:'absolute',top:7,left:7,width:84,height:84}} />
+      ${adj && html`
+        <button aria-label="Left view" style=${{...adjBtnBase,width:13,height:22,left:-15,top:38}}
+          onClick=${function(){flyToDir(adj.left);}}>&#8249;</button>
+        <button aria-label="Right view" style=${{...adjBtnBase,width:13,height:22,right:-15,top:38}}
+          onClick=${function(){flyToDir(adj.right);}}>&#8250;</button>
+        <button aria-label="Top view" style=${{...adjBtnBase,width:22,height:13,left:38,top:-15}}
+          onClick=${function(){flyToDir(adj.up);}}>&#8963;</button>
+        <button aria-label="Bottom view" style=${{...adjBtnBase,width:22,height:13,left:38,bottom:-15}}
+          onClick=${function(){flyToDir(adj.down);}}>&#8964;</button>
+      `}
     </div>`;
   }
 
