@@ -1,5 +1,8 @@
 # Changelog
 
+## v4.16.4 (2026-04-30)
+- fix: replace setFromObject(scene) with _elemsBBox() to fix instanced mesh bounds
+
 ## v4.16.3 (2026-04-26)
 - perf+sec: kill periodic rotation hitch; rate-limit /api/nl + /api/title
 
