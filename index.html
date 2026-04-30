@@ -21209,6 +21209,117 @@ function startApp() {
     </div>`;
   }
 
+  // ── Mode Toolbar ──────────────────────────────────────────────
+  function ModeToolbar(props) {
+    var s=props.s, d=props.d;
+    // Only show when a model is loaded and not in presenting mode
+    if (!s.models || s.models.length === 0) return null;
+    if (s.presenting) return null;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('cc_new_toolbar') !== '1') return null;
+
+    var activeMode = s.walkMode ? 'walk'
+      : (s.sectionAxis || s.sectionCustom || (s.sectionBox && s.sectionBox.enabled)) ? 'slice'
+      : s.measureMode ? 'measure'
+      : s.floorPlan ? 'plan'
+      : s.commentMode ? 'note'
+      : 'orbit';
+
+    function setMode(mode) {
+      // mutex: exit all active modes first
+      if (s.walkMode) d({t:A.WALK_MODE,v:false});
+      if (s.sectionAxis) d({t:A.SECTION,axis:null});
+      if (s.sectionCustom) d({t:A.SECTION_CUSTOM,v:null});
+      if (s.sectionBox && s.sectionBox.enabled) d({t:A.SECTION_BOX,v:null});
+      if (s.measureMode) d({t:A.MEASURE_MODE,v:false});
+      if (s.floorPlan) d({t:A.FLOOR_PLAN,v:null});
+      if (s.commentMode) d({t:A.COMMENT_MODE,v:false});
+      if (mode === 'walk') d({t:A.WALK_MODE,v:true});
+      else if (mode === 'slice') d({t:A.SECTION,axis:'y',pos:0.5});
+      else if (mode === 'measure') d({t:A.MEASURE_MODE,v:true});
+      else if (mode === 'plan' && s.floors && s.floors.length>0) d({t:A.FLOOR_PLAN,v:{storeyId:s.floors[0].id,storeyName:s.floors[0].name||'Floor 1',elevation:s.floors[0].elevation||0,cutHeight:1.2}});
+      else if (mode === 'note') d({t:A.COMMENT_MODE,v:true});
+    }
+
+    var chips = [
+      {id:'orbit', label:'Orbit', title:'Rotate, pan and zoom (Esc)', icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
+      {id:'walk', label:'Walk', title:'Walk through the building (W)', icon:'<path d="M13 4a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/><path d="M7 20l2-8 3 3 2-4 3 7"/><path d="M5 12l2-2 4 2"/>'},
+      {id:'slice', label:'Slice', title:'Cut a section through the model (S)', icon:'<line x1="18" y1="6" x2="6" y2="18"/><path d="M8 6h10v10"/>'},
+      {id:'measure', label:'Measure', title:'Measure distances (M)', icon:'<path d="M2 12h20M2 12l3-3m-3 3l3 3M22 12l-3-3m3 3l-3 3"/>'},
+      {id:'plan', label:'Plan', title:'Top-down floor plan (F)', icon:'<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>'},
+      {id:'note', label:'Note', title:'Drop a comment pin on the model (N)', icon:'<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>'}
+    ];
+
+    var chipStyle = function(id) {
+      var isActive = activeMode === id;
+      return {display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'.35rem .7rem',borderRadius:'var(--radius-md)',border:'none',
+        background: isActive ? 'var(--accent)' : 'transparent',
+        color: isActive ? '#fff' : 'var(--text-muted)',
+        cursor:'pointer',fontFamily:'inherit',fontSize:'var(--text-xs)',fontWeight:600,
+        transition:'background .12s,color .12s',lineHeight:1.2,minWidth:52};
+    };
+
+    // Sub-tool rows
+    var subTools = null;
+    if (activeMode === 'walk') {
+      var curFov = typeof window._ccWalkGetFov==='function' ? window._ccWalkGetFov() : 75;
+      var fovPresets = [{v:50,l:'Narrow'},{v:75,l:'Natural'},{v:95,l:'Wide'}];
+      subTools = html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.25rem .5rem',background:'var(--glass-bg)',backdropFilter:'var(--glass-blur)',WebkitBackdropFilter:'var(--glass-blur)',border:'1px solid var(--glass-border)',borderRadius:'var(--radius-md)'}}>
+        ${fovPresets.map(function(fp){
+          var on = Math.abs(curFov-fp.v)<1.5;
+          return html`<button key=${fp.v} onClick=${function(){if(window._ccWalkSetFov)window._ccWalkSetFov(fp.v);}}
+            style=${{padding:'.2rem .5rem',borderRadius:6,border:'none',background:on?'var(--accent)':'rgba(255,255,255,.08)',color:'#fff',fontSize:'var(--text-xs)',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>${fp.l}</button>`;
+        })}
+        <span style=${{width:1,height:16,background:'rgba(255,255,255,.15)',margin:'0 .2rem'}}></span>
+        <button onClick=${function(){if(window._ccWalkSetCollision)window._ccWalkSetCollision(!(typeof window._ccWalkGetFlags==='function'&&window._ccWalkGetFlags().collision));}}
+          style=${{padding:'.2rem .5rem',borderRadius:6,border:'none',background:'rgba(255,255,255,.08)',color:'#fff',fontSize:'var(--text-xs)',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>No-clip</button>
+      </div>`;
+    } else if (activeMode === 'slice') {
+      var sliceAxes = [{axis:'y',label:'Horizontal'},{axis:'z',label:'Front'},{axis:'x',label:'Side'},{box:true,label:'Box'}];
+      subTools = html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.25rem .5rem',background:'var(--glass-bg)',backdropFilter:'var(--glass-blur)',WebkitBackdropFilter:'var(--glass-blur)',border:'1px solid var(--glass-border)',borderRadius:'var(--radius-md)'}}>
+        ${sliceAxes.map(function(sa){
+          var on = sa.box ? (s.sectionBox&&s.sectionBox.enabled) : s.sectionAxis===sa.axis;
+          return html`<button key=${sa.label} onClick=${function(){
+            if(sa.box){ d({t:A.SECTION,axis:null}); if(window._ccActivateSectionBox)window._ccActivateSectionBox(); else d({t:A.SECTION_BOX,v:{enabled:true,min:null,max:null}}); }
+            else d({t:A.SECTION,axis:sa.axis,pos:0.5});
+          }} style=${{padding:'.2rem .5rem',borderRadius:6,border:'none',background:on?'var(--accent)':'rgba(255,255,255,.08)',color:'#fff',fontSize:'var(--text-xs)',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>${sa.label}</button>`;
+        })}
+        <span style=${{width:1,height:16,background:'rgba(255,255,255,.15)',margin:'0 .2rem'}}></span>
+        <button onClick=${function(){d({t:A.SECTION,axis:null});d({t:A.SECTION_BOX,v:null});}}
+          style=${{padding:'.2rem .5rem',borderRadius:6,border:'none',background:'rgba(255,255,255,.08)',color:'#f87171',fontSize:'var(--text-xs)',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Remove cut</button>
+      </div>`;
+    } else if (activeMode === 'measure' && s.measurements && s.measurements.length>0) {
+      subTools = html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.25rem .5rem',background:'var(--glass-bg)',backdropFilter:'var(--glass-blur)',WebkitBackdropFilter:'var(--glass-blur)',border:'1px solid var(--glass-border)',borderRadius:'var(--radius-md)'}}>
+        <button onClick=${function(){d({t:A.CLEAR_MEASUREMENTS});}}
+          style=${{padding:'.2rem .5rem',borderRadius:6,border:'none',background:'rgba(255,255,255,.08)',color:'#f87171',fontSize:'var(--text-xs)',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Clear all</button>
+      </div>`;
+    } else if (activeMode === 'plan' && s.floors && s.floors.length>0) {
+      subTools = html`<div style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.25rem .5rem',background:'var(--glass-bg)',backdropFilter:'var(--glass-blur)',WebkitBackdropFilter:'var(--glass-blur)',border:'1px solid var(--glass-border)',borderRadius:'var(--radius-md)'}}>
+        ${s.floors.slice(0,6).map(function(fl){
+          var on = s.floorPlan && s.floorPlan.storeyId===fl.id;
+          return html`<button key=${fl.id} onClick=${function(){d({t:A.FLOOR_PLAN,v:{storeyId:fl.id,storeyName:fl.name||'Floor',elevation:fl.elevation||0,cutHeight:1.2}});}}
+            style=${{padding:'.2rem .5rem',borderRadius:6,border:'none',background:on?'var(--accent)':'rgba(255,255,255,.08)',color:'#fff',fontSize:'var(--text-xs)',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>${fl.name||'Floor'}</button>`;
+        })}
+      </div>`;
+    }
+
+    return html`<div style=${{position:'fixed',bottom:16,left:'50%',transform:'translateX(-50%)',zIndex:200,display:'flex',flexDirection:'column',alignItems:'center',gap:'.4rem',pointerEvents:'auto'}}>
+      ${subTools}
+      <div style=${{display:'flex',alignItems:'center',gap:'.15rem',padding:'.3rem .35rem',
+        background:'var(--glass-bg)',backdropFilter:'var(--glass-blur)',WebkitBackdropFilter:'var(--glass-blur)',
+        border:'1px solid var(--glass-border)',borderRadius:'var(--radius-lg)',
+        boxShadow:'0 8px 32px rgba(0,0,0,.35)'}}>
+        ${chips.map(function(chip){
+          return html`<button key=${chip.id} onClick=${function(){setMode(chip.id);}}
+            title=${chip.title}
+            style=${chipStyle(chip.id)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:chip.icon}}></svg>
+            <span>${chip.label}</span>
+          </button>`;
+        })}
+      </div>
+    </div>`;
+  }
+
   // ── Mobile Bottom Nav ─────────────────────────────────────────
 
   function MobileNav(props) {
@@ -22026,6 +22137,7 @@ function startApp() {
       </div>`}
       ${s.showRevitBridge && html`<${RevitBridgePanel} s=${s} d=${d} />`}
       ${s.presenting && html`<${PresentationOverlay} s=${s} d=${d} />`}
+      <${ModeToolbar} s=${s} d=${d} />
       <${MobileNav} s=${s} d=${d} />
       <${WelcomePopup} s=${s} d=${d} />
       <${PrivacyBanner} />
