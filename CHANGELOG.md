@@ -1,5 +1,20 @@
 # Changelog
 
+## v4.19.0 (2026-04-30)
+- feat(PR-A): TransformControls section gizmo
+
+## v4.18.0 (2026-04-30)
+- chore: bump version to 4.17.1
+
+## v4.17.1 (2026-04-30)
+- feat(revit-bridge): implement session resumption + keep/discard partial model UI
+
+## v4.17.0 (2026-04-30)
+- feat: top-level Share entry + pin-on-model comments via folder-sync
+
+## v4.16.6 (2026-04-30)
+- fix(revit-bridge): handle isLinked→isLink field rename + add export-start/end logging
+
 ## v4.16.5 (2026-04-30)
 - fix: bump geo cache to v4 to invalidate corrupted v3 entries from instancing
 
