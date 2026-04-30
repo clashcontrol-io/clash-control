@@ -6783,6 +6783,123 @@ function startApp() {
       invalidate();
     }, [s.sectionAxis, s.sectionPos, s.sectionCustom]);
 
+    // ── TransformControls section gizmo (PR-A) ─────────────────
+    // Adds a draggable 3-axis-aware translate gizmo on the active section
+    // plane so users can grab the arrow and slide. Falls back gracefully
+    // if examples/js/controls/TransformControls.js fails to load — the
+    // existing raycast drag on the visible arrow still works.
+    var tcLoadedRef = useRef(false);
+    useEffect(function(){
+      var S = state3d.current;
+      if (!S || !S.scene || !S.camera || !S.renderer) return;
+      var _disp = window._ccDispatch;
+
+      function detachAndHide() {
+        if (S._sectionTC) {
+          try { S._sectionTC.detach(); } catch(e){}
+          if (S._sectionTC.parent) S._sectionTC.parent.remove(S._sectionTC);
+        }
+      }
+
+      function ensureGizmo(cb) {
+        if (S._sectionTC) { cb(); return; }
+        if (typeof THREE.TransformControls !== 'function') {
+          if (tcLoadedRef.current) { cb(); return; }
+          tcLoadedRef.current = true;
+          var url = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js';
+          var sc = document.createElement('script');
+          sc.src = url; sc.async = true;
+          sc.onload = function(){ if (typeof THREE.TransformControls === 'function') buildAndCb(); else cb(); };
+          sc.onerror = function(){ console.warn('[gizmo] TransformControls load failed'); cb(); };
+          document.head.appendChild(sc);
+        } else {
+          buildAndCb();
+        }
+        function buildAndCb() {
+          if (S._sectionTC) { cb(); return; }
+          var anchor = new THREE.Object3D();
+          anchor.userData._sectionAnchor = true;
+          S._sectionAnchor = anchor;
+          var tc = new THREE.TransformControls(S.camera, S.renderer.domElement);
+          tc.setMode('translate');
+          tc.setSize(0.85);
+          tc.userData._isSectionTC = true;
+          tc.addEventListener('dragging-changed', function(ev){
+            if (S.orbit) S.orbit.enabled = !ev.value;
+            window._ccSectionDragging = !!ev.value;
+            invalidate(3);
+          });
+          tc.addEventListener('objectChange', function(){
+            if (!_disp) return;
+            var st = window._ccLatestState || {};
+            var box = _elemsBBox(); if (box.isEmpty()) return;
+            var ax = st.sectionAxis;
+            if (ax) {
+              var minV = box.min[ax], maxV = box.max[ax];
+              if (Math.abs(maxV - minV) < 1e-6) return;
+              var posVal = anchor.position[ax];
+              var t = (posVal - minV) / (maxV - minV);
+              t = Math.max(0.005, Math.min(0.995, t));
+              _disp({t:A.SECTION, axis:ax, pos:t});
+            } else if (st.sectionCustom) {
+              var sc = st.sectionCustom;
+              var n = new THREE.Vector3(sc.normal[0],sc.normal[1],sc.normal[2]);
+              var p0 = new THREE.Vector3(sc.point[0],sc.point[1],sc.point[2]);
+              var diag = box.getSize(new THREE.Vector3()).length();
+              if (diag < 1e-6) return;
+              var rel = anchor.position.clone().sub(p0).dot(n) / diag + 0.5;
+              rel = Math.max(0.005, Math.min(0.995, rel));
+              _disp({t:A.SECTION_CUSTOM, v:sc, pos:rel});
+            }
+          });
+          S._sectionTC = tc;
+          cb();
+        }
+      }
+
+      // Detach when there's no active section, or while walking/presenting.
+      if (!s.sectionAxis && !s.sectionCustom) { detachAndHide(); invalidate(2); return; }
+      if (s.walkMode || s.presenting) { detachAndHide(); invalidate(2); return; }
+
+      ensureGizmo(function(){
+        if (!S._sectionTC || !S._sectionAnchor) return;
+        var box = _elemsBBox();
+        if (box.isEmpty()) return;
+        var center = box.getCenter(new THREE.Vector3());
+        if (s.sectionAxis) {
+          var ax = s.sectionAxis;
+          var minV = box.min[ax], maxV = box.max[ax];
+          var cut = minV + (maxV - minV) * s.sectionPos;
+          S._sectionAnchor.position.copy(center);
+          S._sectionAnchor.position[ax] = cut;
+          S._sectionAnchor.rotation.set(0,0,0);
+          S._sectionTC.showX = (ax==='x');
+          S._sectionTC.showY = (ax==='y');
+          S._sectionTC.showZ = (ax==='z');
+        } else if (s.sectionCustom) {
+          var sc = s.sectionCustom;
+          var n = new THREE.Vector3(sc.normal[0],sc.normal[1],sc.normal[2]).normalize();
+          var p0 = new THREE.Vector3(sc.point[0],sc.point[1],sc.point[2]);
+          var diag = box.getSize(new THREE.Vector3()).length();
+          var offset = (s.sectionPos - 0.5) * diag;
+          var pos = p0.clone().addScaledVector(n, offset);
+          S._sectionAnchor.position.copy(pos);
+          var q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), n);
+          S._sectionAnchor.quaternion.copy(q);
+          S._sectionAnchor.rotation.copy(S._sectionAnchor.rotation); // sync
+          S._sectionTC.showX = false;
+          S._sectionTC.showY = false;
+          S._sectionTC.showZ = true;
+          S._sectionTC.space = 'local';
+        }
+        if (!S._sectionTC.parent) S.scene.add(S._sectionTC);
+        S._sectionTC.attach(S._sectionAnchor);
+        invalidate(3);
+      });
+
+      return function(){};
+    }, [s.sectionAxis, s.sectionCustom, s.sectionPos, s.walkMode, s.presenting]);
+
     var sboxDragRef = useRef(null); // {handle, axis, side, startMouse, startVal, plane}
     useEffect(function(){
       var S = state3d.current; if(!S.renderer||!S.mg) return;
