@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.0.0 (2026-04-30)
+- ci: remove custom CodeQL workflow — conflicts with Default Setup already enabled on repo
+
 ## v4.19.0 (2026-04-30)
 - feat(PR-A): TransformControls section gizmo
 
