@@ -1161,3 +1161,309 @@ to switch to Skeleton style. The performance threshold is checked against
 triangle count after loading, not before.
 
 *End of Chapter 6.*
+
+---
+
+## Chapter 7: Implementation Roadmap
+
+### Approach — Eight PRs, No Big Bang
+
+A full UI overhaul committed in a single PR would make reviewing, testing,
+and reverting prohibitively difficult. The changes are broken into eight
+pull requests ordered so that each one ships working software. No PR leaves
+the app in a broken state.
+
+The eight PRs are ordered so that visual changes come first (low risk, high
+signal), followed by structural changes (medium risk), followed by cleanup
+(removing old code after the new code is proven). A feature flag guards the
+structural changes until they are verified in the browser.
+
+---
+
+### PR-1 — CSS Tokens + Glass Surfaces
+
+**Scope:** `index.html` `:root` block only.
+
+Updates the CSS custom properties as specified in Chapter 4:
+- `--accent` changed from `#2563eb` to `#7c3aed` (violet)
+- `--accent-*` family updated to violet scale
+- `--radius-sm` 6px → 8px, `--radius-md` 8px → 14px, `--radius-lg` 12px → 20px
+- `--glass-bg`, `--glass-border`, `--glass-blur` added as new tokens
+- Light theme `--bg-primary` changed to warm parchment `#faf8f5`
+- Light theme `--scene-bg` changed to warm `#e8e4de`
+
+No component code changes. The existing buttons, inputs, modals, and panels
+inherit the updated tokens automatically. The test is: open `index.html` in
+dark mode and light mode, confirm that nothing is broken and the violet accent
+is visible on the Share button, focus rings, and active left rail icons.
+
+**Risk:** Low. CSS token change only. Reverting is a single-line change per
+token. The only visual regression risk is contrast: the violet accent at
+`#7c3aed` on a dark `#0f172a` background achieves a contrast ratio of 5.7:1
+(WCAG AA). Verify this before shipping.
+
+---
+
+### PR-2 — Bottom Mode Toolbar
+
+**Scope:** New `ModeToolbar` component added to `index.html`. The existing
+mode-toggle buttons in the header remain in place for this PR.
+
+The new component renders the six-chip pill: Orbit, Walk, Slice, Measure,
+Plan, Note. Each chip reads active mode from state and dispatches the
+existing actions (`SET_WALK_MODE`, `SET_SECTION_AXIS`, `SET_MEASURE_MODE`,
+`SET_FLOOR_PLAN`, `SET_COMMENT_MODE`). The Orbit chip activates when all
+other modes are off.
+
+Sub-tool rows for Walk (FOV chips + slider) and Slice (axis chips + Flip)
+are wired to the existing state and functions. Plan sub-tools (floor
+selector) read from `state.floors`. Note sub-tools: empty row, not shown.
+
+The toolbar is positioned `position: fixed`, `bottom: 16px`,
+`left: 50%`, `transform: translateX(-50%)`. `z-index: 100`.
+
+Feature flag: `localStorage.cc_new_toolbar === '1'` gates the new toolbar.
+While the flag is not set, the old header buttons continue to work.
+
+**Test:** Set the flag, confirm all six modes toggle correctly. Confirm
+sub-tool rows appear on Slice and Walk. Confirm Escape returns to Orbit.
+Confirm keyboard shortcuts W, S, M, F, N work. Load a model and test that
+section planes, walk, and floor plans all function correctly via the new
+toolbar.
+
+---
+
+### PR-3 — Top Bar Slim
+
+**Scope:** `Header()` component in `index.html` (line 8457).
+
+Remove: walk button, section buttons, measure button, BCF export button,
+BCF import button, floor plan button, comment mode button, search input,
+AI chat button, settings icon, presentation mode button.
+
+Keep: logo mark + wordmark, Share button (now accent pill), sync status dot,
+theme toggle, help icon.
+
+The Share button gets the `cc-btn-press` micro-interaction class and shows
+an unread-comment badge using the existing `state.comments` count.
+
+The BCF import button moves to a small dropdown under the logo (an "Open ▾"
+menu that offers: Open IFC file, Import BCF report). This is a secondary
+path — the primary path is drag-drop.
+
+The BCF export and presentation mode buttons move to the Share ▾ dropdown.
+
+**Dependency:** PR-2 must be shipped first (mode toolbar provides the
+features being removed from the header).
+
+**Test:** Confirm that every feature removed from the header is reachable
+via the new toolbar or dropdowns. Confirm the Share modal still opens. Confirm
+BCF import still works via the Open dropdown.
+
+---
+
+### PR-4 — Left Rail to 4-Tab Strip
+
+**Scope:** `LeftRail()` component (line 19990) and related panel components.
+
+Replace the current 15-icon left rail with a 4-tab strip: Model (▦), Views
+(◉), Search (🔍), Settings (⚙). Each tab opens a 280px slide-in panel.
+
+**Model tab panel** contains four collapsible sections, top to bottom:
+1. Models list (existing `ModelsPanel` content)
+2. Conflicts (existing clashes list, renamed)
+3. Issues (existing issues panel)
+4. Quality (existing data quality panel)
+
+Each section has a header row: name on the left, count badge on the right,
+chevron to collapse. Default state: Models section open, the rest collapsed.
+
+**Views tab panel** contains:
+1. Smart Views grid (existing `SmartViewsModal` content, moved here)
+2. Saved Views list (existing viewpoints list, renamed)
+
+**Search tab panel** contains:
+1. Text input: "Search elements..."
+2. Filter chips: Type, Floor, Category
+3. Results list (existing element search behavior)
+
+**Settings tab panel** contains:
+1. Sharing section (existing `sharedProject` addon panel, user name field)
+2. Integrations section (existing addons list, renamed)
+3. Advanced accordion (training data, debug)
+4. About section (version, changelog link)
+
+**Dependency:** PR-3 must be shipped first (settings and search moved from header).
+
+---
+
+### PR-5 — Right Drawer
+
+**Scope:** New `RightDrawer` component.
+
+A 320px panel that slides in from the right edge. Two tabs: Details and Ask AI.
+
+**Details tab** shows selected element properties. The existing properties
+display logic (currently in a floating overlay or modal) is moved here.
+Sections: Element name + type (large, at top), Floor, Category, Material,
+Linked issues list. No Express ID visible — it is shown only in an expandable
+"Technical details" accordion at the bottom of the tab.
+
+**Ask AI tab** moves the existing `AIChatPanel` component here. The tab is
+renamed "Ask AI". The placeholder text in the input is "Ask about this
+model...".
+
+The drawer is triggered by:
+1. Clicking any element in the 3D canvas (opens Details tab)
+2. Clicking an element in the Model tab list (opens Details tab)
+3. Clicking the Ask AI button in the Share modal or anywhere that
+   currently opens the AI panel
+
+The drawer closes with the X button in its header or by pressing Escape
+(if no modal is open above it).
+
+---
+
+### PR-6 — Naming and Language Pass
+
+**Scope:** All user-visible strings in `index.html`.
+
+A systematic find-and-replace pass using the terminology reference card
+from Chapter 5. This is the most cross-cutting change — it touches every
+panel, every tooltip, every empty state.
+
+The approach:
+1. Search for each old term: "Clash", "Viewpoint", "Section", "Storey",
+   "Discipline", "Addon". Include variations: "clashes", "viewpoints", etc.
+2. Replace only in user-visible strings (HTML content, tooltip strings,
+   placeholder text, button labels). Do not replace in:
+   - JavaScript variable names
+   - Action type constants (e.g. `'ADD_VIEWPOINT'`)
+   - CSS class names
+   - Comments
+3. Update all empty state copy to match the table in Chapter 4.
+4. Update all modal titles, section headers, and panel headings.
+
+**Risk:** Medium. String changes can break layout if a longer string does
+not fit a fixed-width container. Test every panel in both themes after
+the pass. Pay attention to the left rail tab labels (now 4 tabs, shorter
+labels) and the mode toolbar chips (short labels required).
+
+---
+
+### PR-7 — First-Run Card
+
+**Scope:** Replace `WelcomePopup` component (line 20949).
+
+The new `FirstRunCard` component renders the model-loading card described
+in Chapter 6. It shows when `state.models.length === 0`. It hides when a
+model begins loading. It does not appear if a model is already in state.
+
+Wiring:
+- Drop zone connected to the existing drag-drop IFC handler
+- "Choose a file" button connected to the existing file input click
+- "Try a sample" loads a small demo IFC from the repo or CDN
+- "Open from URL" fetches the IFC from a URL and pipes it to the loader
+- "Link a shared folder →" dispatches `{t: 'SHARE', tab: 'overview'}`
+
+The guidance bar ("Orbit: drag to rotate...") is a new component rendered
+as a fixed-position strip above the mode toolbar. It is shown via a
+`firstRunGuidanceSeen` flag in localStorage.
+
+**Dependency:** PR-3 (top bar slim) for the "Open ▾" menu. PR-2 (mode
+toolbar) so the guidance bar appears above it correctly.
+
+---
+
+### PR-8 — Mode Mutex + Cleanup
+
+**Scope:** Reducer + cleanup of dead code.
+
+**Mode mutex:** Add a reducer guard so that activating any mode first
+deactivates all other modes. Currently, in theory, `walkMode` and `sectionAxis`
+could both be truthy simultaneously. The mutex is a small change to each
+mode-activation case in the reducer: before setting the new mode to true,
+set all other mode booleans to false.
+
+**Feature flag removal:** Remove the `localStorage.cc_new_toolbar` check
+introduced in PR-2. The old header buttons removed in PR-3 are now gone.
+
+**Dead code removal:**
+- Old header section buttons (removed in PR-3)
+- Old walk mode button in header (removed in PR-3)
+- Old comment mode icon in left rail (removed in PR-4)
+- Old WelcomePopup component (replaced in PR-7)
+- Any leftover `SmartViewsModal` trigger in the old left rail (moved in PR-4)
+
+**Version bump:** After PR-8 passes review, bump the minor version. This is
+a significant UX change that warrants a 4.17.0 → 4.18.0 bump, not a patch.
+
+---
+
+### Rollout Strategy
+
+The PRs can be reviewed and merged independently. The recommended order is
+1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. PRs 2, 5, 6, and 7 can be developed in
+parallel against different sections of `index.html` without conflicts; PRs
+3 and 4 have a sequential dependency on PR 2.
+
+The feature flag in PR-2 means that production can ship PRs 1 and 2 without
+exposing the new toolbar to all users. The flag can be enabled for testing
+by adding `?cc_new_toolbar=1` to the URL (or setting the localStorage key
+in the console). PR-3 merging makes the toolbar the default and removes the
+flag option.
+
+---
+
+### Verification Checklist (End-to-End)
+
+After all eight PRs are merged, verify the following flows:
+
+**Sarah's flow (presenting architect):**
+1. Open `index.html` in Chrome. First-run card appears. Drop in an IFC file.
+2. Model loads. Guidance bar appears briefly. Mode toolbar is visible.
+3. Orbit: drag, scroll, pan all work correctly.
+4. Walk: press W. Walk mode activates. FOV sub-tools appear. Move through
+   the building. Shift+scroll dolly-zooms.
+5. Slice: press S. Horizontal cut appears at mid-height. Switch to Front.
+   Drag the handle. Press Flip. Context menu: Move to this floor. Remove cut.
+6. Views tab: smart view presets are visible. Click one. Camera moves.
+   Save current view: click "Save view". View appears in the list.
+7. Share: click Share button. Overview tab explains how sharing works.
+   Link a folder. Status dot turns green.
+8. Present: click Share ▾ → Present. Fullscreen + chrome hidden.
+
+**Yara's flow (SketchUp architect):**
+1. Open app. Drop an IFC from a contractor.
+2. Model loads. Left panel — Model tab open by default. Models list visible.
+3. Click the eye icon on one model to hide it. Model disappears from canvas.
+4. Switch categories in the Model tab filter. Elements show/hide by category.
+5. Press N for Note. Click on the rooftop. Type a note. Press Enter. Pin appears.
+6. Open Views tab. Smart Views grid visible. Click "By Floor". Camera + section
+   adjusts to show a single floor.
+7. Switch to Plan mode (F). Floor plan view animates down. Export as SVG.
+   Open the SVG in Illustrator — it opens correctly.
+8. Click an element. Right drawer opens with Details tab. Type, floor, category
+   visible. No IFC jargon in primary fields.
+
+**Marcus's flow (client):**
+1. Open app (no prior experience). First-run card appears.
+2. Click "Try a sample". Sample model loads. Guidance bar appears.
+3. Rotate the model. Guidance bar gives the correct instruction.
+4. Click an element. Right drawer opens. Plain labels visible.
+5. Press N. Drop a note on the terrace. Enter a comment.
+6. Note is visible as a violet pin. Can be resolved with one click.
+
+**Lukas's flow (BIM coordinator):**
+1. Open app. Load two IFC models.
+2. Model tab: both models visible in the list. Conflict section visible.
+3. Click "Check for conflicts" in the Conflicts section. Existing detection
+   engine runs. Conflict list populates.
+4. Click a conflict. Camera flies to it. Both elements highlighted. Right drawer
+   opens with issue creation option.
+5. BCF export: Share ▾ → Export BCF report. Existing BCF export runs.
+6. BCF import: top bar Open ▾ → Import BCF report. Existing import runs.
+7. Integrations: Settings tab → Integrations. Addon list visible. Revit
+   connector toggleable.
+
+*End of Chapter 7. End of UI_OVERHAUL.md.*
