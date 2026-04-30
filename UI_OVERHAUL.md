@@ -391,3 +391,255 @@ cover all six modes plus theme toggle (T), share (Ctrl+Shift+S), and help (?).
 Power users never need to touch the toolbar.
 
 *End of Chapter 2.*
+
+---
+
+## Chapter 3: The Tools — Architectural Instruments, Not BIM Functions
+
+### From BIM Functions to Drafting Instruments
+
+The most important reframing in this redesign is how the tools are
+conceptualized. The current ClashControl treats interaction modes as
+*software features* — Walk Mode, Section Plane, Measure Tool. This language
+comes from BIM software documentation. It is the language a developer uses
+to describe what code does. It is not the language an architect uses to
+describe what they are doing.
+
+An architect at a drafting table picks up a pencil, a knife, a scale ruler,
+or a red pen. They do not "activate the annotation feature." They pick up the
+red pen. The redesign maps each interaction mode to a physical instrument
+that an architect already understands:
+
+| Mode       | Drafting equivalent           | Mental model                          |
+|------------|-------------------------------|---------------------------------------|
+| Orbit      | Walking around a scale model  | I am moving. The building stays still.|
+| Walk       | Walking through the building  | I am inside. The building is around me.|
+| Slice      | A knife cutting the model     | I am cutting a section to look inside.|
+| Measure    | A measuring tape              | I am measuring a distance.            |
+| Plan       | Looking straight down         | I am reading a floor plan.            |
+| Note       | A red pen / sticky note       | I am marking something for discussion.|
+
+Every tooltip, sub-tool label, and empty state should reinforce the
+drafting-instrument metaphor rather than the software-feature framing.
+
+---
+
+### Orbit — Moving Around the Building
+
+Orbit is the default state. When nothing else is happening, the user is
+walking around a scale model on a table. Left drag rotates. Right drag pans.
+Scroll zooms.
+
+This mode needs no active label in most states — it is the resting state.
+The toolbar chip reads "Orbit" but in practice the chip is lit so rarely
+because the user only notices it when switching away from another mode.
+
+The tooltip on hover reads: "Rotate, pan, and zoom around the model."
+Not "Orbit Camera Mode." Not "Navigation Controls." A sentence that says
+what will happen.
+
+Double-clicking an element in Orbit mode flies the camera to face that
+element (the existing fly-to behavior). The cursor changes to a crosshair
+while in flight, returning to a pointer when settled. No modal, no
+interruption.
+
+---
+
+### Walk — Walking Through the Building
+
+Walk mode is activated by the W key or the Walk chip. The mode chip turns
+violet. The cursor becomes a crosshair. The movement controls change: WASD
+moves, mouse look steers, Space jumps (or ascends in no-clip mode).
+
+The sub-tool row that appears above the toolbar when Walk is active shows
+three field-of-view presets labeled exactly as an architectural photographer
+would understand them:
+
+```
+  [ Narrow 50° ]  [ Natural 75° ]  [ Wide 95° ]  [  ——|—— slider ]
+```
+
+"Narrow" is a telephoto lens. "Natural" is approximately what the human eye
+sees. "Wide" is a wide-angle architectural photography lens. These labels
+mean something to an architect who has worked with photographers. "50°",
+"75°", "95°" are present but secondary — the plain label is the primary
+affordance.
+
+Shift+scroll dolly-zooms (camera moves forward/back while FOV compensates
+to keep subject size constant). The toast that appears at bottom-left reads
+"FOV: 75° · Natural" — specific, not generic.
+
+Eye height auto-sets to 1.65m (average standing eye level). A "No-clip"
+chip in the sub-tool row removes collision so the user can float through
+walls for review purposes.
+
+---
+
+### Slice — Cutting a Section
+
+Slice mode puts a cutting plane through the model. The drafting metaphor is
+a hacksaw or a knife: the user is cutting the building to look inside.
+
+The mode chip shows a knife icon (not a scissor, not a plane icon, not ⊡).
+Activating Slice mode immediately shows a horizontal cutting plane at mid-
+height of the model. The user can then switch to a vertical cut.
+
+Sub-tool row:
+
+```
+  [ Horizontal ]  [ Front ]  [ Side ]  [ Box ]  [ Custom ]  [ Flip ]
+```
+
+These labels replace the current X/Y/Z axis labels. X, Y, and Z mean
+nothing to Yara (the SketchUp architect) in this context. "Horizontal",
+"Front", and "Side" are the section orientations she draws on tracing paper.
+"Box" cuts from all six sides — useful for looking at a specific room.
+"Custom" allows free-angle slicing. "Flip" mirrors the cut direction.
+
+The section plane handle is a flat translucent disk with a drag arrow.
+Dragging it moves the plane. Right-clicking it shows a context menu:
+"Move to this floor", "Reset", "Remove cut". "Move to this floor" snaps the
+plane to the nearest building storey — but the menu says "floor", not
+"storey".
+
+The plane is violet (matching the brand accent) with 20% opacity. It is
+clearly visible without blocking the interior. The cut edge — where the plane
+intersects geometry — is highlighted as a solid violet line.
+
+---
+
+### Measure — Measuring a Distance
+
+Measure mode puts a measuring tape in the user's hand. The cursor changes to
+a crosshair with a small ruler icon. First click sets point A. Second click
+sets point B. A dimension line appears between them with the distance shown
+in the project units (metres or feet, set once in Settings).
+
+The dimension line is dark red — the traditional hand-annotation color in
+architectural drawings. The distance label uses the mono font for precision.
+Multiple measurements can be placed simultaneously (each is a separate
+object).
+
+Sub-tool row when at least one measurement exists:
+
+```
+  [ Clear all ]  [ Export to PDF ]
+```
+
+"Clear all" removes all measurement overlays. "Export to PDF" is not in the
+current codebase — it is a future addition noted here so the sub-tool row
+design accounts for it. For now, "Clear all" is the only chip.
+
+Measurement labels stay visible in any render style. They are screen-space
+overlays, not world-space geometry, so they do not get hidden when the model
+is zoomed out.
+
+---
+
+### Plan — Reading the Floor Plan
+
+Plan mode is the 2D floor plan view. Activating it animates the camera
+straight down, sets the projection to orthographic, and runs the polygon-
+section cut to show the floor plan as a clean 2D drawing.
+
+The name "Plan" is the correct architectural term. An architect does not say
+"I am viewing the floor plan mode." They say "I am in plan." SketchUp uses
+the same framing: standard views are "Top", "Front", "Left" — not "plan
+view mode."
+
+Sub-tool row in Plan mode:
+
+```
+  [ Floor 1 ]  [ Floor 2 ]  [ Floor 3 ]  [ ▾ All floors ]  [ Export SVG ]
+```
+
+Floor buttons are named after the actual floor names from the IFC data, not
+"Storey 0", "Storey 1". If the IFC contains "Ground Floor", "First Floor",
+"Second Floor", those names appear on the chips. If the IFC contains "00",
+"01", "02", those appear instead. The data is shown as-is — but the chip
+label prefix is never "Storey".
+
+"Export SVG" downloads the current plan view as an SVG that can be opened
+in Illustrator or InDesign — the tools Yara already uses. This is the
+connection point between the 3D model and her layout workflow.
+
+---
+
+### Note — Marking Up the Model
+
+Note mode is the red-pen mode. The cursor changes to a pin cursor. Clicking
+on any surface of the model drops a comment pin. The pin is a small violet
+circle with a number. After dropping it, a text input appears immediately —
+the user types their comment and presses Enter.
+
+This is identical in behavior to dropping a pin in Google Maps: click,
+type, done. No modal, no form, no "create annotation" workflow.
+
+The metaphor for Yara is a physical pin on a printed photo. The metaphor for
+Marcus (the client) is a Figma comment. Both of these are so familiar that
+no onboarding is needed.
+
+Comment pins are stored in the `.ccproject` sync file (local-first,
+no backend). When a folder is linked via Share, everyone who opens the
+folder gets the comments. The sync cadence drops to 15 seconds when
+unresolved comments exist (already implemented).
+
+Each pin shows the commenter's name, the time, and the comment text in a
+small card when hovered. The card has a "Resolve" button that dims the pin
+and marks it resolved. Resolved pins show as grey, not violet.
+
+The sub-tool row for Note mode is empty — no sub-tools needed. The action is
+atomic: click to pin, type, Enter to save. There is no configuration.
+
+---
+
+### Render Style — The Appearance Dial
+
+Render style is not a mode — it does not change what clicking the canvas
+does. It changes how the model looks. It belongs in the canvas corner, not
+the mode toolbar.
+
+The current codebase uses keys 1–4 for Standard, Shaded, Rendered,
+Wireframe. The corner HUD chip shows these as four small squares at the
+bottom-right of the canvas. Clicking cycles through them.
+
+Rename the styles using architectural language:
+
+| Current label | New label    | What it is                                      |
+|---------------|--------------|-------------------------------------------------|
+| Standard      | Lines        | Material colors + edge lines (SketchUp default) |
+| Shaded        | Shaded       | Material colors, no edges (clean surface view)  |
+| Rendered      | Rendered     | ACES tone-mapping, soft shadows, sky bounce     |
+| Wireframe     | Skeleton     | Edges only, no fill                             |
+
+"Lines" is what SketchUp users call the default view. "Skeleton" is more
+evocative than "Wireframe" for non-technical users. "Shaded" and "Rendered"
+are self-explanatory.
+
+---
+
+### The Anti-AI-Design Check on Tool Design
+
+The reference audit noted that anti-AI aesthetics reject generic, algorithmic
+visual patterns. Applied to tool design, this means:
+
+1. Each tool icon should be drawn specifically for its meaning, not picked
+   from an icon library that also appears in spreadsheet apps and CRMs. A
+   knife icon for Slice, a tape measure icon for Measure, a pin icon for
+   Note. These are recognizable archetypes, not generic symbols.
+
+2. Tool states should be unambiguous. When Slice mode is active, something
+   is visibly cut. When Note mode is active, the cursor is a pin. The
+   affordance is in the world, not just in the toolbar chip.
+
+3. Sub-tool labels use plain words, not abbreviations. "Horizontal" not "H".
+   "Remove cut" not "Del". "Move to this floor" not "Snap". A user reading
+   the label for the first time should understand it immediately without
+   consulting documentation.
+
+4. Error states are honest. If the IFC file cannot be parsed, the message is
+   "We could not open this file. Check that it is a valid IFC file." Not a
+   generic "Error 403" or "Something went wrong." Specific, truthful,
+   actionable.
+
+*End of Chapter 3.*
