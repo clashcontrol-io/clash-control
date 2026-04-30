@@ -4870,6 +4870,104 @@ function startApp() {
       S.renderer = renderer;
       window._ccState3d = S;
 
+      // ── Post-processing (lazy, gated to renderStyle === 'rendered') ──
+      S._composer = null;
+      S._postPassesActive = false;
+      S._postOutlinePass = null;
+      S._postLoading = null;
+      function _ccLoadScript(url) {
+        return new Promise(function(resolve, reject){
+          if (document.querySelector('script[src="'+url+'"]')) { resolve(); return; }
+          var s = document.createElement('script');
+          s.src = url; s.async = true;
+          s.onload = function(){ resolve(); };
+          s.onerror = function(){ reject(new Error('Failed: '+url)); };
+          document.head.appendChild(s);
+        });
+      }
+      function _ccLoadPostProcessing() {
+        if (S._postLoading) return S._postLoading;
+        if (typeof THREE.EffectComposer === 'function' && typeof THREE.SAOPass === 'function') {
+          S._postLoading = Promise.resolve();
+          return S._postLoading;
+        }
+        var base = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/';
+        S._postLoading = _ccLoadScript(base+'shaders/CopyShader.js')
+          .then(function(){ return _ccLoadScript(base+'shaders/LuminosityHighPassShader.js').catch(function(){}); })
+          .then(function(){ return _ccLoadScript(base+'shaders/SAOShader.js'); })
+          .then(function(){ return _ccLoadScript(base+'shaders/DepthLimitedBlurShader.js'); })
+          .then(function(){ return _ccLoadScript(base+'shaders/UnpackDepthRGBAShader.js'); })
+          .then(function(){ return _ccLoadScript(base+'shaders/FXAAShader.js').catch(function(){}); })
+          .then(function(){ return _ccLoadScript(base+'postprocessing/Pass.js').catch(function(){}); })
+          .then(function(){ return _ccLoadScript(base+'postprocessing/EffectComposer.js'); })
+          .then(function(){ return _ccLoadScript(base+'postprocessing/RenderPass.js'); })
+          .then(function(){ return _ccLoadScript(base+'postprocessing/ShaderPass.js'); })
+          .then(function(){ return _ccLoadScript(base+'postprocessing/SAOPass.js'); })
+          .then(function(){ return _ccLoadScript(base+'postprocessing/OutlinePass.js'); })
+          .then(function(){ return _ccLoadScript(base+'postprocessing/SMAAPass.js').catch(function(){}); });
+        return S._postLoading;
+      }
+      function _ccBuildComposer() {
+        if (S._composer) return;
+        if (typeof THREE.EffectComposer !== 'function' || typeof THREE.SAOPass !== 'function') return;
+        try {
+          var w = el.clientWidth, h = el.clientHeight;
+          var pr = renderer.getPixelRatio();
+          var composer = new THREE.EffectComposer(renderer);
+          composer.setSize(w, h);
+          composer.addPass(new THREE.RenderPass(scene, S.camera));
+          var sao = new THREE.SAOPass(scene, S.camera, false, true);
+          sao.params.output = THREE.SAOPass.OUTPUT.Default;
+          sao.params.saoBias = 0.5;
+          sao.params.saoIntensity = 0.012;
+          sao.params.saoScale = 16;
+          sao.params.saoKernelRadius = 30;
+          sao.params.saoMinResolution = 0;
+          sao.params.saoBlur = true;
+          sao.params.saoBlurRadius = 6;
+          sao.params.saoBlurStdDev = 4;
+          sao.params.saoBlurDepthCutoff = 0.01;
+          composer.addPass(sao);
+          if (typeof THREE.OutlinePass === 'function') {
+            var outline = new THREE.OutlinePass(new THREE.Vector2(w,h), scene, S.camera);
+            outline.edgeStrength = 3.0;
+            outline.edgeGlow = 0.0;
+            outline.edgeThickness = 1.0;
+            outline.visibleEdgeColor.set('#a78bfa');
+            outline.hiddenEdgeColor.set('#0f172a');
+            composer.addPass(outline);
+            S._postOutlinePass = outline;
+          }
+          if (typeof THREE.SMAAPass === 'function') {
+            composer.addPass(new THREE.SMAAPass(w*pr, h*pr));
+          }
+          S._composer = composer;
+          window._ccComposer = composer;
+        } catch(e) { console.warn('[postfx] build failed:', e); }
+      }
+      window._ccActivatePostFX = function(active) {
+        if (!active) {
+          S._postPassesActive = false;
+          invalidate(2);
+          return Promise.resolve(false);
+        }
+        return _ccLoadPostProcessing().then(function(){
+          _ccBuildComposer();
+          S._postPassesActive = !!S._composer;
+          invalidate(3);
+          return S._postPassesActive;
+        }).catch(function(e){
+          console.warn('[postfx] load failed:', e);
+          S._postPassesActive = false;
+          return false;
+        });
+      };
+      window._ccPostOutlineFor = function(meshes) {
+        if (!S._postOutlinePass) return;
+        S._postOutlinePass.selectedObjects = (meshes && meshes.length) ? meshes : [];
+        invalidate(2);
+      };
+
       S.orbit = makeOrbit(camera, renderer.domElement, _wlAdd);
       S.orbit.apply(); // ensure camera looks at orbit target on init
 
@@ -5241,6 +5339,7 @@ function startApp() {
       function _clearHighlightGroups() {
         _clearHlRef();
         if(outlineRef.current){scene.remove(outlineRef.current);outlineRef.current=null;}
+        if (window._ccPostOutlineFor) window._ccPostOutlineFor([]);
       }
       function _clearHoverRef() {
         if(!hoverRef.current) return;
@@ -5306,6 +5405,9 @@ function startApp() {
             scene.add(grp);
             hlRef.current = grp;
           }
+          if (window._ccPostOutlineFor) window._ccPostOutlineFor([found]);
+        } else if (window._ccPostOutlineFor) {
+          window._ccPostOutlineFor([]);
         }
         if(alsoGhost!==false) ghostOthers([{modelId: modelId || null, expressId: expressId}]);
         invalidate();
@@ -5314,10 +5416,12 @@ function startApp() {
         if (!refs || !refs.length || !S.mg) return;
         _clearHighlightGroups();
         var combinedGrp = new THREE.Group();
+        var outlineMeshes = [];
         refs.forEach(function(ref){
           if (!ref || ref.expressId == null) return;
           var mesh = _findMeshByRef(ref.expressId, ref.modelId);
           if (!mesh) return;
+          outlineMeshes.push(mesh);
           var color = _discColorForModelId(ref.modelId || (mesh.parent && mesh.parent.userData && mesh.parent.userData.modelId));
           var sub = _buildHighlightGroupForMesh(mesh, color);
           if (sub) combinedGrp.add(sub);
@@ -5326,6 +5430,7 @@ function startApp() {
           scene.add(combinedGrp);
           hlRef.current = combinedGrp;
         }
+        if (window._ccPostOutlineFor) window._ccPostOutlineFor(outlineMeshes);
         if (alsoGhost !== false) ghostOthers(refs);
         invalidate();
       };
@@ -6465,7 +6570,12 @@ function startApp() {
           if (renderer.localClippingEnabled !== _sectionActive) {
             renderer.localClippingEnabled = _sectionActive;
           }
-          renderer.render(scene,S.camera);
+          // Use the post-processing composer when 'rendered' style + composer ready.
+          if (S._composer && S._postPassesActive) {
+            S._composer.render();
+          } else {
+            renderer.render(scene,S.camera);
+          }
         } catch(renderErr) { console.warn('Render error:', renderErr); }
         S.perf.frameCount++;
       }
@@ -6482,6 +6592,12 @@ function startApp() {
         }
         cam.updateProjectionMatrix();
         renderer.setSize(el.clientWidth, el.clientHeight);
+        if (S._composer) {
+          S._composer.setSize(el.clientWidth, el.clientHeight);
+          if (S._postOutlinePass && S._postOutlinePass.setSize) {
+            S._postOutlinePass.setSize(el.clientWidth, el.clientHeight);
+          }
+        }
         invalidate();
       });
       obs.observe(el);
@@ -7053,6 +7169,10 @@ function startApp() {
         S._ambLight.intensity = style==='shaded' ? 0.9 : style==='rendered' ? 0.55 : 0.7;
         // Shadows are perceptibly expensive; only enable in 'rendered' mode
         S._sunLight.castShadow = style==='rendered';
+      }
+      // Lazy-activate SAO + Outline post-processing for the 'rendered' style.
+      if (window._ccActivatePostFX) {
+        window._ccActivatePostFX(style==='rendered');
       }
       // Per-mesh shadow flags
       if (S.mg) {
