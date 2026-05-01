@@ -7725,25 +7725,32 @@ function startApp() {
           S._groundPlane = ground;
           S.scene.add(ground);
         }
-        // Place the plane at the actual minimum Y of all loaded model meshes so
-        // it sits just under the lowest geometry rather than at a fixed IFC origin.
+        // Position the plane at the model's minimum Y (bottom of lowest geometry)
+        // minus a small gap so it sits cleanly below foundations and doesn't
+        // z-fight or appear inside ground-floor spaces seen through glass.
         var minY = 0;
         if (S.mg) {
           var _bb = new THREE.Box3();
           S.mg.traverse(function(o){ if(o.isMesh && !o.userData._isGround && o.visible) _bb.expandByObject(o); });
           if (!_bb.isEmpty()) minY = _bb.min.y;
         }
-        S._groundPlane.position.y = minY - 0.002;
+        // Clamp: never higher than -0.05 (always below IFC grade at Y=0)
+        S._groundPlane.position.y = Math.min(minY - 0.05, -0.05);
         S._groundPlane.visible = true;
       }
       _ccUpdateGround();
 
-      // Per-mesh shadow flags (cast/receive only in rendered)
+      // Per-mesh shadow flags (cast/receive only in rendered).
+      // Transparent meshes (glass, curtain walls) skip shadow casting so light
+      // passes through them — prevents the shadow map from treating glass as
+      // opaque and casting interior shadows that make the ground plane visible.
       if (S.mg) {
         var castOn = style==='rendered';
         S.mg.traverse(function(obj){
           if (obj.isMesh && !obj.userData._isGround) {
-            obj.castShadow = castOn;
+            var mat = obj.material;
+            var isGlass = castOn && mat && mat.transparent && (mat.opacity < 0.85);
+            obj.castShadow = castOn && !isGlass;
             obj.receiveShadow = castOn;
           }
         });
@@ -9852,7 +9859,6 @@ function startApp() {
                 d({ t: 'ADD_UNDERLAY', v: { id: uid(), name: f.name, type: 'dxf', canvasData: result.canvas.toDataURL('image/png'),
                   offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 0.7, visible: true,
                   extentW: result.extentW, extentH: result.extentH, storeyName: storey }});
-                d({ t: 'UNDERLAY_MODE', v: 'view2d' });
                 _gcEvent('underlay-loaded', 'DXF' + (storey ? ' → ' + storey : ''));
               });
             }).catch(function(e) { errors.push(f.name + ': ' + (e.message || 'DXF parse failed')); });
@@ -9868,7 +9874,6 @@ function startApp() {
                 d({ t: 'ADD_UNDERLAY', v: { id: uid(), name: f.name, type: 'pdf', canvasData: result.canvas.toDataURL('image/png'),
                   offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 0.7, visible: true,
                   extentW: result.extentW, extentH: result.extentH, storeyName: storey, numPages: result.numPages, page: 1 }});
-                d({ t: 'UNDERLAY_MODE', v: 'view2d' });
                 _gcEvent('underlay-loaded', 'PDF' + (storey ? ' → ' + storey : ''));
               });
             }).catch(function(e) { errors.push(f.name + ': ' + (e.message || 'PDF load failed')); });
@@ -10032,14 +10037,25 @@ function startApp() {
         ${s.underlays.length > 0 && html`<div style=${{marginTop:'.3rem',borderTop:'1px solid var(--hairline)',paddingTop:'.3rem'}}>
           <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.25rem',padding:'0 .2rem'}}>
             <span style=${{fontSize:'.65rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>2D Underlays</span>
-            <button onClick=${function(){d({t:A.UNDERLAY_MODE,v:'view2d'})}} style=${{fontSize:'.65rem',padding:'.12rem .35rem',background:'none',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',cursor:'pointer',color:'var(--text-secondary)',fontFamily:'var(--font-body)'}}>View 2D</button>
           </div>
           ${s.underlays.map(function(ul){
-            return html`<div key=${ul.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.2rem .35rem',borderRadius:'var(--radius-xs)',cursor:'pointer',background:s.activeUnderlay===ul.id?'var(--accent-bg)':'transparent'}} onClick=${function(){d({t:A.SET_UNDERLAY,id:ul.id})}}>
-              <span style=${{width:6,height:6,borderRadius:1,background:ul.type==='dxf'?'var(--color-success)':'var(--color-danger)',flexShrink:0}}></span>
-              <span style=${{fontSize:'.7rem',color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${ul.name}</span>
+            var isActive = s.activeUnderlay===ul.id;
+            return html`<div key=${ul.id}
+              style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.2rem .35rem',borderRadius:'var(--radius-xs)',cursor:'pointer',
+                background:isActive?'var(--accent-bg)':'transparent',borderLeft:isActive?'2px solid var(--accent)':'2px solid transparent'}}
+              onClick=${function(){
+                d({t:A.SET_UNDERLAY,id:ul.id});
+                // Find storey elevation and switch to plan view for this underlay
+                var elevMap={};
+                s.models.forEach(function(m){(m.storeyData||[]).forEach(function(sd){if(sd.name&&sd.elevation!=null)elevMap[sd.name]=sd.elevation;});});
+                var st = ul.storeyName;
+                var elev = (st && elevMap[st]!=null) ? elevMap[st] : 0;
+                d({t:A.FLOOR_PLAN, v:{storeyId:st||'_underlay',storeyName:st||ul.name,elevation:elev,cutHeight:1.2}});
+              }}>
+              <span style=${{width:5,height:5,borderRadius:1,background:'var(--accent)',flexShrink:0}}></span>
+              <span style=${{fontSize:'.7rem',color:isActive?'var(--accent)':'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:isActive?500:400}}>${ul.name}</span>
               <span style=${{fontSize:'.6rem',color:'var(--text-faint)',textTransform:'uppercase',fontFamily:'var(--font-mono)'}}>${ul.type}</span>
-              <button onClick=${function(e){e.stopPropagation();d({t:A.DEL_UNDERLAY,id:ul.id})}} style=${{background:'none',border:'none',cursor:'pointer',color:'var(--text-faint)',padding:'0 2px',fontSize:'.7rem'}}>✕</button>
+              <button onClick=${function(e){e.stopPropagation();d({t:A.DEL_UNDERLAY,id:ul.id})}} style=${{background:'none',border:'none',cursor:'pointer',color:'var(--text-faint)',padding:'0 2px',fontSize:'.7rem',lineHeight:1}}>✕</button>
             </div>`;
           })}
         </div>`}
@@ -21245,8 +21261,8 @@ function startApp() {
         background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='rgba(124,58,237,0.3)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
       <!-- Tab bar + collapse -->
       <div style=${{display:'flex',alignItems:'center',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,height:40,gap:0,paddingLeft:12}}>
-        ${['details','ai','models'].map(function(tab){
-          var labels={details:'Details',ai:'Ask AI',models:'Models'};
+        ${['details','ai'].map(function(tab){
+          var labels={details:'Details',ai:'Ask AI'};
           var isActive=drawerTab===tab;
           var hasDot=tab==='details'&&drawerEl;
           return html`<button key=${tab}
@@ -21270,7 +21286,7 @@ function startApp() {
             borderRadius:6, transition:'color .12s'
           }}>×</button>
       </div>
-      ${drawerTab==='details' ? renderDetails() : drawerTab==='models' ? html`<${ModelSidebar} s=${s} d=${d} />` : html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
+      ${drawerTab==='details' ? renderDetails() : html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
     </div>`;
   }
 
@@ -22054,6 +22070,11 @@ function startApp() {
 
         <!-- spacer -->
         <span style=${{flex:1}}></span>
+        <!-- MODELS button — always visible, opens model list in left panel -->
+        ${btn({k:'models', active: s.tab==='models', title:'Loaded models', label:'Models',
+          icon:'<path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M12 2L2 7l10 5 10-5-10-5z"/>',
+          onClick:function(){ d({t:A.TAB,v: s.tab==='models' ? null : 'models'}); }})}
+        ${div()}
 
         <!-- ASK AI button — opens the right panel in chat mode -->
         <button onClick=${function(){ if(window._ccOpenAIPanel) window._ccOpenAIPanel(); }}
