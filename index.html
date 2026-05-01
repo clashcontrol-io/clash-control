@@ -685,7 +685,7 @@ function startApp() {
     defaultMaxGap:_ccLoadPref('defaultMaxGap',50), resetFiltersOnRun:_ccLoadPref('resetFiltersOnRun',true),
     defaultTolerances:(function(){try{return JSON.parse(localStorage.getItem('cc_defaultTolerances'))||{};}catch(e){return {};}}()),
     theme:(function(){ try { return localStorage.getItem('cc_theme')||'light'; } catch(e){ return 'light'; } })(),
-    renderStyle:_ccLoadPref('renderStyle','rendered'), // 'standard','shaded','rendered','wireframe' — default 'rendered' so first paint is cinematic, not flat
+    renderStyle:_ccLoadPref('renderStyle','standard'), // 'standard','shaded','rendered','wireframe' — default 'standard' for fast/clean first paint
     unitScaleOverride:_ccLoadPref('unitScaleOverride','auto'), // 'auto','1','100','1000'
     // Rendered-mode lighting controls (sliders surfaced in the toolbar Style popover)
     lightSettings:_ccLoadPref('lightSettings',{sun:1.0, ambient:1.0, exposure:1.0, shadow:1.0}),
@@ -5948,6 +5948,20 @@ function startApp() {
         box.expandByScalar(0.5);
         return box;
       };
+
+      // ── Activate Section Box around whole model bounds ──
+      window._ccActivateSectionBox = function() {
+        var box = _getSectionBoxFromScene();
+        if (!box) return false;
+        if (window._ccDispatch) {
+          window._ccDispatch({t:A.SECTION_BOX, v:{
+            enabled:true,
+            min:[box.min.x, box.min.y, box.min.z],
+            max:[box.max.x, box.max.y, box.max.z]
+          }});
+        }
+        return true;
+      };
       window._ccElevToSectionPos = function(elev){
         if(!S.mg||!S.mg.children.length) return 0.5;
         var box=_elemsBBox();
@@ -6203,6 +6217,27 @@ function startApp() {
           }
           return true;
         });
+
+        // ── Section Pick: click any surface to use it as a section plane ──
+        if (window._ccSectionPickPending && hits.length > 0) {
+          var spHit = hits[0];
+          var nWorld = new THREE.Vector3();
+          if (spHit.face && spHit.face.normal) {
+            nWorld.copy(spHit.face.normal).transformDirection(spHit.object.matrixWorld).normalize();
+          } else {
+            nWorld.set(0,1,0);
+          }
+          // Use the hit point on the picked face as the section anchor
+          var nObj = {x:nWorld.x, y:nWorld.y, z:nWorld.z};
+          var pObj = {x:spHit.point.x, y:spHit.point.y, z:spHit.point.z};
+          if (window._ccDispatch) {
+            window._ccDispatch({t:A.SECTION_CUSTOM, v:{normal:nObj, point:pObj}, pos:0.5});
+          }
+          window._ccSectionPickPending = false;
+          // Notify any listening UI to clear the "click a surface" hint
+          window.dispatchEvent(new CustomEvent('cc-section-pick-end'));
+          return;
+        }
 
         // ── Comment mode: drop a pin and open the share/comments tab ──
         if(commentModeRef.current && hits.length>0) {
@@ -21534,13 +21569,26 @@ function startApp() {
       <div style=${{flexShrink:0,height:'100%',marginLeft:'var(--space-4)'}}>
         <${WorkspaceTabs} s=${s} d=${d} />
       </div>
-      <!-- Centre: typographic model name (no chrome) -->
-      <div style=${{flex:1,display:'flex',justifyContent:'center',alignItems:'center',minWidth:0,padding:'0 var(--space-3)'}}>
+      <!-- Centre: typographic model name + Add-model affordance -->
+      <div style=${{flex:1,display:'flex',justifyContent:'center',alignItems:'center',minWidth:0,padding:'0 var(--space-3)',gap:'.6rem'}}>
         ${modelName && html`<span style=${{
           fontFamily:'var(--font-display)',fontWeight:500,fontSize:'var(--text-base)',
           letterSpacing:'-.01em',color:'var(--ink-secondary)',
           whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:480
         }} title=${modelName}>${modelName}</span>`}
+        ${modelName && html`<button class="cc-btn-press" title="Add another model (O)"
+          aria-label="Add another model"
+          onClick=${function(){ if(window._ccOpenIFC) window._ccOpenIFC(); }}
+          style=${{display:'inline-flex',alignItems:'center',gap:'.3rem',
+            background:'none',border:'1px solid var(--hairline-strong)',
+            borderRadius:'var(--radius-sm)',cursor:'pointer',padding:'.22rem .55rem',
+            fontFamily:'var(--font-body)',fontSize:'var(--text-xs)',
+            color:'var(--ink-muted)',lineHeight:1.2}}
+          onMouseEnter=${function(e){e.currentTarget.style.color='var(--ink-primary)';e.currentTarget.style.background='var(--surface-warm)';}}
+          onMouseLeave=${function(e){e.currentTarget.style.color='var(--ink-muted)';e.currentTarget.style.background='none';}}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Add model</span>
+        </button>`}
       </div>
       <!-- Right: Share + avatar -->
       <div style=${{display:'flex',alignItems:'center',gap:'var(--space-2)',flexShrink:0,height:'100%'}}>
@@ -21572,8 +21620,18 @@ function startApp() {
     if (s.presenting) return null;
 
     var styleSt = useState(false), styleOpen=styleSt[0], setStyleOpen=styleSt[1];
+    var pickSt  = useState(false), pickOn = pickSt[0], setPickOn = pickSt[1];
+
+    useEffect(function(){
+      function onEnd(){ setPickOn(false); }
+      window.addEventListener('cc-section-pick-end', onEnd);
+      function onKey(e){ if (e.key === 'Escape' && window._ccSectionPickPending) { window._ccSectionPickPending = false; setPickOn(false); } }
+      window.addEventListener('keydown', onKey);
+      return function(){ window.removeEventListener('cc-section-pick-end', onEnd); window.removeEventListener('keydown', onKey); };
+    }, []);
 
     var activeMode = s.walkMode ? 'walk'
+      : pickOn ? 'slice'
       : (s.sectionAxis || s.sectionCustom || (s.sectionBox && s.sectionBox.enabled)) ? 'slice'
       : s.measureMode ? 'measure'
       : s.floorPlan ? 'plan'
@@ -21627,8 +21685,10 @@ function startApp() {
     var I = {
       fit:    '<path d="M3 8V3h5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="M21 16v5h-5"/>',
       reset:  '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/>',
-      slice:  '<path d="M5 5l14 14"/><path d="M14 5h5v5"/>',
-      slicebox:'<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M9 4v16"/><path d="M4 9h16"/>',
+      // Make Section: a knife/scalpel cutting through a plane (clearly "cut")
+      slice:  '<path d="M3 16l12-12"/><path d="M11 8l5 5"/><path d="M5 16h6"/><path d="M5 16v3"/>',
+      // Section Box: outer cube + inner dashed cube (crop region)
+      slicebox:'<rect x="3" y="3" width="18" height="18" rx="1"/><path stroke-dasharray="2 2" d="M7 7h10v10h-10z"/>',
       clear:  '<path d="M5 5l14 14"/><path d="M19 5L5 19"/>',
       ruler:  '<path d="M3 12h18"/><path d="M5 12V9"/><path d="M9 12v-4"/><path d="M13 12V8"/><path d="M17 12v-4"/><path d="M21 12V9"/>',
       angle:  '<path d="M5 19L19 19"/><path d="M5 19L5 5"/><path d="M5 8a8 8 0 0 1 11 11"/>',
@@ -21651,7 +21711,19 @@ function startApp() {
     /* Section sub-row only appears when a slice plane exists, anchored under
        the toolbar (not floating). Same ink palette, no glass. */
     var subRow = null;
-    if (activeMode === 'slice' && (s.sectionAxis || s.sectionCustom)) {
+    if (pickOn) {
+      subRow = html`<div style=${{display:'flex',alignItems:'center',gap:'.6rem',padding:'.32rem .9rem',
+        background:'var(--accent-bg)',borderTop:'1px solid var(--accent)',
+        fontSize:'var(--text-xs)',color:'var(--accent)'}}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h6"/><circle cx="12" cy="12" r="3"/><path d="M15 12h6"/></svg>
+        <span style=${{fontWeight:500}}>Click any surface to make a section through it.</span>
+        <span style=${{flex:1}}></span>
+        <button onClick=${function(){ window._ccSectionPickPending=false; setPickOn(false); }}
+          style=${{background:'none',border:'1px solid var(--accent)',color:'var(--accent)',
+            padding:'.18rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',
+            fontFamily:'var(--font-body)',fontSize:'var(--text-2xs)'}}>Cancel · Esc</button>
+      </div>`;
+    } else if (activeMode === 'slice' && (s.sectionAxis || s.sectionCustom)) {
       subRow = html`<div style=${{display:'flex',alignItems:'center',gap:'.5rem',padding:'.25rem .9rem',
         background:'var(--surface)',borderTop:'1px solid var(--hairline)',
         fontSize:'var(--text-xs)',color:'var(--ink-muted)'}}>
@@ -21701,12 +21773,24 @@ function startApp() {
                 onClick:function(){ if(window._ccResetView) window._ccResetView(); else if(window._resetView) window._resetView(); }})}
         ${div()}
         <!-- SECTION -->
-        ${btn({k:'slice',    active:activeMode==='slice'&&!(s.sectionBox&&s.sectionBox.enabled), title:'Make Section (X)', label:'Make Section', icon:I.slice,
-                onClick:function(){ if(activeMode==='slice'&&!(s.sectionBox&&s.sectionBox.enabled)) clearAllModes(); else setMode('slice'); }})}
-        ${btn({k:'slicebox', active:!!(s.sectionBox&&s.sectionBox.enabled), title:'Section Box', label:'Section Box', icon:I.slicebox,
-                onClick:function(){ clearAllModes(); if(window._ccActivateSectionBox) window._ccActivateSectionBox(); else d({t:A.SECTION_BOX,v:{enabled:true,min:null,max:null}}); }})}
+        ${btn({k:'slice',    active:activeMode==='slice'&&!(s.sectionBox&&s.sectionBox.enabled), title:'Make Section — click a surface (X)', label:'Make Section', icon:I.slice,
+                onClick:function(){
+                  // Toggle the click-a-surface pick mode
+                  if (pickOn) { window._ccSectionPickPending = false; setPickOn(false); return; }
+                  clearAllModes();
+                  window._ccSectionPickPending = true;
+                  setPickOn(true);
+                }})}
+        ${btn({k:'slicebox', active:!!(s.sectionBox&&s.sectionBox.enabled), title:'Section Box — crop to a region', label:'Section Box', icon:I.slicebox,
+                onClick:function(){
+                  if (s.sectionBox && s.sectionBox.enabled) { d({t:A.SECTION_BOX,v:null}); return; }
+                  clearAllModes();
+                  if (window._ccActivateSectionBox) {
+                    window._ccActivateSectionBox();
+                  }
+                }})}
         ${btn({k:'sclear', title:'Clear Section (Esc)',  label:'Clear Section', icon:I.clear,
-                onClick:function(){ d({t:A.SECTION,axis:null}); d({t:A.SECTION_CUSTOM,v:null}); d({t:A.SECTION_BOX,v:null}); }})}
+                onClick:function(){ window._ccSectionPickPending=false; setPickOn(false); d({t:A.SECTION,axis:null}); d({t:A.SECTION_CUSTOM,v:null}); d({t:A.SECTION_BOX,v:null}); }})}
         ${div()}
         <!-- MEASURE -->
         ${btn({k:'measure', active:activeMode==='measure'&&s.measureMode!=='angle', title:'Distance (M)', label:'Distance', icon:I.ruler,
