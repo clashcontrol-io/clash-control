@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.1.11 (2026-05-01)
+- Models toolbar button toggles right panel (Models tab), not left panel
+
 ## v5.1.10 (2026-05-01)
 - UI reorganization: models to right panel, navigator to review, integrations to avatar menu, toolbar tooltips
 
