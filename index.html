@@ -167,7 +167,7 @@
       --accent-bg-deep:#d3ede2;
       --accent-light:#4d9e75;
       --accent-dim:#ecf7f2;
-      --scene-bg:#f0f0f0;
+      --scene-bg:#f8f8f8;
       --scene-floor:#e4e4e4;
       --grid-line:#d4d4d4;
       --grid-center:#a3a3a3;
@@ -5000,7 +5000,7 @@ function startApp() {
       function _wlRemoveAll() { _wl.forEach(function(l){ window.removeEventListener(l.ev, l.fn, l.opts); }); _wl.length = 0; }
 
       var scene = new THREE.Scene();
-      scene.background = new THREE.Color(0xf0f0f0);
+      scene.background = new THREE.Color(0xf8f8f8);
       // ── Procedural sky gradient (cheap, deterministic, no HDRI dep) ───
       // Default to the light-mode architectural near-white sky.
       // _ccApplyTheme3D rebuilds this whenever the theme changes.
@@ -7580,7 +7580,7 @@ function startApp() {
         S._skyTex = t;
         S.scene.background = t;
       } catch(e) {
-        S.scene.background = new THREE.Color(light ? 0xf0f0f0 : 0x141414);
+        S.scene.background = new THREE.Color(light ? 0xf8f8f8 : 0x141414);
       }
       if(S.grid){
         S.scene.remove(S.grid);
@@ -21007,10 +21007,11 @@ function startApp() {
       var workspace = s.workspace || 'present';
       var WRAP = {flex:1,overflowY:'auto',padding:'.75rem .9rem',display:'flex',flexDirection:'column',gap:'.6rem'};
       var ROW  = {display:'flex',gap:'.4rem',alignItems:'baseline',padding:'.22rem 0',borderBottom:'1px solid var(--border-subtle)',fontSize:'.75rem'};
-      var LBL  = {color:'var(--text-muted)',minWidth:80,flexShrink:0};
+      var LBL  = {color:'var(--text-muted)',minWidth:88,flexShrink:0};
       var VAL  = {color:'var(--text-primary)',flex:1,wordBreak:'break-word'};
       var CARD = {background:'var(--bg-secondary)',borderRadius:'var(--radius-sm)',padding:'.5rem .75rem',border:'1px solid var(--border-subtle)'};
-      var HDR  = {fontSize:'.65rem',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'.25rem'};
+      var HDR  = {fontSize:'.65rem',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'.3rem'};
+      var MONO = {fontFamily:'var(--font-mono)',fontSize:'.68rem'};
 
       if (!el) {
         return html`<div style=${{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
@@ -21033,129 +21034,208 @@ function startApp() {
         }
       }
       var ep = (_latestEl&&_latestEl.props)||(el&&el.props)||null;
-      var typeName = String(ep&&ep.ifcType||'Element').replace(/^Ifc/,'').replace(/StandardCase$/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
-      var elName   = ep&&ep.name||'Unnamed element';
-      var storey   = ep&&(ep.storey||ep.psets&&ep.psets['Constraints']&&ep.psets['Constraints']['Base Constraint'])||null;
+      var typeName   = String(ep&&ep.ifcType||'Element').replace(/^Ifc/,'').replace(/StandardCase$/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
+      var elName     = ep&&ep.name||'Unnamed element';
+      var storey     = ep&&(ep.storey||ep.psets&&ep.psets['Constraints']&&ep.psets['Constraints']['Base Constraint'])||null;
       var discipline = el.modelName||'';
+      var psetCount  = ep&&ep.psets ? Object.keys(ep.psets).length : 0;
+      var qtyCount   = ep&&ep.quantities ? Object.keys(ep.quantities).length : 0;
 
-      // Shared header block used by all levels
-      var headerCard = html`<div style=${{background:'var(--accent-bg)',borderRadius:'var(--radius-md)',padding:'.7rem .85rem',border:'1px solid var(--accent-bg-deep)'}}>
-        <div style=${{fontSize:'.68rem',color:'var(--accent)',marginBottom:'.2rem',textTransform:'uppercase',letterSpacing:'.04em',fontWeight:600}}>${typeName}</div>
-        <div style=${{fontSize:'1rem',fontWeight:700,color:'var(--text-primary)',lineHeight:1.3}}>${elName}</div>
-        ${discipline && html`<div style=${{fontSize:'.7rem',color:'var(--text-secondary)',marginTop:'.25rem'}}>${discipline}</div>`}
-      </div>`;
+      // Helper: format dimension values
+      function fmtDim(v){ return typeof v==='number'?(v>=1?v.toFixed(3)+' m':(v*1000).toFixed(1)+' mm'):String(v); }
+      function fmtArea(v){ return typeof v==='number'?(v>=1?v.toFixed(3)+' m²':(v*10000).toFixed(1)+' cm²'):String(v); }
+      function fmtVol(v){ return typeof v==='number'?(v>=0.01?v.toFixed(3)+' m³':(v*1e6).toFixed(1)+' cm³'):String(v); }
 
-      // ── PRESENT: identity only ────────────────────────────────────
-      if (workspace === 'present') {
-        return html`<div style=${WRAP}>
-          ${headerCard}
-          ${(storey||ep&&ep.material) && html`<div style=${CARD}>
-            ${storey   && html`<div style=${ROW}><span style=${LBL}>Floor</span><span style=${VAL}>${storey}</span></div>`}
-            ${ep&&ep.material && html`<div style=${ROW}><span style=${LBL}>Material</span><span style=${VAL}>${ep.material}</span></div>`}
-          </div>`}
-        </div>`;
-      }
+      // Collect all quantities for display
+      var allQty = ep&&ep.quantities||{};
+      var dimKeys  = ['Length','Width','Height','Thickness','Depth','Perimeter'];
+      var areaKeys = ['Area','GrossArea','NetArea','GrossFloorArea','NetFloorArea'];
+      var volKeys  = ['Volume','GrossVolume','NetVolume'];
+      var dims  = dimKeys.filter(function(k){return allQty[k]!=null;}).map(function(k){return {l:k,v:allQty[k],f:fmtDim};});
+      var areas = areaKeys.filter(function(k){return allQty[k]!=null;}).map(function(k){return {l:k.replace(/^(Gross|Net)/,'$1 '),v:allQty[k],f:fmtArea};});
+      var vols  = volKeys.filter(function(k){return allQty[k]!=null;}).map(function(k){return {l:k.replace(/^(Gross|Net)/,'$1 '),v:allQty[k],f:fmtVol};});
+      var otherQty = Object.keys(allQty).filter(function(k){return dimKeys.indexOf(k)===-1&&areaKeys.indexOf(k)===-1&&volKeys.indexOf(k)===-1;}).map(function(k){return {l:k,v:allQty[k],f:function(v){return String(v);}};});
+      var allDims = dims.concat(areas).concat(vols).concat(otherQty);
 
-      // ── COORDINATE: identity + dimensions + data quality ─────────
-      if (workspace === 'coordinate') {
-        var q2 = ep&&ep.quantities||{};
-        function fmtDim(v){ return typeof v==='number'?(v>=1?v.toFixed(3)+' m':(v*1000).toFixed(1)+' mm'):String(v); }
-        function fmtArea(v){ return typeof v==='number'?(v>=1?v.toFixed(2)+' m²':(v*10000).toFixed(1)+' cm²'):String(v); }
-        var dimKeys  = ['Length','Width','Height','Thickness','Depth','Perimeter'];
-        var areaKeys = ['Area','GrossArea','NetArea'];
-        var dims  = dimKeys.filter(function(k){return q2[k]!=null;}).map(function(k){return {l:k,v:q2[k]};});
-        var areas = areaKeys.filter(function(k){return q2[k]!=null;}).map(function(k){return {l:k.replace(/^(Gross|Net)/,'$1 '),v:q2[k]};});
-        // Data quality checks
-        var psetCount = ep&&ep.psets ? Object.keys(ep.psets).length : 0;
-        var qtyCount  = ep&&ep.quantities ? Object.keys(ep.quantities).length : 0;
-        var dqChecks  = [
-          {ok:!!(ep&&ep.globalId),          label:'GlobalId'},
-          {ok:!!(ep&&ep.name&&ep.name!=='Unnamed element'), label:'Name'},
-          {ok:psetCount>0,                  label:psetCount>0?psetCount+' pset'+(psetCount===1?'':'s'):'No psets'},
-          {ok:qtyCount>0,                   label:qtyCount>0?qtyCount+' quantities':'No quantities'},
-          {ok:!!(ep&&ep.material),          label:'Material'},
-        ];
-        // First pset only
-        var firstPset = null;
-        if (ep&&ep.psets) {
-          var psetNames = Object.keys(ep.psets);
-          if (psetNames.length) {
-            var ps = ep.psets[psetNames[0]];
-            var cleanName = psetNames[0].replace(/^Pset_/,'').replace(/^Qto_/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
-            firstPset = {name:cleanName, props:Object.keys(ps).map(function(k){return {k:k.replace(/([a-z])([A-Z])/g,'$1 $2'),v:String(ps[k])};})};
-          }
-        }
-        return html`<div style=${WRAP}>
-          ${headerCard}
-          <div style=${CARD}>
-            ${storey       && html`<div style=${ROW}><span style=${LBL}>Floor</span><span style=${VAL}>${storey}</span></div>`}
-            ${ep&&ep.material && html`<div style=${ROW}><span style=${LBL}>Material</span><span style=${VAL}>${ep.material}</span></div>`}
-            ${ep&&ep.globalId && html`<div style=${ROW}><span style=${LBL}>GlobalId</span><span style=${{...VAL,fontFamily:'var(--font-mono)',fontSize:'.68rem',opacity:.7}}>${ep.globalId.slice(0,14)}…</span></div>`}
-          </div>
-          ${(dims.length||areas.length) && html`<div style=${CARD}>
-            <div style=${HDR}>Dimensions</div>
-            ${dims.map(function(d){return html`<div style=${ROW}><span style=${LBL}>${d.l}</span><span style=${{...VAL,fontFamily:'var(--font-mono)'}}>${fmtDim(d.v)}</span></div>`;})}
-            ${areas.map(function(a){return html`<div style=${ROW}><span style=${LBL}>${a.l}</span><span style=${{...VAL,fontFamily:'var(--font-mono)'}}>${fmtArea(a.v)}</span></div>`;})}
-          </div>`}
-          <div style=${CARD}>
-            <div style=${HDR}>Data Quality</div>
-            <div style=${{display:'flex',flexWrap:'wrap',gap:'.3rem',marginTop:'.15rem'}}>
-              ${dqChecks.map(function(c){return html`<span key=${c.label} style=${{
-                fontSize:'.68rem',padding:'.15rem .45rem',borderRadius:'var(--radius-pill)',
-                background:c.ok?'var(--color-success-bg)':'var(--color-danger-bg)',
-                color:c.ok?'var(--color-success-fg)':'var(--color-danger-fg)',
-                border:'1px solid '+(c.ok?'var(--color-success-border)':'var(--color-danger-border)'),
-                display:'flex',alignItems:'center',gap:'.25rem'
-              }}>
-                <svg width="8" height="8" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>
-                ${c.label}
-              </span>`;
-              })}
-            </div>
-          </div>
-          ${firstPset && html`<div style=${CARD}>
-            <div style=${HDR}>${firstPset.name}</div>
-            ${firstPset.props.map(function(p){return html`<div style=${ROW}><span style=${LBL}>${p.k}</span><span style=${VAL}>${p.v}</span></div>`;})}
-          </div>`}
-        </div>`;
-      }
-
-      // ── REVIEW: full data — psets, clashes, issues, actions ──────
-      var linkedIssues  = (latestState.issues||[]).filter(function(i){return i.elementId===el.expressId||i.globalId===(ep&&ep.globalId);});
-      var linkedClashes = (latestState.clashes||[]).filter(function(c){return (c.a&&c.a.expressId===el.expressId)||(c.b&&c.b.expressId===el.expressId);});
+      // Collect all psets
       var allPsets = [];
       if (ep&&ep.psets) {
         Object.keys(ep.psets).forEach(function(setName){
           var ps=ep.psets[setName]; var keys=Object.keys(ps); if(!keys.length) return;
-          allPsets.push({name:setName.replace(/^Pset_/,'').replace(/^Qto_/,'').replace(/([a-z])([A-Z])/g,'$1 $2'),
-            props:keys.map(function(k){return {k:k.replace(/([a-z])([A-Z])/g,'$1 $2'),v:String(ps[k])};})});
+          var cleanName = setName.replace(/^Pset_/,'').replace(/^Qto_/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
+          allPsets.push({name:cleanName, raw:setName, props:keys.map(function(k){return {k:k.replace(/([a-z])([A-Z])/g,'$1 $2'),v:String(ps[k])};})});
         });
       }
+
+      // Linked clashes and issues
+      var linkedClashes = (latestState.clashes||[]).filter(function(c){return (c.elemA===el.expressId)||(c.elemB===el.expressId)||(c.a&&c.a.expressId===el.expressId)||(c.b&&c.b.expressId===el.expressId);});
+      var linkedIssues  = (latestState.issues||[]).filter(function(i){return i.elementId===el.expressId||i.globalId===(ep&&ep.globalId);});
+
+      // Data quality checks (used in both Clash & DQ workspaces)
+      var nameGenerated = ep&&ep.name&&/^Basic |^\d+$|^[\w]+:\d+$/.test(ep.name);
+      var dqChecks = [
+        {ok:!!(ep&&ep.globalId),    label:'GlobalId',            detail: ep&&ep.globalId ? ep.globalId.slice(0,8)+'…' : 'missing'},
+        {ok:!!(ep&&ep.name) && !nameGenerated, label:'Name',     detail: nameGenerated ? 'auto-generated' : (ep&&ep.name||'missing')},
+        {ok:psetCount>0,            label:'Psets',               detail: psetCount>0 ? psetCount+' pset'+(psetCount===1?'':'s') : 'none'},
+        {ok:qtyCount>0,             label:'Quantities',          detail: qtyCount>0 ? qtyCount+' values' : 'none'},
+        {ok:!!(ep&&ep.material),    label:'Material',            detail: ep&&ep.material||'not assigned'},
+        {ok:!!(ep&&ep.storey),      label:'Floor/Storey',        detail: ep&&ep.storey||'unassigned'},
+        {ok:!!(ep&&ep.objectType),  label:'Object type',         detail: ep&&ep.objectType||'not set'},
+      ];
+      var dqScore = dqChecks.filter(function(c){return c.ok;}).length;
+      var dqTotal = dqChecks.length;
+      var dqColor = dqScore===dqTotal?'var(--color-success-fg)':dqScore>=dqTotal*0.7?'var(--color-warning-fg)':'var(--color-danger-fg)';
+
+      // Shared header block
+      var headerCard = html`<div style=${{background:'var(--accent-bg)',borderRadius:'var(--radius-md)',padding:'.7rem .85rem',border:'1px solid var(--accent-bg-deep)'}}>
+        <div style=${{fontSize:'.68rem',color:'var(--accent)',marginBottom:'.2rem',textTransform:'uppercase',letterSpacing:'.04em',fontWeight:600}}>${typeName}</div>
+        <div style=${{fontSize:'.95rem',fontWeight:700,color:'var(--text-primary)',lineHeight:1.3}}>${elName}</div>
+        <div style=${{display:'flex',gap:'.6rem',marginTop:'.3rem',flexWrap:'wrap'}}>
+          ${discipline && html`<span style=${{fontSize:'.68rem',color:'var(--text-secondary)'}}>${discipline}</span>`}
+          ${storey && html`<span style=${{fontSize:'.68rem',color:'var(--text-muted)'}}>· ${storey}</span>`}
+          ${ep&&ep.material && html`<span style=${{fontSize:'.68rem',color:'var(--text-muted)'}}>· ${ep.material}</span>`}
+        </div>
+      </div>`;
+
+      // ── PRESENT: clean identity ──────────────────────────────────
+      if (workspace === 'present') {
+        return html`<div style=${WRAP}>
+          ${headerCard}
+          <div style=${CARD}>
+            ${storey      && html`<div style=${ROW}><span style=${LBL}>Floor</span><span style=${VAL}>${storey}</span></div>`}
+            ${ep&&ep.material     && html`<div style=${ROW}><span style=${LBL}>Material</span><span style=${VAL}>${ep.material}</span></div>`}
+            ${ep&&ep.objectType   && html`<div style=${ROW}><span style=${LBL}>Object type</span><span style=${VAL}>${ep.objectType}</span></div>`}
+            ${ep&&ep.description  && html`<div style=${ROW}><span style=${LBL}>Description</span><span style=${VAL}>${ep.description}</span></div>`}
+          </div>
+          ${allDims.length>0 && html`<div style=${CARD}>
+            <div style=${HDR}>Dimensions</div>
+            ${allDims.slice(0,5).map(function(d){return html`<div style=${ROW}><span style=${LBL}>${d.l}</span><span style=${{...VAL,...MONO}}>${d.f(d.v)}</span></div>`;})}
+          </div>`}
+        </div>`;
+      }
+
+      // ── DATA QUALITY: comprehensive data check ───────────────────
+      if (workspace === 'review') {
+        return html`<div style=${WRAP}>
+          ${headerCard}
+          <!-- DQ Score -->
+          <div style=${{...CARD,display:'flex',alignItems:'center',gap:'.6rem'}}>
+            <div style=${{textAlign:'center',minWidth:48}}>
+              <div style=${{fontSize:'1.4rem',fontWeight:800,color:dqColor,lineHeight:1}}>${dqScore}</div>
+              <div style=${{fontSize:'.6rem',color:'var(--text-muted)',marginTop:2}}>/ ${dqTotal}</div>
+            </div>
+            <div style=${{flex:1}}>
+              <div style=${{fontSize:'.72rem',fontWeight:600,color:'var(--text-primary)',marginBottom:'.3rem'}}>Data Quality Score</div>
+              <div style=${{display:'flex',gap:2}}>
+                ${dqChecks.map(function(c){return html`<div key=${c.label} title=${c.label+': '+c.detail} style=${{flex:1,height:4,borderRadius:2,background:c.ok?'var(--color-success-fg)':'var(--color-danger-fg)'}}></div>`;})}
+              </div>
+            </div>
+          </div>
+          <!-- DQ checks detail -->
+          <div style=${CARD}>
+            <div style=${HDR}>Checks</div>
+            ${dqChecks.map(function(c){return html`<div key=${c.label} style=${{...ROW,alignItems:'center'}}>
+              <span style=${{...LBL,display:'flex',alignItems:'center',gap:'.3rem'}}>
+                <svg width="10" height="10" viewBox="0 0 12 12">
+                  ${c.ok
+                    ? html`<path d="M2 6l3 3 5-5" stroke="var(--color-success-fg)" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+                    : html`<circle cx="6" cy="6" r="5" stroke="var(--color-danger-fg)" stroke-width="1.5" fill="none"/><path d="M6 4v3" stroke="var(--color-danger-fg)" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="9" r=".6" fill="var(--color-danger-fg)"/>`
+                  }
+                </svg>
+                ${c.label}
+              </span>
+              <span style=${{...VAL,color:c.ok?'var(--text-secondary)':'var(--color-danger-fg)',fontSize:'.7rem'}}>${c.detail}</span>
+            </div>`;})}
+          </div>
+          <!-- Identity -->
+          <div style=${CARD}>
+            <div style=${HDR}>Identity</div>
+            ${ep&&ep.globalId    && html`<div style=${ROW}><span style=${LBL}>GlobalId</span><span style=${{...VAL,...MONO}}>${ep.globalId}</span></div>`}
+            ${ep&&ep.expressId   && html`<div style=${ROW}><span style=${LBL}>Express ID</span><span style=${{...VAL,...MONO}}>#${ep.expressId}</span></div>`}
+            ${ep&&ep.objectType  && html`<div style=${ROW}><span style=${LBL}>Object type</span><span style=${VAL}>${ep.objectType}</span></div>`}
+            ${ep&&ep.description && html`<div style=${ROW}><span style=${LBL}>Description</span><span style=${VAL}>${ep.description}</span></div>`}
+            ${storey             && html`<div style=${ROW}><span style=${LBL}>Floor</span><span style=${VAL}>${storey}</span></div>`}
+            ${ep&&ep.material    && html`<div style=${ROW}><span style=${LBL}>Material</span><span style=${VAL}>${ep.material}</span></div>`}
+          </div>
+          <!-- Quantities -->
+          ${allDims.length>0 && html`<div style=${CARD}>
+            <div style=${HDR}>Quantities (${allDims.length})</div>
+            ${allDims.map(function(d){return html`<div style=${ROW}><span style=${LBL}>${d.l}</span><span style=${{...VAL,...MONO}}>${d.f(d.v)}</span></div>`;})}
+          </div>`}
+          <!-- All psets -->
+          ${allPsets.length>0 && html`<div style=${CARD}>
+            <div style=${HDR}>Property Sets (${psetCount})</div>
+            ${allPsets.map(function(sec){return html`<div key=${sec.raw} style=${{marginBottom:'.5rem'}}>
+              <div style=${{fontSize:'.65rem',fontWeight:700,color:'var(--accent)',marginBottom:'.15rem',textTransform:'uppercase',letterSpacing:'.03em'}}>${sec.name}</div>
+              ${sec.props.map(function(p){return html`<div style=${ROW}><span style=${LBL}>${p.k}</span><span style=${VAL}>${p.v}</span></div>`;})}
+            </div>`;})}
+          </div>`}
+          ${psetCount===0&&qtyCount===0 && html`<div style=${{textAlign:'center',padding:'1rem',color:'var(--text-muted)',fontSize:'.75rem'}}>
+            No property sets or quantities found in this IFC element.
+          </div>`}
+        </div>`;
+      }
+
+      // ── CLASH & ISSUES: clash context + quick DQ + dimensions ────
       return html`<div style=${WRAP}>
         ${headerCard}
+        <!-- Linked clashes — most important in this workspace -->
         <div style=${CARD}>
-          ${storey       && html`<div style=${ROW}><span style=${LBL}>Floor</span><span style=${VAL}>${storey}</span></div>`}
-          ${ep&&ep.material && html`<div style=${ROW}><span style=${LBL}>Material</span><span style=${VAL}>${ep.material}</span></div>`}
-          ${ep&&ep.globalId && html`<div style=${ROW}><span style=${LBL}>GlobalId</span><span style=${{...VAL,fontFamily:'var(--font-mono)',fontSize:'.68rem',opacity:.7}}>${ep.globalId.slice(0,14)}…</span></div>`}
+          <div style=${{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.3rem'}}>
+            <div style=${HDR}>Clashes</div>
+            ${linkedClashes.length>0 && html`<span style=${{fontSize:'.65rem',padding:'.1rem .4rem',borderRadius:'var(--radius-pill)',
+              background:'var(--color-danger-bg)',color:'var(--color-danger-fg)',border:'1px solid var(--color-danger-border)',fontWeight:600}}>
+              ${linkedClashes.length}
+            </span>`}
+          </div>
+          ${linkedClashes.length===0
+            ? html`<div style=${{fontSize:'.72rem',color:'var(--text-muted)',padding:'.2rem 0'}}>No active clashes on this element.</div>`
+            : linkedClashes.slice(0,8).map(function(c){return html`<div key=${c.id} style=${{...ROW,alignItems:'center',cursor:'pointer'}}
+                onClick=${function(){if(window._ccDispatch)window._ccDispatch({t:A.SELECT_CLASH,id:c.id});}}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--color-danger)" stroke-width="2.5"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+                <span style=${{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--text-secondary)'}}>${c.title||'Clash '+c.id}</span>
+                <span style=${{fontSize:'.65rem',color:'var(--text-faint)'}}>${c.status||'open'}</span>
+              </div>`;})
+          }
         </div>
-        ${allPsets.length>0 && html`<div style=${CARD}>
-          <div style=${HDR}>Properties</div>
-          ${allPsets.map(function(sec){return html`<div key=${sec.name} style=${{marginBottom:'.4rem'}}>
-            <div style=${{fontSize:'.65rem',fontWeight:600,color:'var(--text-secondary)',marginBottom:'.15rem'}}>${sec.name}</div>
-            ${sec.props.map(function(p){return html`<div style=${ROW}><span style=${LBL}>${p.k}</span><span style=${VAL}>${p.v}</span></div>`;})}
+        <!-- Linked issues -->
+        ${linkedIssues.length>0 && html`<div style=${CARD}>
+          <div style=${{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.3rem'}}>
+            <div style=${HDR}>Issues</div>
+            <span style=${{fontSize:'.65rem',padding:'.1rem .4rem',borderRadius:'var(--radius-pill)',
+              background:'var(--color-warning-bg)',color:'var(--color-warning-fg)',border:'1px solid var(--color-warning-border)',fontWeight:600}}>
+              ${linkedIssues.length}
+            </span>
+          </div>
+          ${linkedIssues.slice(0,5).map(function(i){return html`<div key=${i.id} style=${{...ROW,alignItems:'center'}}>
+            <svg width="8" height="8" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="${i.status==='resolved'?'var(--color-success-fg)':'var(--color-warning-fg)'}"/></svg>
+            <span style=${{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--text-secondary)'}}>${i.title||'Issue'}</span>
+            <span style=${{fontSize:'.65rem',color:'var(--text-faint)'}}>${i.status||'open'}</span>
           </div>`;})}
         </div>`}
-        ${(linkedClashes.length>0||linkedIssues.length>0) && html`<div style=${CARD}>
-          <div style=${HDR}>Clashes &amp; Issues</div>
-          ${linkedClashes.map(function(c){return html`<div key=${c.id} style=${{fontSize:'.75rem',padding:'.2rem 0',display:'flex',gap:'.4rem',alignItems:'center',borderBottom:'1px solid var(--border-subtle)'}}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--color-danger)" stroke-width="2.5"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-            <span style=${{color:'var(--text-secondary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${c.title||'Clash'}</span>
-          </div>`;})}
-          ${linkedIssues.map(function(i){return html`<div key=${i.id} style=${{fontSize:'.75rem',padding:'.2rem 0',display:'flex',gap:'.4rem',alignItems:'center',borderBottom:'1px solid var(--border-subtle)'}}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="${i.status==='open'?'var(--color-warning)':'var(--color-success)'}" stroke="none"><circle cx="12" cy="12" r="10"/></svg>
-            <span style=${{color:'var(--text-secondary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${i.title||'Issue'}</span>
-          </div>`;})}
+        <!-- Quick identity -->
+        <div style=${CARD}>
+          <div style=${HDR}>Identity</div>
+          ${storey             && html`<div style=${ROW}><span style=${LBL}>Floor</span><span style=${VAL}>${storey}</span></div>`}
+          ${ep&&ep.material    && html`<div style=${ROW}><span style=${LBL}>Material</span><span style=${VAL}>${ep.material}</span></div>`}
+          ${ep&&ep.objectType  && html`<div style=${ROW}><span style=${LBL}>Object type</span><span style=${VAL}>${ep.objectType}</span></div>`}
+          ${ep&&ep.description && html`<div style=${ROW}><span style=${LBL}>Description</span><span style=${VAL}>${ep.description}</span></div>`}
+          ${ep&&ep.globalId    && html`<div style=${ROW}><span style=${LBL}>GlobalId</span><span style=${{...VAL,...MONO,opacity:.65}}>${ep.globalId.slice(0,16)}…</span></div>`}
+        </div>
+        <!-- Dimensions if available -->
+        ${allDims.length>0 && html`<div style=${CARD}>
+          <div style=${HDR}>Dimensions</div>
+          ${allDims.map(function(d){return html`<div style=${ROW}><span style=${LBL}>${d.l}</span><span style=${{...VAL,...MONO}}>${d.f(d.v)}</span></div>`;})}
         </div>`}
+        <!-- Switch to Data Quality for full checks -->
+        <div style=${{textAlign:'center',padding:'.4rem 0'}}>
+          <button onClick=${function(){d({t:A.SET_WORKSPACE,v:'review'});}}
+            style=${{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',
+              fontSize:'.72rem',color:'var(--text-muted)',textDecoration:'underline',textDecorationColor:'var(--border)'}}>
+            Switch to Data Quality for element checks →
+          </button>
+        </div>
+        <!-- Actions -->
         <div style=${{display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
           <button onClick=${function(){d({t:A.MODAL,v:true,el:el});d({t:A.TAB,v:'issues'});}}
             style=${{flex:1,padding:'.4rem .6rem',borderRadius:'var(--radius-sm)',background:'var(--accent)',color:'#fff',border:'none',fontSize:'.74rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>+ New issue</button>
@@ -21492,27 +21572,43 @@ function startApp() {
     var w = s.workspace || 'present';
     var tabs = [
       {id:'present',    label:'Present'},
-      {id:'coordinate', label:'Coordinate'},
-      {id:'review',     label:'Review'}
+      {id:'review',     label:'Data Quality'},
+      {id:'coordinate', label:'Clash & Issues'}
     ];
+    var hasModel = s.models && s.models.length > 0;
     function pick(id){ if(id!==w) d({t:A.SET_WORKSPACE,v:id}); }
-    return html`<div role="tablist" aria-label="Workspace"
-      style=${{display:'flex',alignItems:'stretch',height:'100%',gap:0}}>
-      ${tabs.map(function(t){
-        var on = w===t.id;
-        return html`<button key=${t.id} role="tab" aria-selected=${on}
-          onClick=${function(){pick(t.id);}}
-          style=${{
-            padding:'0 .9rem',height:'100%',background:'none',border:'none',cursor:'pointer',
-            fontFamily:'var(--font-body)',fontSize:'var(--text-sm)',
-            fontWeight:on?600:500,letterSpacing:'-.005em',
-            color:on?'var(--ink-primary)':'var(--ink-muted)',
-            position:'relative',transition:'color var(--duration-fast) var(--ease-standard)'
-          }}>
-          ${t.label}
-          ${on && html`<span style=${{position:'absolute',left:'.6rem',right:'.6rem',bottom:0,height:2,background:'var(--ink-accent)'}}></span>`}
-        </button>`;
-      })}
+    return html`<div style=${{display:'flex',alignItems:'stretch',height:'100%',gap:0}}>
+      <div role="tablist" aria-label="Workspace" style=${{display:'flex',alignItems:'stretch',height:'100%',gap:0}}>
+        ${tabs.map(function(t){
+          var on = w===t.id;
+          return html`<button key=${t.id} role="tab" aria-selected=${on}
+            onClick=${function(){pick(t.id);}}
+            style=${{
+              padding:'0 .9rem',height:'100%',background:'none',border:'none',cursor:'pointer',
+              fontFamily:'var(--font-body)',fontSize:'var(--text-sm)',
+              fontWeight:on?600:500,letterSpacing:'-.005em',
+              color:on?'var(--ink-primary)':'var(--ink-muted)',
+              position:'relative',transition:'color var(--duration-fast) var(--ease-standard)'
+            }}>
+            ${t.label}
+            ${on && html`<span style=${{position:'absolute',left:'.6rem',right:'.6rem',bottom:0,height:2,background:'var(--ink-accent)'}}></span>`}
+          </button>`;
+        })}
+      </div>
+      ${hasModel && html`<div style=${{display:'flex',alignItems:'center',marginLeft:'var(--space-3)',paddingLeft:'var(--space-3)',borderLeft:'1px solid var(--hairline-strong)',height:'60%',alignSelf:'center'}}>
+        <button class="cc-btn-press" title="Add another model (O)" aria-label="Add another model"
+          onClick=${function(){ if(window._ccOpenIFC) window._ccOpenIFC(); }}
+          style=${{display:'inline-flex',alignItems:'center',gap:'.3rem',
+            background:'none',border:'1px solid var(--hairline-strong)',
+            borderRadius:'var(--radius-sm)',cursor:'pointer',padding:'.2rem .55rem',
+            fontFamily:'var(--font-body)',fontSize:'var(--text-xs)',
+            color:'var(--ink-muted)',lineHeight:1.2,whiteSpace:'nowrap'}}
+          onMouseEnter=${function(e){e.currentTarget.style.color='var(--ink-primary)';e.currentTarget.style.borderColor='var(--hairline-strong)';e.currentTarget.style.background='var(--surface-warm)';}}
+          onMouseLeave=${function(e){e.currentTarget.style.color='var(--ink-muted)';e.currentTarget.style.background='none';}}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Add model</span>
+        </button>
+      </div>`}
     </div>`;
   }
 
@@ -21673,26 +21769,13 @@ function startApp() {
       <div style=${{flexShrink:0,height:'100%',marginLeft:'var(--space-4)'}}>
         <${WorkspaceTabs} s=${s} d=${d} />
       </div>
-      <!-- Centre: typographic model name + Add-model affordance -->
-      <div style=${{flex:1,display:'flex',justifyContent:'center',alignItems:'center',minWidth:0,padding:'0 var(--space-3)',gap:'.6rem'}}>
+      <!-- Centre: model name only -->
+      <div style=${{flex:1,display:'flex',justifyContent:'center',alignItems:'center',minWidth:0,padding:'0 var(--space-3)'}}>
         ${modelName && html`<span style=${{
           fontFamily:'var(--font-display)',fontWeight:500,fontSize:'var(--text-base)',
           letterSpacing:'-.01em',color:'var(--ink-secondary)',
           whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:480
         }} title=${modelName}>${modelName}</span>`}
-        ${modelName && html`<button class="cc-btn-press" title="Add another model (O)"
-          aria-label="Add another model"
-          onClick=${function(){ if(window._ccOpenIFC) window._ccOpenIFC(); }}
-          style=${{display:'inline-flex',alignItems:'center',gap:'.3rem',
-            background:'none',border:'1px solid var(--hairline-strong)',
-            borderRadius:'var(--radius-sm)',cursor:'pointer',padding:'.22rem .55rem',
-            fontFamily:'var(--font-body)',fontSize:'var(--text-xs)',
-            color:'var(--ink-muted)',lineHeight:1.2}}
-          onMouseEnter=${function(e){e.currentTarget.style.color='var(--ink-primary)';e.currentTarget.style.background='var(--surface-warm)';}}
-          onMouseLeave=${function(e){e.currentTarget.style.color='var(--ink-muted)';e.currentTarget.style.background='none';}}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          <span>Add model</span>
-        </button>`}
       </div>
       <!-- Right: Share + avatar -->
       <div style=${{display:'flex',alignItems:'center',gap:'var(--space-2)',flexShrink:0,height:'100%'}}>
@@ -22663,13 +22746,18 @@ function startApp() {
         if(ctrl && e.key==='o'){ e.preventDefault(); if(window._ccOpenIFC)window._ccOpenIFC(); return; }
         if(ctrl && e.key===','){ e.preventDefault(); d({t:A.SETTINGS,v:!s.showSettings}); return; }
         if(e.key==='Escape'){
+          // Esc always cancels the most recently activated mode, priority order:
           if(s.presenting){ d({t:A.PRESENT,v:false}); return; }
+          if(window._ccSectionPickPending){ window._ccSectionPickPending=false; window.dispatchEvent(new CustomEvent('cc-section-pick-end')); return; }
+          if(s.walkMode){ if(window._ccWalkExit)window._ccWalkExit(); d({t:A.WALK_MODE,v:false}); return; }
+          if(s.measureMode){ d({t:A.MEASURE_MODE,v:false}); return; }
           if(s.commentMode){ d({t:A.COMMENT_MODE,v:false}); return; }
+          if(s.floorPlan){ d({t:A.FLOOR_PLAN,v:null}); return; }
           if(s.showShare){ d({t:A.SHARE,v:false}); return; }
           if(s.showSettings){ d({t:A.SETTINGS,v:false}); return; }
           if(s.showModal){ d({t:A.MODAL,v:false}); return; }
           if(s.showRevitBridge){ d({t:A.REVIT_BRIDGE,v:false}); return; }
-          if(s.sectionBox){ d({t:A.SECTION_BOX,v:null}); return; }
+          if(s.sectionBox&&s.sectionBox.enabled){ d({t:A.SECTION_BOX,v:null}); return; }
           if(s.sectionAxis||s.sectionCustom){ d({t:A.SECTION,axis:null}); return; }
         }
         if (!inInput && (e.key==='p' || e.key==='P') && !ctrl && !e.shiftKey && !e.altKey) {
