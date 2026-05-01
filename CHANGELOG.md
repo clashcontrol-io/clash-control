@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.1.7 (2026-05-01)
+- Section box face arrows + Revit-style ViewCube
+
 ## v5.1.6 (2026-05-01)
 - Workspaces renamed + inspector depth + UX polish
 
