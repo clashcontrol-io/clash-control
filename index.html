@@ -5945,8 +5945,26 @@ function startApp() {
         return box;
       };
 
-      // ── Activate Section Box around whole model bounds ──
+      // ── Activate Section Box — Revit-style: around selected element if one is active,
+      //    otherwise around the full model (useful for global orientation/cropping). ──
       window._ccActivateSectionBox = function() {
+        // Priority 1: selected element has a pre-computed bounding box
+        var sel = window._ccSelectedEl;
+        if (sel && sel.box && !sel.box.isEmpty()) {
+          var ebox = sel.box.clone();
+          // 10% breathing room so the element isn't flush against the crop planes
+          var sz = ebox.getSize(new THREE.Vector3());
+          ebox.expandByScalar(Math.max(0.3, Math.min(2.0, Math.max(sz.x, sz.y, sz.z) * 0.1)));
+          if (window._ccDispatch) {
+            window._ccDispatch({t:A.SECTION_BOX, v:{enabled:true,
+              min:[ebox.min.x, ebox.min.y, ebox.min.z],
+              max:[ebox.max.x, ebox.max.y, ebox.max.z]
+            }});
+          }
+          return true;
+        }
+        // Priority 2: highlighted clash/issue targets (if _sboxAroundElements is wired)
+        // Priority 3: full model bounding box
         var box = _getSectionBoxFromScene();
         if (!box) return false;
         if (window._ccDispatch) {
