@@ -21737,6 +21737,39 @@ function startApp() {
                 <span style=${{fontSize:'var(--text-2xs)',color:'var(--ink-faint)',fontFamily:'var(--font-mono)'}}>PDF · DXF — auto-placed on its level</span>
               </span>
             </button>
+            <div style=${{height:1,background:'var(--hairline)',margin:'.25rem 0'}}></div>
+            <button onClick=${function(){
+                setAddOpen(false);
+                try { if(window._ccActivateAddon) window._ccActivateAddon('revit-bridge'); } catch(_e){}
+                d({t:A.REVIT_BRIDGE,v:true});
+              }}
+              style=${{display:'flex',alignItems:'flex-start',gap:'.6rem',width:'100%',
+                padding:'.55rem .8rem',background:'none',border:'none',cursor:'pointer',textAlign:'left',
+                fontFamily:'var(--font-body)',color:'var(--ink-primary)'}}
+              onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+              onMouseLeave=${function(e){e.currentTarget.style.background='none';}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style=${{marginTop:2,flexShrink:0,color:'var(--accent)'}}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span style=${{display:'flex',flexDirection:'column',gap:1}}>
+                <span style=${{fontSize:'var(--text-sm)',fontWeight:500}}>Live from Revit</span>
+                <span style=${{fontSize:'var(--text-2xs)',color:'var(--ink-faint)',fontFamily:'var(--font-mono)'}}>WebSocket bridge — sync geometry & properties</span>
+              </span>
+            </button>
+            <button onClick=${function(){
+                setAddOpen(false);
+                try { if(window._ccActivateAddon) window._ccActivateAddon('shared-project'); } catch(_e){}
+                d({t:A.SHARE,v:true});
+              }}
+              style=${{display:'flex',alignItems:'flex-start',gap:'.6rem',width:'100%',
+                padding:'.55rem .8rem',background:'none',border:'none',cursor:'pointer',textAlign:'left',
+                fontFamily:'var(--font-body)',color:'var(--ink-primary)'}}
+              onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+              onMouseLeave=${function(e){e.currentTarget.style.background='none';}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style=${{marginTop:2,flexShrink:0,color:'var(--ink-secondary)'}}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span style=${{display:'flex',flexDirection:'column',gap:1}}>
+                <span style=${{fontSize:'var(--text-sm)',fontWeight:500}}>Shared folder</span>
+                <span style=${{fontSize:'var(--text-2xs)',color:'var(--ink-faint)',fontFamily:'var(--font-mono)'}}>OneDrive · Dropbox · NAS — team sync</span>
+              </span>
+            </button>
           </div>
         </div>`}
       </div>`}
@@ -21883,7 +21916,7 @@ function startApp() {
           <div style=${{height:1,background:'var(--hairline)',margin:'.3rem 0'}}></div>
           ${row('Theme: '+(isDark?'Dark':'Light'), function(){ d({t:A.UPD_PREFS,u:{theme:isDark?'light':'dark'}}); })}
           ${row('Settings…', function(){ d({t:A.SETTINGS,v:true}); }, ',')}
-          ${row('Integrations…', function(){ d({t:A.TAB,v:'addons'}); })}
+          ${row('Add-ons…', function(){ d({t:A.TAB,v:'addons'}); })}
           ${row('Enter presentation', function(){ d({t:A.PRESENT,v:true}); })}
           ${row('Keyboard shortcuts', function(){ try{ window.dispatchEvent(new CustomEvent('cc-show-shortcuts')); }catch(e){} }, '?')}
         </div>
