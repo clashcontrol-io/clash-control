@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.1.3 (2026-05-01)
+- fix(toolbar+panels): unbreak app, redesign panel headers, drop sample model
+
 ## v5.1.2 (2026-05-01)
 - feat(ui): zinc + forest palette, layout fix, Enscape walk, render quality
 
