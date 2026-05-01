@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.1.5 (2026-05-01)
+- Render styles: Hidden Line mode + faster rendered view
+
 ## v5.1.4 (2026-05-01)
 - feat(toolbar+section): default to Standard, click-surface section, Add model
 
