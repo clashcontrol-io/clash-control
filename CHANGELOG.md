@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.0.2 (2026-05-01)
+- fix: sky gradient addColorStop needs hex, not CSS variable (Canvas 2D doesn't resolve var(--))
+
 ## v5.0.1 (2026-04-30)
 - fix: remove escaped quotes in WelcomePopup template literal (SyntaxError at line 21137)
 
