@@ -726,7 +726,7 @@ function startApp() {
        the user to the exact same chrome they left. _ccPersistUI() below
        writes them back; the reducer cases for SET_WORKSPACE / DIAGNOSTICS /
        PANEL_OPEN / INSPECTOR_OPEN / ASK_OPEN funnel through it. */
-    workspace:(function(){ try { var v=localStorage.getItem('cc_workspace'); return (v==='present'||v==='coordinate'||v==='review')?v:'present'; } catch(e){ return 'present'; } })(),
+    workspace:(function(){ try { var v=localStorage.getItem('cc_workspace'); if(v==='review') v='coordinate'; return (v==='present'||v==='coordinate')?v:'present'; } catch(e){ return 'present'; } })(),
     diagnostics:_ccLoadPref('diagnostics',false),
     panelOpen:_ccLoadPref('panelOpen',null),       // null = follow workspace default; true/false = user override
     inspectorOpen:_ccLoadPref('inspectorOpen',false),
@@ -1016,7 +1016,7 @@ function startApp() {
       case A.SHARE_TAB:   return Object.assign({},s,{shareTab:a.v||'overview'});
       case A.PRESENT:     return Object.assign({},s,{presenting:!!a.v});
       case A.SET_WORKSPACE: {
-        var w=(a.v==='coordinate'||a.v==='review')?a.v:'present';
+        var w=(a.v==='coordinate'||a.v==='review')?'coordinate':'present';
         _ccPersistUI('workspace',w);
         /* Switching workspace closes any open left panel, the selection-driven
            inspector, and the avatar menu so each workspace lands clean. */
@@ -7961,11 +7961,11 @@ function startApp() {
         }}></div>
         <span style=${{fontSize:'0.98rem',color:'var(--accent-subtle)',fontWeight:500,letterSpacing:'.03em'}}>Switching project…</span>
       </div>`}
-      ${s.workspace==='review' && s.diagnostics && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'var(--space-3)',left:'var(--space-3)',padding:'var(--space-1) var(--space-2)',pointerEvents:'auto',fontSize:'var(--text-xs)'}}>
+      ${s.workspace !== 'present' && s.diagnostics && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'var(--space-3)',left:'var(--space-3)',padding:'var(--space-1) var(--space-2)',pointerEvents:'auto',fontSize:'var(--text-xs)'}}>
         <span style=${{color:fpsColor(perfData.fps),cursor:'pointer',fontWeight:'var(--weight-medium)',fontFamily:'var(--font-mono)'}}
           onClick=${function(){setPerfOpen(!perfOpen)}}>${perfData.fps} fps</span>
       </div>`}
-      ${s.workspace==='review' && s.diagnostics && perfOpen && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'2.4rem',left:'var(--space-3)',padding:'var(--space-2) var(--space-3)',pointerEvents:'auto',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',minWidth:180}}>
+      ${s.workspace !== 'present' && s.diagnostics && perfOpen && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'2.4rem',left:'var(--space-3)',padding:'var(--space-2) var(--space-3)',pointerEvents:'auto',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',minWidth:180}}>
         <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'var(--space-1)'}}>
           <span style=${{fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',fontSize:'var(--text-xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>Performance</span>
           <button onClick=${function(){setPerfOpen(false)}} style=${{...S_BTN,padding:'0 var(--space-1)',background:'none',color:'var(--text-faint)',fontSize:'var(--text-xs)'}} aria-label="Close performance stats">✕</button>
@@ -11177,12 +11177,12 @@ function startApp() {
     var canRun = models.length > 0 && !s.detecting;
 
     var PRESETS = [
-      {label:'All vs All',      desc:'Every model against every other',                     r:{modelA:'all',modelB:'all',hard:true,maxGap:0,duplicates:false,excludeSelf:false}},
-      {label:'Struct vs MEP',   desc:'Structural against MEP disciplines',                  r:{modelA:'disc:structural',modelB:'disc:mep',hard:true,maxGap:50,duplicates:false,excludeSelf:false}},
-      {label:'Arch vs MEP',     desc:'Architectural against MEP',                           r:{modelA:'disc:architectural',modelB:'disc:mep',hard:true,maxGap:50,duplicates:false,excludeSelf:false}},
-      {label:'Cross-discipline',desc:'All models, exclude self-clashes',                    r:{modelA:'all',modelB:'all',hard:true,maxGap:0,duplicates:false,excludeSelf:true}},
-      {label:'Near misses',     desc:'Near misses within max gap',                          r:{modelA:'all',modelB:'all',hard:false,maxGap:100,duplicates:false,excludeSelf:true}},
-      {label:'Duplicates',      desc:'Find duplicate elements at same location',            r:{modelA:'all',modelB:'all',hard:false,maxGap:0,duplicates:true,excludeSelf:false}}
+      {label:'Hard clashes',    note:'Elements that physically overlap',                    desc:'Every model against every other — hits where geometry actually intersects.', r:{modelA:'all',modelB:'all',hard:true,maxGap:0,duplicates:false,excludeSelf:false}},
+      {label:'Structure vs MEP',note:'Beams or columns hitting pipes & ducts',               desc:'Structural elements clashing with mechanical / electrical / plumbing.',     r:{modelA:'disc:structural',modelB:'disc:mep',hard:true,maxGap:50,duplicates:false,excludeSelf:false}},
+      {label:'Walls vs MEP',    note:'Pipes & ducts running through walls or floors',        desc:'Architectural elements clashing with MEP runs.',                            r:{modelA:'disc:architectural',modelB:'disc:mep',hard:true,maxGap:50,duplicates:false,excludeSelf:false}},
+      {label:'Cross-model',     note:'Anything from one team’s file hitting another',        desc:'All models, ignore each model’s own internal clashes.',                  r:{modelA:'all',modelB:'all',hard:true,maxGap:0,duplicates:false,excludeSelf:true}},
+      {label:'Near misses',     note:'Things within a clearance distance (e.g. 100 mm)',     desc:'No physical overlap, but elements too close — clearance / tolerance check.', r:{modelA:'all',modelB:'all',hard:false,maxGap:100,duplicates:false,excludeSelf:true}},
+      {label:'Duplicates',      note:'Same element modelled twice in the same place',         desc:'Pure duplicate detection — usually data hygiene, not coordination.',         r:{modelA:'all',modelB:'all',hard:false,maxGap:0,duplicates:true,excludeSelf:false}}
     ];
 
     function applyPreset(preset) {
@@ -11239,12 +11239,13 @@ function startApp() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
         </div>
-        <div style=${{display:'flex',gap:'.25rem',flexWrap:'wrap'}}>
+        <div style=${{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:'.3rem'}}>
           ${PRESETS.map(function(p) {
             return html`<button key=${p.label} onClick=${function(){applyAndRun(p)}} disabled=${!canRun} title=${p.desc}
-              style=${{...S_BTN,fontSize:'0.67rem',padding:'.2rem .4rem',background:'var(--accent-bg)',color:'var(--accent-subtle)',
-                opacity:canRun?1:.5,transition:'background .15s'}}>
-              ${p.label}
+              style=${{...S_BTN,padding:'var(--space-2) var(--space-3)',background:'var(--accent-bg)',color:'var(--text-primary)',
+                opacity:canRun?1:.5,transition:'background .15s',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:'2px',textAlign:'left',lineHeight:'var(--leading-tight)',border:'1px solid var(--accent-subtle)'}}>
+              <span style=${{fontSize:'var(--text-xs)',fontWeight:'var(--weight-semibold)',color:'var(--accent)'}}>${p.label}</span>
+              <span style=${{fontSize:'var(--text-2xs)',color:'var(--text-secondary)',whiteSpace:'normal'}}>${p.note}</span>
             </button>`;
           })}
         </div>
@@ -14817,6 +14818,64 @@ function startApp() {
     function syncNow(){ if(window._syncSharedProject) window._syncSharedProject(d); }
     function unlink(){ if(window._disconnectShared) window._disconnectShared(d); }
 
+    // Quick Share via project key (no folder, no upload, no login)
+    var stKey = useState(function(){ try{return localStorage.getItem('cc_sharedProjectId')||'';}catch(e){return '';} });
+    var pKey = stKey[0], setPKey = stKey[1];
+    var stKeyName = useState(function(){ try{return localStorage.getItem('cc_sharedProjectName')||'';}catch(e){return '';} });
+    var pKeyName = stKeyName[0], setPKeyName = stKeyName[1];
+    var stCopied = useState(''); var copiedKind = stCopied[0], setCopiedKind = stCopied[1];
+    var stCreating = useState(false); var creating=stCreating[0], setCreating=stCreating[1];
+    var shareUrl = pKey ? (window.location.origin + window.location.pathname + '?p=' + encodeURIComponent(pKey)) : '';
+    function createKey(){
+      if (creating) return;
+      var name = prompt('Name this shared project (visible to teammates):', pKeyName || 'Untitled project');
+      if (!name) return;
+      if (!window._ccSharedCreate) { alert('Sharing service unavailable.'); return; }
+      setCreating(true);
+      window._ccSharedCreate(name).then(function(data){
+        try{
+          if (data && data.project) {
+            localStorage.setItem('cc_sharedProjectId', data.project.id);
+            localStorage.setItem('cc_sharedProjectName', data.project.name);
+            setPKey(data.project.id);
+            setPKeyName(data.project.name);
+          }
+        }catch(e){}
+        setCreating(false);
+      }).catch(function(){ alert('Could not create shared project. Server may be unavailable.'); setCreating(false); });
+    }
+    function copy(text, kind){
+      try {
+        if (navigator.clipboard) navigator.clipboard.writeText(text);
+      } catch(e){}
+      setCopiedKind(kind);
+      setTimeout(function(){ setCopiedKind(''); }, 1400);
+    }
+    function joinByKey(){
+      var key = prompt('Paste the project key your teammate gave you:', '');
+      if (!key) return;
+      key = key.trim();
+      // also accept full URL — strip everything but the ?p= value
+      var m = key.match(/[?&]p=([^&#]+)/);
+      if (m) key = decodeURIComponent(m[1]);
+      fetch('/api/project?id=' + encodeURIComponent(key))
+        .then(function(r){ if(!r.ok) throw new Error(); return r.json(); })
+        .then(function(data){
+          try {
+            localStorage.setItem('cc_sharedProjectId', key);
+            localStorage.setItem('cc_sharedProjectName', data.project.name);
+          } catch(e){}
+          setPKey(key);
+          setPKeyName(data.project.name);
+          if (window._ccSharedStart) window._ccSharedStart();
+        })
+        .catch(function(){ alert('Project not found. Check the key and try again.'); });
+    }
+    function leaveKey(){
+      try { localStorage.removeItem('cc_sharedProjectId'); localStorage.removeItem('cc_sharedProjectName'); } catch(e){}
+      setPKey(''); setPKeyName('');
+    }
+
     var TabBtn = function(id, label, badge){
       var active = tab===id;
       return html`<button onClick=${function(){d({t:A.SHARE_TAB,v:id});}}
@@ -14851,6 +14910,25 @@ function startApp() {
         <div style=${{padding:'1rem 1.2rem',overflowY:'auto'}}>
           ${tab==='overview' ? html`<div style=${{display:'flex',flexDirection:'column',gap:'.9rem'}}>
 
+            <!-- Quick share via project key — no upload, no login -->
+            ${pKey ? html`<div style=${{padding:'.85rem 1rem',background:'var(--accent-bg)',border:'1px solid var(--accent-subtle)',borderRadius:'var(--radius-md)'}}>
+              <div style=${{fontSize:'0.72rem',color:'var(--accent)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'.4rem'}}>${pKeyName ? pKeyName : 'Shared project'}</div>
+              <div style=${{fontFamily:'var(--font-mono)',fontSize:'1.05rem',fontWeight:600,color:'var(--text-primary)',letterSpacing:'.02em',marginBottom:'.5rem',userSelect:'all'}}>${pKey}</div>
+              <div style=${{display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
+                <button onClick=${function(){copy(shareUrl,'url');}} style=${{...btnPrimary,padding:'.4rem .7rem',fontSize:'0.78rem'}}>${copiedKind==='url'?'Copied!':'Copy share link'}</button>
+                <button onClick=${function(){copy(pKey,'key');}} style=${{...btnSecondary,padding:'.4rem .7rem',fontSize:'0.78rem'}}>${copiedKind==='key'?'Copied!':'Copy key'}</button>
+                <button onClick=${leaveKey} style=${{...btnGhost,padding:'.4rem .7rem',fontSize:'0.78rem'}}>Leave</button>
+              </div>
+              <div style=${{marginTop:'.5rem',fontSize:'0.72rem',color:'var(--text-muted)',wordBreak:'break-all',fontFamily:'var(--font-mono)'}}>${shareUrl}</div>
+            </div>` : html`<div style=${{padding:'.9rem 1rem',background:'var(--bg-tertiary)',border:'1px dashed var(--border)',borderRadius:'var(--radius-md)'}}>
+              <div style=${{fontSize:'0.85rem',fontWeight:600,color:'var(--text-primary)',marginBottom:'.25rem'}}>Quick share</div>
+              <div style=${{fontSize:'0.78rem',color:'var(--text-secondary)',lineHeight:1.5,marginBottom:'.6rem'}}>Generate a project key in one click. Share the link — your teammate clicks it and instantly sees the same comments, issues, and clash decisions. No account, no upload.</div>
+              <div style=${{display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
+                <button onClick=${createKey} disabled=${creating} style=${{...btnPrimary,padding:'.45rem .8rem',fontSize:'0.8rem'}}>${creating?'Creating…':'Create shared project'}</button>
+                <button onClick=${joinByKey} style=${{...btnSecondary,padding:'.45rem .8rem',fontSize:'0.8rem'}}>Join with a key…</button>
+              </div>
+            </div>`}
+
             <div>
               <label style=${{fontSize:'0.72rem',color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.04em',display:'block',marginBottom:'.3rem'}}>Your name</label>
               <input type="text" value=${sp.userName||''} placeholder="Used to attribute your changes"
@@ -14858,8 +14936,10 @@ function startApp() {
                 style=${inputStyle} />
             </div>
 
+            <div style=${{fontSize:'0.7rem',color:'var(--text-muted)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.06em',marginTop:'.4rem'}}>Or sync to a shared folder</div>
+
             ${!sp.enabled && html`<div style=${{padding:'.9rem 1rem',background:'var(--accent-bg)',border:'1px solid var(--accent-bg-deep)',borderRadius:8,fontSize:'0.85rem',color:'var(--text-secondary)',lineHeight:1.6}}>
-              <div style=${{fontWeight:600,color:'var(--text-primary)',marginBottom:'.4rem'}}>How sharing works</div>
+              <div style=${{fontWeight:600,color:'var(--text-primary)',marginBottom:'.4rem'}}>How folder sync works</div>
               <ol style=${{margin:0,paddingLeft:'1.2rem'}}>
                 <li style=${{marginBottom:'.3rem'}}>Choose a folder that you and your teammates can both reach — for example a shared OneDrive, Dropbox, Google Drive, or company network drive.</li>
                 <li style=${{marginBottom:'.3rem'}}>ClashControl saves a small project file in that folder and keeps it up to date automatically (about once a minute).</li>
@@ -15097,6 +15177,201 @@ function startApp() {
               </div>
             </div>`;
           })}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Command Palette (Cmd / Ctrl + K) ─────────────────────────
+  // Universal escape hatch — fold of every menu, every tool, every
+  // modal, plus a one-shot "Ask the assistant" verb. AI is just a
+  // peer command, not a special button.
+
+  function _ccBuildCommands(s, d) {
+    var cmds = [];
+    function push(c){ cmds.push(c); }
+    var renderStyles = ['standard','shaded','rendered','wireframe'];
+    var renderLabels = {standard:'Standard',shaded:'Shaded',rendered:'Rendered (lit)',wireframe:'Wireframe'};
+    // Workspaces
+    push({group:'Workspace', label:'Switch to Present',    keywords:'present view show showcase clean architect',
+      onSelect:function(){ d({t:A.SET_WORKSPACE,v:'present'}); }});
+    push({group:'Workspace', label:'Switch to Coordinate', keywords:'coordinate clash detection issues bim',
+      onSelect:function(){ d({t:A.SET_WORKSPACE,v:'coordinate'}); }});
+    push({group:'Workspace', label:'Toggle diagnostics',   keywords:'diagnostics review data quality audit fps perf',
+      onSelect:function(){ d({t:A.DIAGNOSTICS,v:!s.diagnostics}); }});
+    // View
+    push({group:'View', label:'Fit to view', hint:'F', keywords:'fit zoom extents reset framing',
+      onSelect:function(){ try{ if(window._ccFit) window._ccFit(); }catch(e){} }});
+    push({group:'View', label:'Toggle floor plan view', keywords:'plan 2d sheet floor underlay',
+      onSelect:function(){ d({t:A.FLOOR_PLAN,v:!s.floorPlan}); }});
+    push({group:'View', label:'Walk mode', keywords:'walk wasd fps first person navigate',
+      onSelect:function(){ d({t:A.WALK_MODE,v:!s.walkMode}); }});
+    renderStyles.forEach(function(style, i){
+      push({group:'Rendering', label:'Render: '+renderLabels[style], hint:String(i+1),
+        keywords:'render style material '+style,
+        onSelect:function(){ d({t:A.UPD_PREFS,u:{renderStyle:style}}); }});
+    });
+    // Tools
+    push({group:'Tools', label:'Section by surface',
+      keywords:'section cut slice plane clip',
+      onSelect:function(){ d({t:A.SECTION_CUSTOM,v:!s.sectionCustomActive}); }});
+    push({group:'Tools', label:'Section box',
+      keywords:'section box clip volume',
+      onSelect:function(){ d({t:A.SECTION_BOX,v:!s.sectionBoxActive}); }});
+    push({group:'Tools', label:'Measure distance',
+      keywords:'measure distance dimension',
+      onSelect:function(){ d({t:A.MEASURE_MODE,v:s.measureMode==='distance'?null:'distance'}); }});
+    push({group:'Tools', label:'Measure angle',
+      keywords:'measure angle',
+      onSelect:function(){ d({t:A.MEASURE_MODE,v:s.measureMode==='angle'?null:'angle'}); }});
+    push({group:'Tools', label:'Add comment pin',
+      keywords:'note comment pin annotation pin',
+      onSelect:function(){ d({t:A.COMMENT_MODE,v:!s.commentMode}); }});
+    // Panels & tabs
+    push({group:'Panels', label:'Open Conflicts',
+      keywords:'conflicts clashes issues list',
+      onSelect:function(){ d({t:A.TAB,v:'clashes'}); }});
+    push({group:'Panels', label:'Open Issues',
+      keywords:'issues bcf reports tickets',
+      onSelect:function(){ d({t:A.TAB,v:'issues'}); }});
+    push({group:'Panels', label:'Open Navigator',
+      keywords:'navigator tree elements explorer browse',
+      onSelect:function(){ d({t:A.TAB,v:'navigator'}); }});
+    push({group:'Panels', label:'Open Standards',
+      keywords:'standards rules ids data quality compliance',
+      onSelect:function(){ d({t:A.TAB,v:'standards'}); }});
+    push({group:'Panels', label:'Toggle Models panel',
+      keywords:'models files ifc list panel',
+      onSelect:function(){ try{ if(window._ccToggleModelsPanel) window._ccToggleModelsPanel(); }catch(e){} }});
+    push({group:'Panels', label:'Toggle Inspector',
+      keywords:'inspector details properties drawer',
+      onSelect:function(){ d({t:A.INSPECTOR_OPEN,v:!s.inspectorOpen}); }});
+    // Files
+    push({group:'Files', label:'Open IFC or GLB file…',
+      keywords:'open file load import ifc glb',
+      onSelect:function(){ try{ if(window._ccOpenIFC) window._ccOpenIFC(); }catch(e){} }});
+    // Modals & global
+    push({group:'Project', label:'Run clash detection',
+      keywords:'detect run clashes coordination check find',
+      onSelect:function(){ try{ if(window._ccRunDetection) window._ccRunDetection(); }catch(e){} }});
+    push({group:'Project', label:'Share project',
+      keywords:'share collaboration team url link invite send',
+      onSelect:function(){ d({t:A.SHARE,v:true}); }});
+    push({group:'Project', label:'Smart Views',
+      keywords:'smart views saved viewpoints presets',
+      onSelect:function(){ d({t:A.SMART_VIEWS,v:true}); }});
+    push({group:'Project', label:'Settings',
+      keywords:'settings preferences config options',
+      onSelect:function(){ d({t:A.SETTINGS,v:true}); }});
+    push({group:'Project', label:'Keyboard shortcuts', hint:'?',
+      keywords:'shortcuts keyboard hotkeys help',
+      onSelect:function(){ try{ window.dispatchEvent(new CustomEvent('cc-show-shortcuts')); }catch(e){} }});
+    push({group:'Project', label:'Toggle theme (light / dark)',
+      keywords:'theme light dark mode color',
+      onSelect:function(){
+        try {
+          var cur = document.documentElement.getAttribute('data-theme') || 'light';
+          var next = cur === 'dark' ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-theme', next);
+          try { localStorage.setItem('cc_theme', next); } catch(e){}
+          window.dispatchEvent(new CustomEvent('cc-theme-changed',{detail:next}));
+        } catch(e){}
+      }});
+    push({group:'Assistant', label:'Open AI chat panel',
+      keywords:'ai assistant chat ask conversation gemma',
+      onSelect:function(){ try{ if(window._ccOpenAIPanel) window._ccOpenAIPanel(); }catch(e){} }});
+    return cmds;
+  }
+
+  function CmdKPalette(props) {
+    var s = props.s, d = props.d, onClose = props.onClose;
+    var stQ = useState(''), q = stQ[0], setQ = stQ[1];
+    var stIdx = useState(0), idx = stIdx[0], setIdx = stIdx[1];
+    var inputRef = useRef(null);
+    var cmds = _ccBuildCommands(s, d);
+    var qLow = q.trim().toLowerCase();
+    var matches = qLow
+      ? cmds.filter(function(c){
+          var hay = (c.label+' '+c.group+' '+(c.keywords||'')).toLowerCase();
+          return hay.indexOf(qLow) !== -1;
+        }).sort(function(a,b){
+          // prioritise label-prefix match
+          var aL = a.label.toLowerCase(), bL = b.label.toLowerCase();
+          var aP = aL.indexOf(qLow)===0 ? 0 : 1;
+          var bP = bL.indexOf(qLow)===0 ? 0 : 1;
+          if (aP !== bP) return aP - bP;
+          return aL.localeCompare(bL);
+        })
+      : cmds;
+    var askEntry = qLow ? {group:'Assistant', label:'Ask the assistant', desc:q, isAsk:true,
+      onSelect:function(){
+        try {
+          if(window._ccOpenAIPanel) window._ccOpenAIPanel();
+          // Submit via existing NL pipeline
+          if(window._ccProcessNLCommand) window._ccProcessNLCommand(q);
+          else window.dispatchEvent(new CustomEvent('cc-nl-submit',{detail:q}));
+        } catch(e){}
+      }} : null;
+    var list = askEntry ? [askEntry].concat(matches) : matches;
+    if (idx >= list.length) idx = Math.max(0, list.length-1);
+    useEffect(function(){
+      if (inputRef.current) inputRef.current.focus();
+    }, []);
+    useEffect(function(){ setIdx(0); }, [q]);
+    function onKey(e){
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(Math.min(list.length-1, idx+1)); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setIdx(Math.max(0, idx-1)); return; }
+      if (e.key === 'Enter')     { e.preventDefault(); var sel=list[idx]; if(sel){ try{sel.onSelect();}catch(_e){} onClose(); } return; }
+    }
+    // Group rendering
+    var rows = [];
+    var lastGroup = null;
+    list.forEach(function(c, i){
+      if (c.group !== lastGroup) { rows.push({type:'header',group:c.group,key:'h'+i}); lastGroup = c.group; }
+      rows.push({type:'item',cmd:c,i:i,active:i===idx,key:'i'+i});
+    });
+    return html`<div class="cc-modal-backdrop" style=${{...S_BACKDROP,alignItems:'flex-start',paddingTop:'10vh'}} role="dialog" aria-modal="true" aria-labelledby="cc-cmdk-title"
+      onClick=${onClose} onKeyDown=${onKey}>
+      <div class="cc-modal-card" style=${{...S_MODAL_CARD,width:560,maxHeight:'70vh',display:'flex',flexDirection:'column'}} onClick=${function(e){e.stopPropagation();}}>
+        <div style=${{padding:'var(--space-3) var(--space-4)',borderBottom:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:'var(--space-3)'}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input ref=${inputRef} type="text" id="cc-cmdk-title" aria-label="Command or question"
+            placeholder="Type a command or ask anything…"
+            value=${q} onInput=${function(e){ setQ(e.target.value); }}
+            onKeyDown=${onKey}
+            style=${{flex:1,background:'none',border:'none',outline:'none',color:'var(--text-primary)',fontSize:'var(--text-md)',fontFamily:'var(--font-body)',lineHeight:'var(--leading-base)'}} />
+          <span style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--text-muted)',padding:'2px 6px',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',whiteSpace:'nowrap'}}>Esc</span>
+        </div>
+        <div style=${{flex:1,overflowY:'auto',padding:'var(--space-2) 0'}}>
+          ${list.length === 0 ? html`<div style=${{padding:'var(--space-5)',textAlign:'center',color:'var(--text-muted)',fontSize:'var(--text-sm)'}}>No matches. Press Enter to ask the assistant.</div>` : null}
+          ${rows.map(function(r){
+            if (r.type === 'header') {
+              return html`<div key=${r.key} style=${{padding:'var(--space-2) var(--space-4) var(--space-1)',fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',fontWeight:'var(--weight-bold)',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.08em'}}>${r.group}</div>`;
+            }
+            var c = r.cmd;
+            return html`<div key=${r.key}
+              onMouseEnter=${function(){ setIdx(r.i); }}
+              onClick=${function(){ try{c.onSelect();}catch(_e){} onClose(); }}
+              style=${{
+                padding:'var(--space-2) var(--space-4)',display:'flex',alignItems:'center',gap:'var(--space-3)',
+                background:r.active?'var(--accent-bg)':'transparent',cursor:'pointer',
+                color:'var(--text-primary)',fontSize:'var(--text-sm)',lineHeight:'var(--leading-tight)'
+              }}>
+              ${c.isAsk
+                ? html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5.5A8 8 0 1 1 21 12z"/></svg>`
+                : html`<span style=${{width:14,display:'inline-block'}}></span>`}
+              <span style=${{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                ${c.label}${c.desc ? html`<span style=${{color:'var(--text-muted)',marginLeft:'var(--space-2)'}}>${c.desc}</span>` : ''}
+              </span>
+              ${c.hint ? html`<span style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--text-muted)',padding:'2px 6px',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>${c.hint}</span>` : ''}
+            </div>`;
+          })}
+        </div>
+        <div style=${{padding:'var(--space-2) var(--space-4)',borderTop:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:'var(--space-3)',fontSize:'var(--text-2xs)',color:'var(--text-muted)',fontFamily:'var(--font-mono)',letterSpacing:'.04em'}}>
+          <span><span style=${{color:'var(--text-secondary)'}}>↑↓</span> navigate</span>
+          <span><span style=${{color:'var(--text-secondary)'}}>↵</span> run</span>
+          <span style=${{marginLeft:'auto'}}>${list.length} match${list.length===1?'':'es'}</span>
         </div>
       </div>
     </div>`;
@@ -19409,6 +19684,14 @@ function startApp() {
         localStorage.setItem(_chatStorageKey, JSON.stringify(serialisable));
       } catch(e) { /* quota exceeded — drop the cache silently */ }
     }, [msgs, _chatStorageKey]);
+    useEffect(function(){
+      function onNLSubmit(e){
+        var text = e && e.detail ? String(e.detail) : '';
+        if (text) send(text);
+      }
+      window.addEventListener('cc-nl-submit', onNLSubmit);
+      return function(){ window.removeEventListener('cc-nl-submit', onNLSubmit); };
+    }, []);
     var stInput = useState(''), input = stInput[0], setInput = stInput[1];
     var stLoading = useState(false), loading = stLoading[0], setLoading = stLoading[1];
     var stModelLoading = useState(!!window._ccModelLoading), modelLoading = stModelLoading[0], setModelLoading = stModelLoading[1];
@@ -19875,36 +20158,10 @@ function startApp() {
     var backendLabel = window._ccTourActive ? 'AI loaded' : _serverReady ? 'Gemma 4' : backend === 'server' ? 'Gemma 4' : null;
     var backendColor = window._ccTourActive ? 'var(--accent)' : _serverReady ? '#22c55e' : mutedCol;
 
-    /* ── Closed-state Ask button (only when NOT docked and not open) ──
-       Demoted from the prior wide centred pill to a quiet 36-px round button
-       anchored bottom-right of the canvas. No pulse, no glow, no violet. A
-       subtle terracotta dot appears only when a relevant background process
-       is running (model loading, clash detection) so the user knows AI has
-       context to chat about — never to advertise the feature. */
-    if (!isDocked && !open) {
-      var busy = modelLoading || isDetecting;
-      var busyTip = isDetecting ? 'Clash detection running' : modelLoading ? 'Model loading' : null;
-      return html`<button
-        onClick=${function(){ setOpen(true); }}
-        aria-label="Ask the assistant"
-        title=${busyTip ? busyTip+' — click to ask anything' : 'Ask the assistant ( / )'}
-        style=${{
-          position:'fixed', bottom:'1rem', right:'1rem', zIndex:1200,
-          width:36, height:36, borderRadius:'50%',
-          background:'var(--surface)', border:'1px solid var(--hairline-strong)',
-          color:'var(--ink-muted)', cursor:'pointer',
-          display:'flex', alignItems:'center', justifyContent:'center',
-          boxShadow:'var(--shadow-soft)',
-          transition:'color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard)'
-        }}
-        onMouseEnter=${function(e){ e.currentTarget.style.color='var(--ink-primary)'; e.currentTarget.style.background='var(--surface-warm)'; }}
-        onMouseLeave=${function(e){ e.currentTarget.style.color='var(--ink-muted)'; e.currentTarget.style.background='var(--surface)'; }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5.5A8 8 0 1 1 21 12z"/>
-        </svg>
-        ${busy && html`<span aria-hidden="true" style=${{position:'absolute',top:6,right:6,width:6,height:6,borderRadius:'50%',background:'var(--ink-accent)'}}></span>`}
-      </button>`;
-    }
+    /* The round bottom-right Ask bubble was removed in v6: AI is a peer
+       command in Cmd-K (every menu, every tool, plus "Ask the assistant").
+       The chat panel itself is still reachable via Cmd-K → "Open AI chat". */
+    if (!isDocked && !open) return null;
 
     function renderAIFeedback(msgIdx, msgText) {
       var fb = feedback[msgIdx];
@@ -20374,18 +20631,16 @@ function startApp() {
     var SVG_INTEG   = '<path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="3"/><path d="M6.34 6.34l2.83 2.83m5.66 5.66l2.83 2.83M17.66 6.34l-2.83 2.83m-5.66 5.66l-2.83 2.83"/>';
 
     var w = s.workspace || 'coordinate';
-    /* Workspace-scoped tab list — no Models tab here (the model is the
-       canvas); no Conflicts in Review (that's Coordinate's job). */
-    var tabs = w === 'review'
-      ? [
-          {id:'dataquality', svg:SVG_DATAQUALITY, label:'Data Quality'},
-          {id:'navigator',   svg:SVG_EXPLORE,     label:'Navigator'}
-        ]
-      : [
-          {id:'clashes',  svg:SVG_CLASHES,   label:'Conflicts', badge:clashN},
-          {id:'issues',   svg:SVG_ISSUES,    label:'Issues',    badge:issueN},
-          {id:'standards',svg:SVG_STANDARDS, label:'Clash Rules'}
-        ];
+    /* Workspace-scoped tab list — Coordinate now folds in the former
+       Review tabs (Data Quality, Navigator). One coordination workspace,
+       not two; Present stays clean. */
+    var tabs = [
+      {id:'clashes',     svg:SVG_CLASHES,    label:'Conflicts',    badge:clashN},
+      {id:'issues',      svg:SVG_ISSUES,     label:'Issues',       badge:issueN},
+      {id:'navigator',   svg:SVG_EXPLORE,    label:'Navigator'},
+      {id:'dataquality', svg:SVG_DATAQUALITY,label:'Data Quality'},
+      {id:'standards',   svg:SVG_STANDARDS,  label:'Clash Rules'}
+    ];
 
     return html`<div class="cc-left-rail" style=${{
       width:48,background:'var(--surface)',borderRight:'1px solid var(--hairline)',
@@ -20395,7 +20650,7 @@ function startApp() {
         ${tabs.map(function(t){ return tabBtn(t.id, t.svg, t.label, t.badge||0); })}
       </div>
       <div style=${{flex:1}}></div>
-      ${w === 'review' && html`<button class="cc-tip" data-tip=${(s.diagnostics?'Hide':'Show')+' diagnostics'}
+      ${w !== 'present' && html`<button class="cc-tip" data-tip=${(s.diagnostics?'Hide':'Show')+' diagnostics'}
         onClick=${function(){ d({t:A.DIAGNOSTICS, v: !s.diagnostics}); }}
         style=${{
           width:'100%',height:42,background:'none',border:'none',cursor:'pointer',
@@ -21131,18 +21386,18 @@ function startApp() {
       var el = drawerEl;
       var workspace = s.workspace || 'present';
       var WRAP = {flex:1,overflowY:'auto',padding:'.75rem .9rem',display:'flex',flexDirection:'column',gap:'.6rem'};
-      var ROW  = {display:'flex',gap:'.4rem',alignItems:'baseline',padding:'.22rem 0',borderBottom:'1px solid var(--border-subtle)',fontSize:'.75rem'};
+      var ROW  = {display:'flex',gap:'.4rem',alignItems:'baseline',padding:'.22rem 0',borderBottom:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)'};
       var LBL  = {color:'var(--text-muted)',minWidth:88,flexShrink:0};
       var VAL  = {color:'var(--text-primary)',flex:1,wordBreak:'break-word'};
       var CARD = {background:'var(--bg-secondary)',borderRadius:'var(--radius-sm)',padding:'.5rem .75rem',border:'1px solid var(--border-subtle)'};
-      var HDR  = {fontSize:'.65rem',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'.3rem'};
-      var MONO = {fontFamily:'var(--font-mono)',fontSize:'.68rem'};
+      var HDR  = {fontSize:'var(--text-2xs)',fontWeight:'var(--weight-bold)',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:'var(--space-2)'};
+      var MONO = {fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)'};
 
       if (!el) {
         return html`<div style=${{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
           padding:'2rem 1.2rem',color:'var(--text-muted)',textAlign:'center',gap:'1rem'}}>
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style=${{opacity:.35}}><rect x="3" y="3" width="18" height="18" rx="4"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="13" y2="13"/></svg>
-          <div style=${{fontSize:'.78rem',lineHeight:1.6}}>Click any element in the model to see its details here.</div>
+          <div style=${{fontSize:'var(--text-sm)',lineHeight:'var(--leading-base)'}}>Click any element in the model to see its details here.</div>
         </div>`;
       }
 
@@ -21213,12 +21468,12 @@ function startApp() {
 
       // Shared header block
       var headerCard = html`<div style=${{background:'var(--accent-bg)',borderRadius:'var(--radius-md)',padding:'.7rem .85rem',border:'1px solid var(--accent-bg-deep)'}}>
-        <div style=${{fontSize:'.68rem',color:'var(--accent)',marginBottom:'.2rem',textTransform:'uppercase',letterSpacing:'.04em',fontWeight:600}}>${typeName}</div>
-        <div style=${{fontSize:'.95rem',fontWeight:700,color:'var(--text-primary)',lineHeight:1.3}}>${elName}</div>
+        <div style=${{fontSize:'var(--text-2xs)',color:'var(--accent)',marginBottom:'.2rem',textTransform:'uppercase',letterSpacing:'.08em',fontWeight:'var(--weight-bold)'}}>${typeName}</div>
+        <div style=${{fontSize:'var(--text-md)',fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',lineHeight:'var(--leading-tight)'}}>${elName}</div>
         <div style=${{display:'flex',gap:'.6rem',marginTop:'.3rem',flexWrap:'wrap'}}>
-          ${discipline && html`<span style=${{fontSize:'.68rem',color:'var(--text-secondary)'}}>${discipline}</span>`}
-          ${storey && html`<span style=${{fontSize:'.68rem',color:'var(--text-muted)'}}>· ${storey}</span>`}
-          ${ep&&ep.material && html`<span style=${{fontSize:'.68rem',color:'var(--text-muted)'}}>· ${ep.material}</span>`}
+          ${discipline && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-secondary)'}}>${discipline}</span>`}
+          ${storey && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)'}}>· ${storey}</span>`}
+          ${ep&&ep.material && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)'}}>· ${ep.material}</span>`}
         </div>
       </div>`;
 
@@ -21273,12 +21528,12 @@ function startApp() {
         var ctxBadges = null;
         if (linkedClashes.length || linkedIssues.length) {
           ctxBadges = html`<div style=${{display:'flex',gap:'.4rem',marginTop:'.6rem',flexWrap:'wrap'}}>
-            ${linkedClashes.length ? html`<span style=${{fontSize:'.72rem',background:'var(--color-danger-bg)',color:'var(--color-danger-fg)',border:'1px solid var(--color-danger-border)',borderRadius:4,padding:'2px 8px',fontWeight:600}}>${linkedClashes.length} conflict${linkedClashes.length===1?'':'s'}</span>` : null}
-            ${linkedIssues.length  ? html`<span style=${{fontSize:'.72rem',background:'var(--accent-bg)',color:'var(--accent)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 8px',fontWeight:600}}>${linkedIssues.length} issue${linkedIssues.length===1?'':'s'}</span>` : null}
+            ${linkedClashes.length ? html`<span style=${{fontSize:'var(--text-xs)',background:'var(--color-danger-bg)',color:'var(--color-danger-fg)',border:'1px solid var(--color-danger-border)',borderRadius:'var(--radius-xs)',padding:'2px 8px',fontWeight:'var(--weight-semibold)'}}>${linkedClashes.length} conflict${linkedClashes.length===1?'':'s'}</span>` : null}
+            ${linkedIssues.length  ? html`<span style=${{fontSize:'var(--text-xs)',background:'var(--accent-bg)',color:'var(--accent)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',padding:'2px 8px',fontWeight:'var(--weight-semibold)'}}>${linkedIssues.length} issue${linkedIssues.length===1?'':'s'}</span>` : null}
           </div>`;
         }
 
-        var descQuote = (ep && ep.description) ? html`<p style=${{fontSize:'.78rem',fontStyle:'italic',borderLeft:'2px solid var(--accent-subtle)',paddingLeft:'.7rem',color:'var(--text-muted)',margin:'.6rem 0 0',lineHeight:1.6}}>${ep.description}</p>` : null;
+        var descQuote = (ep && ep.description) ? html`<p style=${{fontSize:'var(--text-sm)',fontStyle:'italic',borderLeft:'2px solid var(--accent-subtle)',paddingLeft:'.7rem',color:'var(--text-muted)',margin:'.6rem 0 0',lineHeight:'var(--leading-base)'}}>${ep.description}</p>` : null;
 
         return html`<div style=${WRAP}>
           ${headerCard}
@@ -21296,13 +21551,15 @@ function startApp() {
       }
 
       // ── DATA QUALITY: comprehensive data check ───────────────────
-      if (workspace === 'review') {
+      // (Review workspace folded into Coordinate; DQ-deep view kicks in
+      // when user picks the Data Quality rail tab.)
+      if (s.tab === 'dataquality') {
         return html`<div style=${WRAP}>
           ${headerCard}
           <!-- DQ Score -->
           <div style=${{...CARD,display:'flex',alignItems:'center',gap:'.6rem'}}>
             <div style=${{textAlign:'center',minWidth:48}}>
-              <div style=${{fontSize:'1.4rem',fontWeight:800,color:dqColor,lineHeight:1}}>${dqScore}</div>
+              <div style=${{fontSize:'var(--text-xl)',fontWeight:'var(--weight-bold)',color:dqColor,lineHeight:1}}>${dqScore}</div>
               <div style=${{fontSize:'.6rem',color:'var(--text-muted)',marginTop:2}}>/ ${dqTotal}</div>
             </div>
             <div style=${{flex:1}}>
@@ -21410,10 +21667,10 @@ function startApp() {
         </div>`}
         <!-- Switch to Data Quality for full checks -->
         <div style=${{textAlign:'center',padding:'.4rem 0'}}>
-          <button onClick=${function(){d({t:A.SET_WORKSPACE,v:'review'});}}
+          <button onClick=${function(){d({t:A.TAB,v:'dataquality'});}}
             style=${{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',
-              fontSize:'.72rem',color:'var(--text-muted)',textDecoration:'underline',textDecorationColor:'var(--border)'}}>
-            Switch to Data Quality for element checks →
+              fontSize:'var(--text-xs)',color:'var(--text-muted)',textDecoration:'underline',textDecorationColor:'var(--border)'}}>
+            Open Data Quality for element checks →
           </button>
         </div>
         <!-- Actions -->
@@ -21537,7 +21794,7 @@ function startApp() {
             fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',
             color:'var(--ink-muted)',letterSpacing:'.12em',textTransform:'uppercase',
             marginBottom:'.6rem'
-          }}>ClashControl · v${CC_VERSION.v}</div>
+          }}>ClashControl · Free &amp; open · v${CC_VERSION.v}</div>
           <!-- Welcome headline -->
           <h1 style=${{
             margin:0,padding:0,
@@ -21548,6 +21805,11 @@ function startApp() {
           }}>${dragging ? 'Drop the file.' : 'Open a model.'}</h1>
           <p style=${{
             marginTop:'.85rem',marginBottom:0,
+            fontFamily:'var(--font-body)',fontSize:'var(--text-md)',
+            color:'var(--ink-primary)',lineHeight:1.5,maxWidth:'34em',fontWeight:500
+          }}>Clash detection, coordination &amp; presentation for architects and BIM teams.</p>
+          <p style=${{
+            marginTop:'.4rem',marginBottom:0,
             fontFamily:'var(--font-body)',fontSize:'var(--text-base)',
             color:'var(--ink-secondary)',lineHeight:1.55,maxWidth:'34em'
           }}>Drag an IFC or GLB onto the canvas. Or pick from below.</p>
@@ -21611,6 +21873,11 @@ function startApp() {
                 color:'var(--ink-faint)',textDecoration:'underline',textUnderlineOffset:'3px',textDecorationThickness:'1px'
               }}>Already shared? Link a folder.</button>
           </div>
+          <p style=${{
+            marginTop:'1.6rem',marginBottom:0,
+            fontFamily:'var(--font-body)',fontSize:'var(--text-xs)',
+            color:'var(--ink-faint)',lineHeight:1.55,maxWidth:'34em'
+          }}>IFC is the open BIM format exported by Revit, Archicad, Tekla and others. No account, no upload — your model stays in the browser.</p>
         </div>
 
         <!-- Hand-drawn isometric ballast — single 1.5px stroke, no fill -->
@@ -21754,8 +22021,7 @@ function startApp() {
     var w = s.workspace || 'present';
     var tabs = [
       {id:'present',    label:'Present'},
-      {id:'review',     label:'Review'},
-      {id:'coordinate', label:'Clash & Issues'}
+      {id:'coordinate', label:'Coordinate'}
     ];
     var hasModel = s.models && s.models.length > 0;
     var addOpenSt = useState(false), addOpen = addOpenSt[0], setAddOpen = addOpenSt[1];
@@ -22009,6 +22275,7 @@ function startApp() {
             if (!canInstall || standalone) return null;
             return row('Install ClashControl', function(){ if(window._ccPwaPromptInstall) window._ccPwaPromptInstall(); });
           })()}
+          ${row('Search · ask the assistant', function(){ if(window._ccOpenCmdK) window._ccOpenCmdK(); }, '⌘K')}
           ${row('Enter presentation', function(){ d({t:A.PRESENT,v:true}); })}
           ${row('Keyboard shortcuts', function(){ try{ window.dispatchEvent(new CustomEvent('cc-show-shortcuts')); }catch(e){} }, '?')}
         </div>
@@ -22324,19 +22591,22 @@ function startApp() {
           onClick:function(){ if(window._ccToggleModelsPanel) window._ccToggleModelsPanel(); }})}
         ${div()}
 
-        <!-- ASK AI button — opens the right panel in chat mode -->
-        <button onClick=${function(){ if(window._ccOpenAIPanel) window._ccOpenAIPanel(); }}
-          title="Ask AI about this model"
+        <!-- Command palette opener — Cmd/Ctrl + K. Replaces the prior
+             dedicated Ask AI button: AI is now one command among many. -->
+        <button onClick=${function(){ if(window._ccOpenCmdK) window._ccOpenCmdK(); }}
+          title="Search every command — and ask the assistant (Cmd/Ctrl+K)"
+          aria-label="Open command palette"
           style=${{
-            display:'inline-flex',alignItems:'center',gap:'.4rem',height:36,padding:'0 .65rem',
+            display:'inline-flex',alignItems:'center',gap:'.5rem',height:36,padding:'0 .55rem 0 .65rem',
             background:'none',border:'1px solid var(--hairline-strong)',
             borderRadius:'var(--radius-sm)',cursor:'pointer',fontFamily:'var(--font-body)',
             fontSize:'var(--text-xs)',color:'var(--ink-secondary)',letterSpacing:'-.005em',marginRight:'.4rem'
           }}
           onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';e.currentTarget.style.color='var(--ink-primary)';}}
           onMouseLeave=${function(e){e.currentTarget.style.background='none';e.currentTarget.style.color='var(--ink-secondary)';}}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 3-2 5-3 6.5-.5.8-1 1.5-1 2.5v1H9v-1c0-1-.5-1.7-1-2.5C7 14 5 12 5 9a7 7 0 0 1 7-7z"/><path d="M9 21h6"/></svg>
-          <span style=${{color:'var(--ink-primary)',fontWeight:500}}>Ask AI</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span style=${{color:'var(--ink-primary)',fontWeight:500}}>Search</span>
+          <span style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--ink-muted)',padding:'1px 5px',border:'1px solid var(--hairline)',borderRadius:'var(--radius-xs)',marginLeft:'.15rem'}}>⌘K</span>
         </button>
 
         <!-- STYLE popover (visible button — never hotkey-only) -->
@@ -22443,7 +22713,7 @@ function startApp() {
     var issueN=s.issues.filter(function(i){var st=i.status||'open';return st!=='resolved'&&st!=='closed';}).length;
     function navBtn(id, svgPath, label, badge) {
       var active=s.tab===id;
-      return html`<button class=${active?'active':''} onClick=${function(){
+      return html`<button class=${active?'active':''} aria-label=${label} onClick=${function(){
         if (id==='ai') {
           if (s.chatOpen) { window._ccNLClose(); }
           else { if (s.tab) d({t:A.TAB,v:null}); window._ccNLOpen(); }
@@ -22458,12 +22728,18 @@ function startApp() {
         <span>${label}</span>
       </button>`;
     }
+    function searchBtn(){
+      return html`<button aria-label="Search · ask the assistant" onClick=${function(){ if(window._ccOpenCmdK) window._ccOpenCmdK(); }}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span>Search</span>
+      </button>`;
+    }
     return html`<nav class="cc-mobile-nav">
+      ${searchBtn()}
       ${navBtn('models','<path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M12 2L2 7l10 5 10-5-10-5z"/>','Models',0)}
       ${navBtn('clashes','<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>','Conflicts',clashN)}
       ${navBtn('issues','<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>','Issues',issueN)}
       ${navBtn('navigator','<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>','Navigator',0)}
-      ${navBtn('dataquality','<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>','Data Quality',0)}
     </nav>`;
   }
 
@@ -22991,16 +23267,28 @@ function startApp() {
     var _storeyPicker = useState(false), storeyPickerOpen=_storeyPicker[0], setStoreyPickerOpen=_storeyPicker[1];
     window._ccShowStoreyPicker = setStoreyPickerOpen;
     var _shortcuts = useState(false), shortcutsOpen=_shortcuts[0], setShortcutsOpen=_shortcuts[1];
+    var _cmdk = useState(false), cmdkOpen=_cmdk[0], setCmdkOpen=_cmdk[1];
+    window._ccOpenCmdK = function(){ setCmdkOpen(true); };
     useEffect(function(){
       function onShow(){ setShortcutsOpen(true); }
+      function isTextField(t){
+        if (!t) return false;
+        var tag = t.tagName;
+        if (tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return true;
+        return !!t.isContentEditable;
+      }
       function onKey(e){
-        if (e.key !== '?') return;
-        var t = e.target;
-        var tag = t && t.tagName;
-        if (tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
-        if (t && t.isContentEditable) return;
-        e.preventDefault();
-        setShortcutsOpen(true);
+        // Cmd / Ctrl + K — open command palette
+        if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+          e.preventDefault();
+          setCmdkOpen(function(v){ return !v; });
+          return;
+        }
+        // ? — open shortcuts (when not typing in a text field)
+        if (e.key === '?' && !isTextField(e.target)) {
+          e.preventDefault();
+          setShortcutsOpen(true);
+        }
       }
       window.addEventListener('cc-show-shortcuts', onShow);
       window.addEventListener('keydown', onKey);
@@ -23280,6 +23568,7 @@ function startApp() {
       ${s.showModal && html`<${NewIssueModal} d=${d} el=${s.modalElement} prefs=${s.prefs} clashes=${s.clashes} activeId=${s.activeId} />`}
       ${storeyPickerOpen && html`<${StoreyPickerModal} s=${s} d=${d} onClose=${function(){setStoreyPickerOpen(false);}} />`}
       ${shortcutsOpen && html`<${ShortcutsModal} onClose=${function(){setShortcutsOpen(false);}} />`}
+      ${cmdkOpen && html`<${CmdKPalette} s=${s} d=${d} onClose=${function(){setCmdkOpen(false);}} />`}
       ${s.showSettings && html`<${SettingsModal} d=${d} s=${s} prefs=${s.prefs} models=${s.models} rules=${s.rules} />`}
       ${s.showShare && html`<${ShareModal} d=${d} s=${s} />`}
       ${s.showSmartViews && html`<${SmartViewsModal} d=${d} s=${s} />`}
