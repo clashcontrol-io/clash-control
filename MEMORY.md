@@ -159,6 +159,80 @@ UI_OVERHAUL.md written (7 chapters, 1469 lines). PLAN.md updated.
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-05-01
+**Summary:** 64 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- 963fb70 chore: bump version to 5.1.2
+- d0731c5 feat(ui): zinc + forest palette, layout fix, Enscape walk, render quality
+- 1b9b0ed fix(inspector): collapse right panel when element is deselected
+- 027364f fix(ui): remove duplicate access points across viewer
+- a20e0f4 chore: bump version to 5.1.1
+- 3c3a46c feat(inspector): workspace-aware element details depth
+- b7f46f1 fix(ui): clean white palette, remove emojis, deduplicate element panel
+- 50cfd86 fix(ui): switch fonts to Syne + DM Sans, fix theme-color meta
+- e09b517 chore: bump version to 5.1.0
+- bf9e3a5 feat(ui): paper + ink + terracotta redesign — workspace switcher, xeokit toolbar, demoted Ask AI
+- 71b094b chore: bump version to 5.0.3
+- fa2d1a1 fix(mobile): hide right drawer entirely + add floating theme toggle (top-left)
+- 939798e feat(theme): default to light mode (Figma/Sketch/Notion convention) — boot script applies before paint to prevent flash
+- 413b0a9 chore: bump version to 5.0.2
+- 0ce33ee fix: sky gradient addColorStop needs hex, not CSS variable (Canvas 2D doesn't resolve var(--))
+- c0f7db2 chore: bump version to 5.0.1
+- 3673f27 fix: remove escaped quotes in WelcomePopup template literal (SyntaxError at line 21137)
+- 685a945 chore: bump version to 5.0.0
+- dc57df1 ci: remove custom CodeQL workflow — conflicts with Default Setup already enabled on repo
+- 30ca36f ci: match CodeQL Default Setup categories (javascript-typescript + rust)
+- 0c9a7cb ci: add CodeQL workflow (fixes '1 configuration not found' failure)
+- 535ed8d fix(security): keep apiKey in memory only, not sessionStorage (js/clear-text-storage-of-sensitive-data)
+- 92e31eb fix(security): add SRI integrity hashes for GLTFLoader and pdf.js (js/functionality-from-untrusted-source #7)
+- e216fa2 fix(security): hostname allowlist in sw.js instead of URL substring checks (js/incomplete-url-substring-sanitization #5 #6)
+- bba1f5c fix(security): move apiKey from localStorage to sessionStorage (js/clear-text-storage-of-sensitive-data)
+- 8e27a28 fix(security): static format string in revit-bridge console.log (js/tainted-format-string)
+- 3b057aa fix(security): use static format string in local-engine console.log (js/tainted-format-string)
+- f2361b2 chore: update MEMORY.md — UI overhaul complete (PR-1 through PR-8)
+- f93b3f3 feat(overlay-panels): left/right panels float over canvas + details drawer + model load card
+- c19010c feat(pr4): violet left rail tabs, grid opacity, blue→violet sweep
+- 2925060 feat(pr3): slim desktop top bar — glass surface, Share accent, theme toggle
+- 6b54bf5 feat(pr2): bottom mode toolbar with 6 chips and sub-tool rows
+- 91ecc5d feat(pr1): violet accent, rounder radii, glass surface tokens
+- 4743a20 docs: UI overhaul — Chapter 7 (implementation roadmap)
+- 9b0ff1b docs: UI overhaul — Chapter 6 (first-run and onboarding)
+- f02aa30 docs: UI overhaul — Chapter 5 (feature remapping and naming pass)
+- 1f7a116 docs: UI overhaul — Chapter 4 (visual language and copy tone)
+- b1e4959 docs: UI overhaul — Chapter 3 (tools as architectural instruments)
+- 9d4cfa5 docs: UI overhaul — Chapter 2 (layout architecture)
+- e5e90ae docs: UI overhaul design doc — Chapter 1 (vision, personas, references)
+- 865944f fix: ViewCube nav arrows render as literal text on iOS Safari
+- 51dfbff chore: bump version to 4.19.0
+- ab207c1 feat(PR-A): TransformControls section gizmo
+- 6a4adf1 feat(PR-E): presentation v2 — slide auto-advance + brand logo
+- e272a7b feat(PR-B): SAO ambient occlusion + selection outline post-processing
+- 6822bc9 feat(PR-D): walk-mode polish — head-bob + no-clip + gamepad
+- 158a7ad feat(PR-C): Smart Views + shareable URL hash
+- 5a7e47a chore: bump version to 4.18.0
+- 885647a chore: bump version to 4.17.1
+- c2aaf71 feat: presentation/kiosk mode + roadmap
+- 84a57b9 feat: header Share button + walk-FOV HUD + ACES/shadows for cinematic look
+- 9772053 feat(revit-bridge): implement session resumption + keep/discard partial model UI
+- 9f80b5a chore: bump version to 4.17.0
+- de6b9dd feat: top-level Share entry + pin-on-model comments via folder-sync
+- 3d3c2f6 chore: bump version to 4.16.6
+- 954e61e fix(revit-bridge): handle isLinked→isLink field rename + add export-start/end logging
+- 61ef16f fix: remove LOD proxy boxes — show elements or hide, never show translucent AABB
+- 155b2f7 chore: bump version to 4.16.5
+- 2959d35 fix: bump geo cache to v4 to invalidate corrupted v3 entries from instancing
+- dda8647 fix: delete geo cache immediately when a project is deleted
+- fb4e1d2 chore: bump version to 4.16.4
+- 2b5d1cd fix: replace setFromObject(scene) with _elemsBBox() to fix instanced mesh bounds
+- 59d0917 fix viewer rotation lag and add ViewCube navigation arrows
+- 4cbfe5f chore: daily memory sync 2026-04-30
+
+</details>
+
 ### 2026-04-30
 **Summary:** 1 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
