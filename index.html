@@ -8356,47 +8356,48 @@ function startApp() {
     }, [theme]);
 
     var light = theme==='light';
-    // Revit-style: small triangle arrows that hug the cube edge, only on hover-of-a-face.
-    // No buttons, no border boxes — just minimal triangles in muted ink.
+    // Revit-style: small triangle arrows rendered INSIDE the cube face area,
+    // visible only when the camera is directly aligned with a face (activeFace >= 0).
     var triBase = {
       position:'absolute', cursor:'pointer', userSelect:'none',
       width:0, height:0, padding:0, border:'none', background:'none',
-      opacity:.55, transition:'opacity .12s, transform .12s'
+      opacity:.7, transition:'opacity .12s'
     };
     var triColor = light ? '#404040' : '#a0a0a0';
     var adj = activeFace >= 0 ? FACE_ADJACENTS[activeFace] : null;
 
-    var nav = adj || FACE_ADJACENTS[0]; // always show arrows; default to FRONT-face compass when no face hovered
     return html`<div class="cc-viewcube-wrap" style=${{position:'absolute',top:'3rem',right:'1rem',pointerEvents:'auto',width:98,height:98,overflow:'visible'}}>
       <canvas ref=${canvasRef} width="84" height="84" style=${{cursor:'pointer',position:'absolute',top:7,left:7,width:84,height:84}} />
-      <!-- Left arrow -->
-      <button aria-label="Left view" onClick=${function(){flyToDir(nav.left);}}
-        onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-        onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
-        style=${{...triBase,left:-2,top:42,
-          borderTop:'5px solid transparent',borderBottom:'5px solid transparent',
-          borderRight:'7px solid '+triColor}}></button>
-      <!-- Right arrow -->
-      <button aria-label="Right view" onClick=${function(){flyToDir(nav.right);}}
-        onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-        onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
-        style=${{...triBase,right:-2,top:42,
-          borderTop:'5px solid transparent',borderBottom:'5px solid transparent',
-          borderLeft:'7px solid '+triColor}}></button>
-      <!-- Top arrow -->
-      <button aria-label="Top view" onClick=${function(){flyToDir(nav.up);}}
-        onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-        onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
-        style=${{...triBase,left:42,top:-2,
-          borderLeft:'5px solid transparent',borderRight:'5px solid transparent',
-          borderBottom:'7px solid '+triColor}}></button>
-      <!-- Bottom arrow -->
-      <button aria-label="Bottom view" onClick=${function(){flyToDir(nav.down);}}
-        onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-        onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
-        style=${{...triBase,left:42,bottom:-2,
-          borderLeft:'5px solid transparent',borderRight:'5px solid transparent',
-          borderTop:'7px solid '+triColor}}></button>
+      ${adj && html`
+        <!-- Left arrow — inside left edge of cube face -->
+        <button aria-label="Left view" onClick=${function(){flyToDir(adj.left);}}
+          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
+          onMouseLeave=${function(e){e.currentTarget.style.opacity=.7;}}
+          style=${{...triBase,left:11,top:46,
+            borderTop:'4px solid transparent',borderBottom:'4px solid transparent',
+            borderRight:'6px solid '+triColor}}></button>
+        <!-- Right arrow -->
+        <button aria-label="Right view" onClick=${function(){flyToDir(adj.right);}}
+          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
+          onMouseLeave=${function(e){e.currentTarget.style.opacity=.7;}}
+          style=${{...triBase,right:11,top:46,
+            borderTop:'4px solid transparent',borderBottom:'4px solid transparent',
+            borderLeft:'6px solid '+triColor}}></button>
+        <!-- Top arrow -->
+        <button aria-label="Top view" onClick=${function(){flyToDir(adj.up);}}
+          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
+          onMouseLeave=${function(e){e.currentTarget.style.opacity=.7;}}
+          style=${{...triBase,left:46,top:11,
+            borderLeft:'4px solid transparent',borderRight:'4px solid transparent',
+            borderBottom:'6px solid '+triColor}}></button>
+        <!-- Bottom arrow -->
+        <button aria-label="Bottom view" onClick=${function(){flyToDir(adj.down);}}
+          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
+          onMouseLeave=${function(e){e.currentTarget.style.opacity=.7;}}
+          style=${{...triBase,left:46,bottom:11,
+            borderLeft:'4px solid transparent',borderRight:'4px solid transparent',
+            borderTop:'6px solid '+triColor}}></button>
+      `}
     </div>`;
   }
 
@@ -20925,9 +20926,15 @@ function startApp() {
           setDrawerTab('models');
         }
       };
+      window._ccOpenModelsPanel = function(){
+        setCollapsed(false);
+        try{localStorage.setItem('cc_ai_panel_collapsed','0');}catch(e){}
+        setDrawerTab('models');
+      };
       return function(){
         if (window._ccOpenAIPanel) window._ccOpenAIPanel = null;
         if (window._ccToggleModelsPanel) window._ccToggleModelsPanel = null;
+        if (window._ccOpenModelsPanel) window._ccOpenModelsPanel = null;
       };
     }, [collapsed, drawerTab]);
 
@@ -22980,13 +22987,13 @@ function startApp() {
       e.target.value='';
       if(!files.length) return;
       window._ccPendingFiles = files;
-      d({t:A.TAB,v:'models'});
+      if (window._ccOpenModelsPanel) try { window._ccOpenModelsPanel(); } catch(_e){}
       window.dispatchEvent(new CustomEvent('cc-pending-files'));
     }
     window._ccLoadFiles = function(files) {
       if (!files || !files.length) return;
       window._ccPendingFiles = Array.prototype.slice.call(files);
-      d({t:A.TAB,v:'models'});
+      if (window._ccOpenModelsPanel) try { window._ccOpenModelsPanel(); } catch(_e){}
       window.dispatchEvent(new CustomEvent('cc-pending-files'));
     };
 
