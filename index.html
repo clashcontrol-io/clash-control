@@ -2567,7 +2567,7 @@ function startApp() {
           var matCache = {};
           var geoCache = {}; // geoId → BufferGeometry (shared across identical elements)
 
-          var _tGeoBuild = 0, _tMesh = 0, _tBBox = 0, _tLod = 0;
+          var _tGeoBuild = 0, _tMesh = 0, _tBBox = 0;
           var _sbStart = performance.now();
 
           for (var i = 0; i < rawEls.length; i++) {
@@ -2622,8 +2622,7 @@ function startApp() {
           var sceneSub = {
             bufferGeo:    Math.round(_tGeoBuild),
             mesh:         Math.round(_tMesh),
-            expandBBox:   Math.round(_tBBox),
-            lodProxy:     Math.round(_tLod)
+            expandBBox:   Math.round(_tBBox)
           };
           var streamSub = msg.streamSub || null;
           var _gu = msg.geoUnique || Object.keys(geoCache).length, _gr = msg.geoReused || 0;
@@ -2651,7 +2650,6 @@ function startApp() {
                 rows.push({Phase: '  ↳ BufferGeometry',      Time: sceneSub.bufferGeo  + 'ms', Pct: Math.round(sceneSub.bufferGeo  / sbTotal * 100) + '% of phase', Cumulative: ''});
                 rows.push({Phase: '  ↳ Mesh + material',     Time: sceneSub.mesh       + 'ms', Pct: Math.round(sceneSub.mesh       / sbTotal * 100) + '% of phase', Cumulative: ''});
                 rows.push({Phase: '  ↳ expandByObject bbox', Time: sceneSub.expandBBox + 'ms', Pct: Math.round(sceneSub.expandBBox / sbTotal * 100) + '% of phase', Cumulative: ''});
-                rows.push({Phase: '  ↳ LOD proxy',           Time: sceneSub.lodProxy   + 'ms', Pct: Math.round(sceneSub.lodProxy   / sbTotal * 100) + '% of phase', Cumulative: ''});
               }
             });
             rows.push({Phase: 'TOTAL', Time: loadTime+'ms', Pct: '100%', Cumulative: loadTime+'ms'});
@@ -4696,7 +4694,6 @@ function startApp() {
       var floorHit = null;
       for (var h = 0; h < dnHits.length; h++) {
         var ho = dnHits[h].object;
-        if (ho.userData && ho.userData._isLodProxy) continue;
         if (!ho.visible) continue;
         if (_isGhostMat && _isGhostMat(ho.material)) continue;
         floorHit = dnHits[h]; break;
@@ -5374,7 +5371,7 @@ function startApp() {
           }
         });
         S.mg.traverse(function(obj){
-          if(!obj.isMesh||!obj.material||obj.userData._isLodProxy) return;
+          if(!obj.isMesh||!obj.material) return;
           if(_isGhostMat(obj.material)) return; // already ghosted
           var meshModelId = obj.parent && obj.parent.userData && obj.parent.userData.modelId;
 
@@ -6224,7 +6221,6 @@ function startApp() {
         raycaster.setFromCamera(mouse, S.camera);
         if(!S.mg) return;
         var hits = raycaster.intersectObjects(S.mg.children, true).filter(function(h){
-          if(h.object.userData._isLodProxy) return false;
           if(!h.object.visible) return false; // skip storey/type-hidden elements
           if(_isGhostMat(h.object.material)) return false;
           if(h.object.parent && h.object.parent.userData.modelId && !h.object.parent.visible) return false;
@@ -6497,7 +6493,6 @@ function startApp() {
         mouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
         raycaster.setFromCamera(mouse, S.camera);
         var hits = raycaster.intersectObjects(S.mg.children, true).filter(function(h){
-          if(h.object.userData._isLodProxy) return false;
           if(!h.object.visible) return false; // skip storey/type-hidden elements
           if(_isGhostMat(h.object.material)) return false;
           if(h.object.parent && h.object.parent.userData.modelId && !h.object.parent.visible) return false;
@@ -6763,7 +6758,6 @@ function startApp() {
                q.x.toFixed(5)+','+q.y.toFixed(5)+','+q.z.toFixed(5)+','+q.w.toFixed(5);
       }
       var LOD_HIDE_RATIO  = 0.0000005; // hide entirely — covers < ~0.07% screen (~1px at 1080p)
-      var LOD_PROXY_RATIO = 0.00005;   // show box proxy — covers < ~0.7% screen (~8px at 1080p)
 
       function updateCulling(){
         projScreenMatrix.multiplyMatrices(S.camera.projectionMatrix, S.camera.matrixWorldInverse);
@@ -6918,7 +6912,7 @@ function startApp() {
           var needsSwap = existingGrp && model.meshes[0] && existingGrp.children[0] !== model.meshes[0];
           if (needsSwap) {
             if(S._pruneGhostCache) S._pruneGhostCache(existingGrp);
-            existingGrp.traverse(function(obj){if(obj.isMesh && !obj.userData._isLodProxy){obj.geometry&&obj.geometry.dispose();obj.material&&obj.material.dispose();}});
+            existingGrp.traverse(function(obj){if(obj.isMesh){obj.geometry&&obj.geometry.dispose();obj.material&&obj.material.dispose();}});
             S.mg.remove(existingGrp); delete S.map[model.id];
             if(S._elMapCache) delete S._elMapCache[model.id];
             if(S._hsCache) delete S._hsCache[model.id];
@@ -8501,7 +8495,7 @@ function startApp() {
       var obj = {};
       for (var k in v) {
         if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
-        if (k === 'meshes' || k === '_lodProxy' || k === '_wvCache' || k === '_triCache' || k === '_bvhCache') continue;
+        if (k === 'meshes' || k === '_wvCache' || k === '_triCache' || k === '_bvhCache') continue;
         var cv = _cloneSafe(v[k], depth + 1);
         if (cv !== undefined) obj[k] = cv;
       }
@@ -9154,7 +9148,6 @@ function startApp() {
         stripEids[el.expressId] = true;
         el.meshes = [];
         el.box = new THREE.Box3();
-        el._lodProxy = null;
       }
     });
     var count = Object.keys(stripEids).length;
@@ -20211,13 +20204,12 @@ function startApp() {
     var tabs = w === 'review'
       ? [
           {id:'dataquality', svg:SVG_DATAQUALITY, label:'Data Quality'},
-          {id:'addons',      svg:SVG_INTEG,       label:'Integrations'}
+          {id:'navigator',   svg:SVG_EXPLORE,     label:'Navigator'}
         ]
       : [
           {id:'clashes',  svg:SVG_CLASHES,   label:'Conflicts', badge:clashN},
           {id:'issues',   svg:SVG_ISSUES,    label:'Issues',    badge:issueN},
-          {id:'standards',svg:SVG_STANDARDS, label:'Clash Rules'},
-          {id:'navigator',svg:SVG_EXPLORE,   label:'Navigator'}
+          {id:'standards',svg:SVG_STANDARDS, label:'Clash Rules'}
         ];
 
     return html`<div class="cc-left-rail" style=${{
@@ -21262,8 +21254,8 @@ function startApp() {
         background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='rgba(124,58,237,0.3)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
       <!-- Tab bar + collapse -->
       <div style=${{display:'flex',alignItems:'center',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,height:40,gap:0,paddingLeft:12}}>
-        ${['details','ai'].map(function(tab){
-          var labels={details:'Details',ai:'Ask AI'};
+        ${['details','ai','models'].map(function(tab){
+          var labels={details:'Details',ai:'Ask AI',models:'Models'};
           var isActive=drawerTab===tab;
           var hasDot=tab==='details'&&drawerEl;
           return html`<button key=${tab}
@@ -21287,7 +21279,7 @@ function startApp() {
             borderRadius:6, transition:'color .12s'
           }}>×</button>
       </div>
-      ${drawerTab==='details' ? renderDetails() : html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
+      ${drawerTab==='details' ? renderDetails() : drawerTab==='models' ? html`<${ModelSidebar} s=${s} d=${d} />` : html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
     </div>`;
   }
 
@@ -21762,6 +21754,7 @@ function startApp() {
           <div style=${{height:1,background:'var(--hairline)',margin:'.3rem 0'}}></div>
           ${row('Theme: '+(isDark?'Dark':'Light'), function(){ d({t:A.UPD_PREFS,u:{theme:isDark?'light':'dark'}}); })}
           ${row('Settings…', function(){ d({t:A.SETTINGS,v:true}); }, ',')}
+          ${row('Integrations…', function(){ d({t:A.TAB,v:'addons'}); })}
           ${row('Enter presentation', function(){ d({t:A.PRESENT,v:true}); })}
           ${row('Keyboard shortcuts', function(){ try{ window.dispatchEvent(new CustomEvent('cc-show-shortcuts')); }catch(e){} }, '?')}
         </div>
@@ -21851,6 +21844,8 @@ function startApp() {
 
     var styleSt = useState(false), styleOpen=styleSt[0], setStyleOpen=styleSt[1];
     var pickSt  = useState(false), pickOn = pickSt[0], setPickOn = pickSt[1];
+    var ttState = useState(null), ttTip = ttState[0], setTtTip = ttState[1];
+    var ttPos = useRef({x:0,y:0});
 
     useEffect(function(){
       function onEnd(){ setPickOn(false); }
@@ -21899,8 +21894,8 @@ function startApp() {
           color:on?'var(--ink-primary)':'var(--ink-muted)',
           transition:'color var(--duration-fast) var(--ease-standard)'
         }}
-        onMouseEnter=${function(e){ if(!on) e.currentTarget.style.color='var(--ink-secondary)'; }}
-        onMouseLeave=${function(e){ if(!on) e.currentTarget.style.color='var(--ink-muted)'; }}>
+        onMouseEnter=${function(e){ if(!on) e.currentTarget.style.color='var(--ink-secondary)'; var r=e.currentTarget.getBoundingClientRect(); setTtTip({label:opts.label||opts.k, desc:opts.desc||''}); ttPos.current={x:r.left+r.width/2,y:r.top}; }}
+        onMouseLeave=${function(e){ if(!on) e.currentTarget.style.color='var(--ink-muted)'; setTtTip(null); }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
           dangerouslySetInnerHTML=${{__html:opts.icon}}></svg>
@@ -22068,11 +22063,6 @@ function startApp() {
 
         <!-- spacer -->
         <span style=${{flex:1}}></span>
-        <!-- MODELS button — always visible, opens model list panel -->
-        ${btn({k:'models', active: s.tab==='models', title:'Loaded models', label:'Models',
-          icon:'<path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M12 2L2 7l10 5 10-5-10-5z"/>',
-          onClick:function(){ d({t:A.TAB,v: s.tab==='models' ? null : 'models'}); }})}
-        ${div()}
 
         <!-- ASK AI button — opens the right panel in chat mode -->
         <button onClick=${function(){ if(window._ccOpenAIPanel) window._ccOpenAIPanel(); }}
@@ -22165,6 +22155,17 @@ function startApp() {
         </div>
       </div>
       ${subRow}
+      ${ttTip && html`<div style=${{
+        position:'fixed',
+        left:ttPos.current.x,top:ttPos.current.y-8,
+        transform:'translate(-50%,-100%)',
+        background:'var(--bg-primary)',border:'1px solid var(--border)',
+        borderRadius:6,padding:'.2rem .55rem',
+        fontSize:'var(--text-xs)',color:'var(--text-primary)',
+        fontFamily:'var(--font-body)',
+        boxShadow:'var(--shadow-sm)',
+        pointerEvents:'none',zIndex:9999,whiteSpace:'nowrap'
+      }}>${ttTip.label}</div>`}
     </div>`;
   }
 
