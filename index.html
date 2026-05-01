@@ -26,7 +26,7 @@
       } catch(e) {}
     })();
   </script>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='6' fill='%231a1714'/%3E%3Crect x='10' y='10' width='28' height='28' fill='none' stroke='%23f5f2ec' stroke-width='2'/%3E%3Cline x1='10' y1='38' x2='38' y2='10' stroke='%23b8533a' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='8' fill='%231a6b4a'/%3E%3Crect x='10' y='10' width='28' height='28' fill='none' stroke='%23ffffff' stroke-width='2'/%3E%3Cline x1='10' y1='38' x2='38' y2='10' stroke='%23ffffff' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
   <meta name="description" content="Free, open-source IFC clash detection that runs in your browser. Load models, detect hard and soft clashes, review in 3D, and export to BCF 2.1 — no install, no license, no subscription.">
@@ -191,8 +191,6 @@
       --font-display:'Syne','DM Sans',sans-serif;
       --font-body:'DM Sans','Helvetica Neue',Helvetica,sans-serif;
       --font-mono:'DM Mono','SF Mono','Menlo','Consolas',monospace;
-      --logo-gradient:none;
-      --logo-gradient-soft:rgba(26,107,74,.08);
       --glass-bg:var(--bg-primary);--glass-border:var(--border);--glass-blur:none;
       --glass-bg-light:var(--bg-primary);--glass-border-light:var(--border);
       --pill-blue-bg:var(--accent-bg);--pill-green-bg:#f0fdf4;--pill-amber-bg:#fffbeb;
@@ -261,7 +259,7 @@
       --shadow-soft:var(--shadow-sm);--shadow-lifted:var(--shadow-md);
       --sev-critical:#ef4444;--sev-major:#f59e0b;--sev-minor:#34d399;--sev-info:#a3a3a3;
     }
-    [data-theme=light]{}
+    /* :root is the light theme; [data-theme=dark] above overrides for dark mode */
     .cc-left-panel{overflow-x:hidden!important}
     .cc-left-panel>*{min-width:0;overflow-x:hidden}
     /* Content row sits below the two topbars; rail + panel position absolute within it */
@@ -284,12 +282,6 @@
     @keyframes nlDots{0%,20%{opacity:.2}50%{opacity:1}80%,100%{opacity:.2}}
     .cc-chat-msg:hover .cc-chat-copy{opacity:1 !important}
     .cc-chat-copy:hover{color:var(--text-primary) !important;background:var(--bg-primary) !important}
-    /* roadmapGlow + nlBorderPulse + nlBorderReady removed — no glow / pulse
-       in the new design. Defined as no-ops so any lingering animation rule
-       that names them silently does nothing instead of breaking. */
-    @keyframes roadmapGlow{from{opacity:1}to{opacity:1}}
-    @keyframes nlBorderPulse{from{box-shadow:var(--shadow-soft)}to{box-shadow:var(--shadow-soft)}}
-    @keyframes nlBorderReady{from{box-shadow:var(--shadow-soft)}to{box-shadow:var(--shadow-soft)}}
     .lc2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
     button{font-family:inherit}
     /* ── Design-system utilities ── */
@@ -422,7 +414,7 @@
 <div id="boot" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;background:var(--bg-primary,#fff);color:var(--text-primary,#0f172a)">
   <svg width="42" height="42" viewBox="0 0 48 48" style="margin-bottom:.9rem;display:block" aria-hidden="true">
     <rect x="9.5" y="9.5" width="29" height="29" fill="none" stroke="var(--text-primary,#0f172a)" stroke-width="1.5"/>
-    <line x1="9.5" y1="38.5" x2="38.5" y2="9.5" stroke="var(--accent,#2563eb)" stroke-width="1.5"/>
+    <line x1="9.5" y1="38.5" x2="38.5" y2="9.5" stroke="var(--accent,#1a6b4a)" stroke-width="1.5"/>
   </svg>
   <div style="font-size:1.5rem;font-weight:700;margin-bottom:.35rem;font-family:'Syne','DM Sans',sans-serif;letter-spacing:-.02em">ClashControl</div>
   <div id="boot-msg" style="color:var(--text-muted,#94a3b8);font-size:0.86rem;font-family:'DM Sans','Helvetica Neue',sans-serif">Loading…</div>
@@ -6356,7 +6348,7 @@ function startApp() {
           else if(mode==='area' && pts.length>=3) {
             if(pts.length>3 && pts[pts.length-1].distanceTo(pts[pts.length-2])<0.05) {
               pts.pop(); // remove duplicate
-              var polyMat = new THREE.LineBasicMaterial({color:0x60a5fa, linewidth:2});
+              var polyMat = new THREE.LineBasicMaterial({color:0x1a6b4a, linewidth:2});
               var polyPts = pts.concat([pts[0]]);
               var polyGeo = new THREE.BufferGeometry().setFromPoints(polyPts);
               var polyLine = new THREE.Line(polyGeo, polyMat);
@@ -7077,7 +7069,7 @@ function startApp() {
         var stemLen = Math.min(halfW, halfH) * 0.09;
         var tipLen = stemLen * 0.35;
         var tipW = tipLen * 0.7;
-        var arrowMat = new THREE.MeshBasicMaterial({color:0x60a5fa, transparent:true, opacity:0.95, depthTest:false});
+        var arrowMat = new THREE.MeshBasicMaterial({color:0x1a6b4a, transparent:true, opacity:0.95, depthTest:false});
         arrowMat.clippingPlanes = [];
         var stemGeo = new THREE.CylinderGeometry(tipW*0.18, tipW*0.18, stemLen*2, 10);
         var stem = new THREE.Mesh(stemGeo, arrowMat);
@@ -7332,7 +7324,7 @@ function startApp() {
 
       var boxGeo=new THREE.BoxGeometry(hx*2,hy*2,hz*2);
       var edges=new THREE.EdgesGeometry(boxGeo);
-      var lineMat=new THREE.LineBasicMaterial({color:0x3b82f6,transparent:true,opacity:0.5});
+      var lineMat=new THREE.LineBasicMaterial({color:0x1a6b4a,transparent:true,opacity:0.5});
       var wireframe=new THREE.LineSegments(edges,lineMat);
       wireframe.position.copy(ctr);
       wireframe.rotation.y=rot;
@@ -7351,7 +7343,7 @@ function startApp() {
       ];
       faceDefs.forEach(function(fd){
         var pg=new THREE.PlaneGeometry(fd.w,fd.h);
-        var pm=new THREE.Mesh(pg,new THREE.MeshBasicMaterial({color:0x3b82f6,transparent:true,opacity:0.06,side:THREE.DoubleSide,depthWrite:false}));
+        var pm=new THREE.Mesh(pg,new THREE.MeshBasicMaterial({color:0x1a6b4a,transparent:true,opacity:0.06,side:THREE.DoubleSide,depthWrite:false}));
         pm.position.copy(ctr).add(fd.pos);
         if(fd.lookDir==='x'||fd.lookDir==='-x'){
           pm.rotation.y=rot+(fd.lookDir==='x'?Math.PI/2:-Math.PI/2);
@@ -7492,7 +7484,7 @@ function startApp() {
       var sz = box.getSize(new THREE.Vector3());
       var planeSize = Math.max(sz.x,sz.z)*2.0;
       var cutGeo = new THREE.PlaneGeometry(planeSize, planeSize);
-      var cutMat = new THREE.MeshBasicMaterial({color:0x3b82f6, transparent:true, opacity:0.04, side:THREE.DoubleSide, depthWrite:false});
+      var cutMat = new THREE.MeshBasicMaterial({color:0x1a6b4a, transparent:true, opacity:0.04, side:THREE.DoubleSide, depthWrite:false});
       var cutMesh = new THREE.Mesh(cutGeo, cutMat);
       cutMesh.rotation.x = -Math.PI/2;
       cutMesh.position.set(ctr.x, cutAt, ctr.z);
@@ -8059,7 +8051,7 @@ function startApp() {
         <span>Section ${s.sectionAxis?(s.sectionAxis==='y'?'Z':s.sectionAxis==='z'?'Y':s.sectionAxis.toUpperCase()):'Surface'}</span>
         <span style=${{fontSize:'0.69rem',opacity:.7}} title="Clear section" aria-label="Clear section view">✕</span>
       </div>`}
-      ${s.floorPlan && html`<div style=${{...P,top:'9.75rem',right:'.5rem',background:'rgba(91,33,182,.9)',color:'#c084fc',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'.4rem'}}
+      ${s.floorPlan && html`<div style=${{...P,top:'9.75rem',right:'.5rem',background:'var(--accent)',color:'#fff',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'.4rem'}}
         onClick=${function(){d({t:A.FLOOR_PLAN,v:null})}}>
         <span>3D Section: ${s.floorPlan.storeyName} · ${_ccFormatElev(s.floorPlan.elevation+(s.floorPlan.cutHeight||1.2))}</span>
         <span style=${{fontSize:'0.69rem',opacity:.7}} title="Exit 3D section" aria-label="Exit floor plan view">✕</span>
@@ -8364,7 +8356,7 @@ function startApp() {
           if (mat.map) mat.map.dispose();
           mat.map = makeFaceTexture(FACES[fi].label, isHov);
           mat.map.needsUpdate = true;
-          mat.color.setHex(isHov ? 0x2563eb : (FACE_CLR[FACES[fi].label]||0x3a5f8a));
+          mat.color.setHex(isHov ? 0x1a6b4a : (FACE_CLR[FACES[fi].label]||0x3a5f8a));
         });
         vc.dirty = true;
       }
@@ -8760,7 +8752,7 @@ function startApp() {
       ${spotPos && html`<div style=${{position:'fixed',left:spotPos.x-6,top:spotPos.y-6,
         width:spotPos.w+12,height:spotPos.h+12,zIndex:10001,
         border:'2px solid var(--accent)',borderRadius:8,pointerEvents:'none',
-        boxShadow:'0 0 0 4px rgba(124,58,237,.25)',animation:'nlBorderPulse 2s ease-in-out infinite'}}></div>`}
+        boxShadow:'0 0 0 4px rgba(26,107,74,.25)'}}></div>`}
       <div style=${tipStyle}>
         <div style=${{fontSize:'0.75rem',color:'var(--accent)',marginBottom:'.25rem',fontWeight:600}}>Step ${step+1} of ${total}</div>
         <div style=${{fontSize:'1.01rem',fontWeight:700,color:'var(--text-primary)',marginBottom:'.3rem'}}>${cur.title}</div>
@@ -8843,7 +8835,7 @@ function startApp() {
     return html`<header class="cc-header" style=${{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'var(--space-2) var(--space-4)',background:'var(--bg-primary)',flexShrink:0,gap:'var(--space-3)'}}>
       <div style=${{display:'flex',alignItems:'center',gap:'var(--space-3)'}}>
         <div style=${{position:'relative'}}>
-          <div style=${{width:32,height:32,background:'var(--logo-gradient)',borderRadius:'var(--radius-md)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'0 4px 12px rgba(124,58,237,.3)'}} title="ClashControl — tap for version info" onClick=${function(){setShowVer(!showVer);}}><span style=${{display:'inline-flex',alignItems:'center',color:'#fff',fontWeight:800,fontSize:10,fontFamily:'var(--font-display)',lineHeight:1}}><span>C</span><span style=${{display:'inline-block',transform:'scaleX(-1)',marginLeft:'-1px'}}>C</span></span></div>
+          <div style=${{width:32,height:32,background:'var(--text-primary)',borderRadius:'var(--radius-md)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}} title="ClashControl — tap for version info" onClick=${function(){setShowVer(!showVer);}}><span style=${{display:'inline-flex',alignItems:'center',color:'var(--bg-primary)',fontWeight:800,fontSize:10,fontFamily:'var(--font-display)',lineHeight:1}}><span>C</span><span style=${{display:'inline-block',transform:'scaleX(-1)',marginLeft:'-1px'}}>C</span></span></div>
           ${showVer && html`<div onClick=${function(){setShowVer(false);}} style=${{position:'fixed',inset:0,zIndex:8999,background:'transparent'}}></div>
           <div style=${{position:'fixed',top:50,left:12,background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,padding:'.6rem .8rem',zIndex:9000,minWidth:220,boxShadow:'0 8px 24px rgba(0,0,0,.4)',fontSize:'0.83rem',color:'var(--text-primary)',whiteSpace:'nowrap'}} onClick=${function(e){e.stopPropagation();}}>
             <div style=${{fontWeight:700,marginBottom:'.3rem'}}>ClashControl</div>
@@ -8925,7 +8917,7 @@ function startApp() {
               d({t:A.SHARE,v:true});
             }}
             title=${connected?'Shared via '+(sp.folderName||'folder'):'Share this project'}
-            style=${{...S_BTN,position:'relative',background:bg,color:'#fff',fontWeight:600,padding:'.35rem .8rem',fontSize:'var(--text-xs)',display:'flex',alignItems:'center',gap:'.4rem',boxShadow:connected?'0 2px 8px rgba(124,58,237,.35)':'0 1px 4px rgba(124,58,237,.25)'}}>
+            style=${{...S_BTN,position:'relative',background:bg,color:'#fff',fontWeight:600,padding:'.35rem .8rem',fontSize:'var(--text-xs)',display:'flex',alignItems:'center',gap:'.4rem',boxShadow:connected?'0 2px 8px rgba(26,107,74,.35)':'0 1px 4px rgba(26,107,74,.25)'}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             <span>Share</span>
             <span style=${{width:7,height:7,borderRadius:'50%',background:dotColor,boxShadow:connected?'0 0 0 2px rgba(255,255,255,.25)':'none'}}></span>
@@ -10679,7 +10671,7 @@ function startApp() {
                 var ceKey='e_'+child.expressId;
                 return tvNode({
                   key:ceKey, level:level+1,
-                  icon:'▫', iconColor:'#a78bfa',
+                  icon:'▫', iconColor:'var(--text-muted)',
                   label:cp.name||('#'+child.expressId),
                   secondary:cp.ifcType||'El',
                   hasChildren:false,
@@ -10857,13 +10849,13 @@ function startApp() {
       return html`<span style=${{fontSize:'0.67rem',padding:'1px 5px',borderRadius:99,background:bg,color:fg,fontWeight:600,whiteSpace:'nowrap'}}>${n} ${label}</span>`;
     };
 
-    return html`<div style=${{padding:'.4rem .55rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,background:'linear-gradient(135deg,#0f172a 0%,#1a1033 100%)'}}>
+    return html`<div style=${{padding:'.4rem .55rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,background:'var(--accent-bg)'}}>
       <div style=${{display:'flex',alignItems:'center',gap:'.3rem',cursor:'pointer'}} onClick=${toggle}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.11-2 4-.6.89-1 1.5-1 3m0 0a4 4 0 0 0-4-4c-1.95 0-3.11 1.4-4 2M12 13v4m-2 3h4"/>
           <circle cx="12" cy="22" r="1"/>
         </svg>
-        <span style=${{fontSize:'0.72rem',fontWeight:700,color:'#c4b5fd',flex:1}}>AI Analysis</span>
+        <span style=${{fontSize:'0.72rem',fontWeight:700,color:'var(--accent)',flex:1}}>AI Analysis</span>
         <span style=${{fontSize:'0.63rem',color:'var(--text-faint)',transform:collapsed?'rotate(-90deg)':'rotate(0)',transition:'transform .2s'}}>▼</span>
       </div>
       ${!collapsed && html`<div style=${{marginTop:'.35rem'}}>
@@ -10874,7 +10866,7 @@ function startApp() {
           ${SEV_CHIP('likely false positive', counts.info, '#1e293b', '#94a3b8')}
         </div>
         ${bigClusterSize >= 3 && html`<p style=${{fontSize:'0.69rem',color:'#fbbf24',margin:'.15rem 0',lineHeight:1.3}}>⚠ ${bigClusterSize} clustered clashes${bigCluster.storey ? ' on '+bigCluster.storey : ''} (${bigCluster.typePair})</p>`}
-        ${worstCount >= 2 && html`<p style=${{fontSize:'0.69rem',color:'#a78bfa',margin:'.15rem 0',lineHeight:1.3}}>→ Recommend reviewing ${worstStorey} first (${worstCount} critical/major)</p>`}
+        ${worstCount >= 2 && html`<p style=${{fontSize:'0.69rem',color:'var(--accent)',margin:'.15rem 0',lineHeight:1.3}}>→ Recommend reviewing ${worstStorey} first (${worstCount} critical/major)</p>`}
       </div>`}
     </div>`;
   }
@@ -10914,17 +10906,17 @@ function startApp() {
         ${isClash && hard > 0 && html`<span style=${{width:1,height:12,background:'var(--border)',margin:'0 .1rem'}}></span>`}
         ${isClash && hard > 0 && CHIP('Hard', hard, '#7f1d1d', '#fca5a5')}
         ${isClash && soft > 0 && CHIP('Soft', soft, '#78350f', '#fcd34d')}
-        ${isClash && dup > 0 && CHIP('Dup', dup, '#4c1d95', '#c4b5fd')}
+        ${isClash && dup > 0 && CHIP('Dup', dup, 'var(--bg-tertiary)', 'var(--text-muted)')}
         ${isClash && untitled > 0 && html`<button onClick=${function(){
           if (titlesBusy || !window._ccGenerateAITitles) return;
           setTitlesBusy(true);
           window._ccGenerateAITitles().then(function(){ setTitlesBusy(false); });
         }} disabled=${titlesBusy}
           title=${'Generate human-readable AI titles for the next '+Math.min(untitled,20)+' clash'+(Math.min(untitled,20)===1?'':'es')}
-          style=${{marginLeft:'auto',fontSize:'0.65rem',padding:'.1rem .4rem',borderRadius:99,
-            background:titlesBusy?'var(--bg-secondary)':'rgba(124,58,237,0.18)',
-            color:titlesBusy?'var(--text-faint)':'#c4b5fd',
-            border:'1px solid '+(titlesBusy?'var(--border)':'rgba(167,139,250,0.4)'),
+          style=${{marginLeft:'auto',fontSize:'0.65rem',padding:'.1rem .4rem',borderRadius:'var(--radius-pill)',
+            background:titlesBusy?'var(--bg-secondary)':'var(--accent-bg-deep)',
+            color:titlesBusy?'var(--text-faint)':'var(--accent)',
+            border:'1px solid '+(titlesBusy?'var(--border)':'var(--accent-subtle)'),
             cursor:titlesBusy?'wait':'pointer',fontWeight:600,whiteSpace:'nowrap'}}>
           ${titlesBusy ? '… generating' : '✦ AI titles ('+Math.min(untitled,20)+')'}
         </button>`}
@@ -12686,7 +12678,7 @@ function startApp() {
               ${ch.ex.map(function(it) {
                 return html`<div key=${it.gid||it.name} style=${{padding:'.15rem 0',borderBottom:'1px solid var(--border-subtle)'}}>
                   <div style=${{display:'flex',alignItems:'center',gap:'.3rem'}}>
-                    <span style=${{fontSize:'0.63rem',color:'#c084fc',flexShrink:0}}>${it.ifcType||''}</span>
+                    <span style=${{fontSize:'0.63rem',color:'var(--text-muted)',flexShrink:0}}>${it.ifcType||''}</span>
                     <span style=${{fontSize:'0.63rem',color:'var(--text-secondary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${it.name}>${it.name}</span>
                     ${it.detail && html`<span style=${{fontSize:'0.57rem',color:'#fbbf24',flexShrink:0}}>${it.detail}</span>`}
                   </div>
@@ -13045,11 +13037,11 @@ function startApp() {
               title=${r.ruleDesc + '\nStorey: ' + (r.storey||'—') + '\nGlobalId: ' + (r.globalId||'—')}
               style=${{padding: '.25rem .4rem', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', fontSize: '0.63rem',
                 display: 'flex', gap: '.3rem', alignItems: 'center',
-                background: isSel ? 'rgba(124,58,237,.18)' : 'transparent',
+                background: isSel ? 'var(--accent-bg-deep)' : 'transparent',
                 borderLeft: isSel ? '2px solid var(--accent)' : '2px solid transparent'}}>
               <span style=${{flexShrink: 0, width: 6, height: 6, borderRadius: '50%',
                 background: r.severity === 'error' ? '#ef4444' : r.severity === 'warning' ? '#f59e0b' : '#60a5fa'}}></span>
-              <span style=${{color: '#c084fc', flexShrink: 0}}>${r.ifcType}</span>
+              <span style=${{color: 'var(--text-muted)', flexShrink: 0}}>${r.ifcType}</span>
               <span style=${{color: 'var(--text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>${r.elementName}</span>
               <span style=${{color: 'var(--text-faint)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 80}}>${r.ruleDesc}</span>
             </div>`;
@@ -13264,7 +13256,7 @@ function startApp() {
 
       <div style=${{display:'flex',gap:'.3rem',marginBottom:'1rem'}}>
         <button onClick=${addTypeRow}
-          style=${{fontSize:'0.69rem',padding:'.3rem .6rem',background:'var(--bg-secondary)',color:'var(--accent-light)',border:'1px solid rgba(124,58,237,.27)',borderRadius:4,cursor:'pointer',fontWeight:600,flex:1}}>+ Add IFC type rule</button>
+          style=${{fontSize:'0.69rem',padding:'.3rem .6rem',background:'var(--bg-secondary)',color:'var(--accent)',border:'1px solid var(--accent-subtle)',borderRadius:'var(--radius-xs)',cursor:'pointer',fontWeight:600,flex:1}}>+ Add IFC type rule</button>
         <button onClick=${exportTypeRules} title="Export IFC type-pair rules"
           style=${{fontSize:'0.69rem',padding:'.3rem .5rem',background:'var(--bg-secondary)',color:'var(--text-faint)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer'}}>↓</button>
         <button onClick=${function(){importTypeRef.current&&importTypeRef.current.click();}} title="Import IFC type-pair rules"
@@ -13315,7 +13307,7 @@ function startApp() {
 
       <div style=${{display:'flex',gap:'.3rem',marginBottom:'1.5rem'}}>
         <button onClick=${addRow}
-          style=${{fontSize:'0.69rem',padding:'.3rem .6rem',background:'var(--bg-secondary)',color:'var(--accent-light)',border:'1px solid rgba(124,58,237,.27)',borderRadius:4,cursor:'pointer',fontWeight:600,flex:1}}>+ Add discipline rule</button>
+          style=${{fontSize:'0.69rem',padding:'.3rem .6rem',background:'var(--bg-secondary)',color:'var(--accent)',border:'1px solid var(--accent-subtle)',borderRadius:'var(--radius-xs)',cursor:'pointer',fontWeight:600,flex:1}}>+ Add discipline rule</button>
         <button onClick=${exportDiscRules} title="Export discipline-pair rules"
           style=${{fontSize:'0.69rem',padding:'.3rem .5rem',background:'var(--bg-secondary)',color:'var(--text-faint)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer'}}>↓</button>
         <button onClick=${function(){importDiscRef.current&&importDiscRef.current.click();}} title="Import discipline-pair rules"
@@ -13421,14 +13413,14 @@ function startApp() {
           <button onClick=${function(){var mid=it.modelId||it.modelAId; if(_fitToElement&&it.elementId)_fitToElement(it.elementId,null,mid); if(_highlightById&&it.elementId)_highlightById(it.elementId,true,mid);}}
             style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#0f3a5f',color:'var(--accent-subtle)',flex:1}}>Zoom</button>
           <button onClick=${function(){var mid=it.modelId||it.modelAId; if(_fitToElement&&it.elementId)_fitToElement(it.elementId,null,mid); if(_highlightById&&it.elementId)_highlightById(it.elementId,false,mid); _sboxAroundElements&&_sboxAroundElements([{modelId:mid,expressId:it.elementId}]);}}
-            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#3b0764',color:'#c084fc',flex:1}} title="Section box around element">Box</button>
+            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'var(--accent-bg-deep)',color:'var(--accent)',flex:1}} title="Section box around element">Box</button>
         ` : html`
           <button onClick=${function(){_zoomToggle(it.elemA,'A');}}
             style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:zoomedTo==='A'?'#1e40af':'#0f3a5f',color:'var(--accent-subtle)',flex:1}}>${zoomedTo==='A'?'Zoom Both':'Zoom A'}</button>
           <button onClick=${function(){_zoomToggle(it.elemB,'B');}}
             style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:zoomedTo==='B'?'#1e40af':'#0f3a5f',color:'var(--accent-subtle)',flex:1}}>${zoomedTo==='B'?'Zoom Both':'Zoom B'}</button>
           <button onClick=${function(){var refs=_itemRefs(it); if(_fitToElement&&it.elemA)_fitToElement(it.elemA,null,it.modelAId); if(refs.length&&_highlightRefs)_highlightRefs(refs,false); _sboxAroundElements&&_sboxAroundElements(refs);}}
-            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'#3b0764',color:'#c084fc',flex:1}} title="Section box around both elements">Box</button>
+            style=${{...S_BTN,fontSize:'0.57rem',padding:'.1rem .3rem',background:'var(--accent-bg-deep)',color:'var(--accent)',flex:1}} title="Section box around both elements">Box</button>
         `}
       </div>
       <button onClick=${function(){setDetailOpen(!detailOpen)}}
@@ -13883,7 +13875,7 @@ function startApp() {
                   background:fb==='real_clash'?'#166534':fb==='acceptable'?'var(--accent-bg)':'#7f1d1d',
                   color:fb==='real_clash'?'#4ade80':fb==='acceptable'?'var(--accent-subtle)':'#fca5a5'}}>${fb==='real_clash'?'+':fb==='acceptable'?'-':'×'}</span>`}
                 ${!active && html`<button onClick=${function(e){e.stopPropagation();d({t:A.ACTIVE,id:it.id});}}
-                  title="Expand training feedback" style=${{background:'transparent',color:'#a78bfa',border:'none',cursor:'pointer',fontSize:'0.69rem',padding:'1px 4px',borderRadius:3,lineHeight:1}}>▼</button>`}
+                  title="Expand training feedback" style=${{background:'transparent',color:'var(--accent)',border:'none',cursor:'pointer',fontSize:'0.69rem',padding:'1px 4px',borderRadius:'var(--radius-xs)',lineHeight:1}}>▼</button>`}
               </span>`;
             }()}
           </div>
@@ -13916,7 +13908,7 @@ function startApp() {
               ${it.distance===0?'touching':it.distance+' mm'}
             </span>`}
             ${storeyLabel && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--ink-muted)',padding:'.1rem var(--space-2)',borderLeft:'1px solid var(--hairline-strong)'}}>${storeyLabel}</span>`}
-            ${it.selfClash && html`<span class="cc-status-pill" style=${{color:'#a78bfa',background:'#2e1065'}}>self</span>`}
+            ${it.selfClash && html`<span class="cc-status-pill" style=${{color:'var(--accent)',background:'var(--accent-bg)'}}>self</span>`}
             ${it.expectedClash && html`<span class="cc-status-pill" style=${{color:'var(--color-warning-fg)',background:'var(--color-warning-bg)'}}>expected</span>`}
             ${it.status==='accepted_needs_check' && html`<span class="cc-status-pill" style=${{color:'var(--color-info-fg)',background:'var(--color-info-bg)'}}>needs check</span>`}
           </div>`}
@@ -14047,16 +14039,16 @@ function startApp() {
                 <span style=${{color:'var(--text-primary)',fontWeight:500}}>${value}</span>
               </div>`;
             }
-            return html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid var(--border-subtle)',background:'rgba(124,58,237,.04)',borderRadius:6,padding:'.45rem .5rem'}}>
-              <div style=${{fontSize:'0.63rem',fontWeight:600,color:'#a78bfa',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'.3rem'}}>Feedback</div>
+            return html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid var(--border-subtle)',background:'var(--accent-bg)',borderRadius:'var(--radius-sm)',padding:'.45rem .5rem'}}>
+              <div style=${{fontSize:'0.63rem',fontWeight:600,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'.3rem'}}>Feedback</div>
               ${row('Reason', hasReason ? curReasons.join(', ') : null)}
               ${row('Resolution', hasRes ? rLabels.join(', ') : null)}
               ${row('Note', hasNote ? curNote : null)}
             </div>`;
           }
 
-          return html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid var(--border-subtle)',background:'rgba(124,58,237,.04)',borderRadius:6,padding:'.4rem'}}>
-            <div style=${{fontSize:'0.63rem',fontWeight:600,color:'#a78bfa',marginBottom:'.3rem',textTransform:'uppercase',letterSpacing:'.04em'}}>AI Training Feedback</div>
+          return html`<div style=${{marginTop:'.4rem',paddingTop:'.4rem',borderTop:'1px solid var(--border-subtle)',background:'var(--accent-bg)',borderRadius:'var(--radius-sm)',padding:'.4rem'}}>
+            <div style=${{fontSize:'0.63rem',fontWeight:600,color:'var(--accent)',marginBottom:'.3rem',textTransform:'uppercase',letterSpacing:'.04em'}}>AI Training Feedback</div>
             <div style=${{fontSize:'0.63rem',fontWeight:600,color:'var(--text-muted)',marginBottom:'.15rem'}}>Verdict</div>
             <div style=${{display:'flex',gap:'.25rem',marginBottom:'.3rem',flexWrap:'wrap'}}>
               ${VERDICTS.map(function(v){var sel=fb===v.k;return html`<button key=${v.k}
@@ -14473,7 +14465,7 @@ function startApp() {
           <button onClick=${function(){step(1);}} title="Next slide (→)" style=${btnFaint}>›</button>
           <button onClick=${function(){setAutoplay(!autoplay);}}
             title=${autoplay?'Pause auto-advance (Space)':'Auto-advance every 5.5s (Space)'}
-            style=${{...btnFaint,background:autoplay?'rgba(168,85,247,.85)':btnFaint.background,fontWeight:600}}>
+            style=${{...btnFaint,background:autoplay?'var(--accent)':btnFaint.background,fontWeight:600}}>
             ${autoplay?'❚❚':'▶'}
           </button>
         </${React.Fragment}>` : html`<span style=${{fontSize:'0.74rem',opacity:.6}}>No viewpoints saved — use Save Viewpoint, then ← → to navigate</span>`}
@@ -14726,7 +14718,7 @@ function startApp() {
       onClick=${function(){d({t:A.SMART_VIEWS,v:false});}}>
       <div class="cc-modal-card" style=${{...S_MODAL_CARD,width:680,padding:0,display:'flex',flexDirection:'column'}} onClick=${function(e){e.stopPropagation();}}>
         <div style=${{padding:'1rem 1.2rem .6rem',display:'flex',alignItems:'center',gap:'.6rem'}}>
-          <div style=${{width:32,height:32,borderRadius:8,background:'rgba(168,85,247,.14)',display:'flex',alignItems:'center',justifyContent:'center',color:'#a78bfa'}}>
+          <div style=${{width:32,height:32,borderRadius:'var(--radius-md)',background:'var(--accent-bg)',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--accent)'}}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m10 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/></svg>
           </div>
           <div style=${{flex:1}}>
@@ -14775,7 +14767,7 @@ function startApp() {
             </div>`}
           </div>
 
-          <div style=${{padding:'.7rem .85rem',background:'rgba(124,58,237,.07)',border:'1px solid rgba(124,58,237,.18)',borderRadius:8}}>
+          <div style=${{padding:'.7rem .85rem',background:'var(--accent-bg)',border:'1px solid var(--accent-subtle)',borderRadius:'var(--radius-md)'}}>
             <div style=${{fontSize:'0.78rem',fontWeight:600,color:'var(--text-primary)',marginBottom:'.3rem'}}>Send the current view to a client</div>
             <div style=${{fontSize:'0.74rem',color:'var(--text-muted)',marginBottom:'.5rem'}}>Copies a URL with the camera, section and render style baked in. The link <b>does not include the IFC</b> — the recipient must already have the model loaded.</div>
             <div style=${{display:'flex',gap:'.4rem'}}>
@@ -14962,7 +14954,7 @@ function startApp() {
       return html`<button onClick=${function(){setFilter(id);}}
         style=${{padding:'.25rem .6rem',borderRadius:99,fontSize:'0.72rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit',
           border:'1px solid '+(active?'var(--accent)':'var(--border)'),
-          background:active?'rgba(124,58,237,.12)':'transparent',
+          background:active?'var(--accent-bg-deep)':'transparent',
           color:active?'var(--accent)':'var(--text-muted)'}}>${label}</button>`;
     };
 
@@ -14973,7 +14965,7 @@ function startApp() {
         ${pillBtn('open','Open')} ${pillBtn('resolved','Resolved')} ${pillBtn('all','All')}
       </div>
 
-      ${!sp.enabled && html`<div style=${{fontSize:'0.74rem',color:'var(--text-muted)',padding:'.5rem .7rem',background:'rgba(124,58,237,.06)',borderRadius:6}}>
+      ${!sp.enabled && html`<div style=${{fontSize:'0.74rem',color:'var(--text-muted)',padding:'.5rem .7rem',background:'var(--accent-bg)',borderRadius:'var(--radius-sm)'}}>
         Comments stay on your machine until you link a shared folder under <b>Overview</b>.
       </div>`}
 
@@ -14984,7 +14976,7 @@ function startApp() {
 
       ${comments.map(function(c){
         var isActive = s.activeCommentId===c.id;
-        return html`<div key=${c.id} style=${{padding:'.7rem .8rem',background:isActive?'rgba(124,58,237,.08)':'var(--bg-tertiary)',border:'1px solid '+(isActive?'rgba(124,58,237,.3)':'var(--border)'),borderRadius:8}}>
+        return html`<div key=${c.id} style=${{padding:'.7rem .8rem',background:isActive?'var(--accent-bg)':'var(--bg-tertiary)',border:'1px solid '+(isActive?'var(--accent-subtle)':'var(--border)'),borderRadius:'var(--radius-md)'}}>
           <div style=${{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.3rem'}}>
             <span style=${{fontSize:'0.78rem',fontWeight:600,color:'var(--text-primary)'}}>${c.author||'Anonymous'}</span>
             <span style=${{fontSize:'0.68rem',color:'var(--text-faint)'}}>${c.ts?new Date(c.ts).toLocaleString():''}</span>
@@ -15040,6 +15032,72 @@ function startApp() {
         <button onClick=${save} disabled=${!txt.trim()}
           style=${{padding:'.3rem .7rem',borderRadius:5,fontSize:'0.74rem',fontWeight:600,cursor:txt.trim()?'pointer':'not-allowed',
             border:'none',background:'var(--accent)',color:'#fff',opacity:txt.trim()?1:0.4,fontFamily:'inherit'}}>Save (Ctrl+Enter)</button>
+      </div>
+    </div>`;
+  }
+
+  // ── Shortcuts Modal ──────────────────────────────────────────
+
+  function ShortcutsModal(props) {
+    var onClose = props.onClose;
+    useEffect(function(){
+      function onKey(e){ if (e.key === 'Escape') onClose(); }
+      window.addEventListener('keydown', onKey);
+      return function(){ window.removeEventListener('keydown', onKey); };
+    }, []);
+    var sections = [
+      { title: 'General', rows: [
+        ['?',           'Open this shortcuts panel'],
+        ['Esc',         'Close any open modal, menu, or walk mode'],
+        ['Cmd / Ctrl K','Open command palette (find any tool, run AI)'],
+      ]},
+      { title: 'View', rows: [
+        ['1',           'Standard rendering'],
+        ['2',           'Shaded rendering'],
+        ['3',           'Rendered (lit) view'],
+        ['4',           'Wireframe'],
+        ['F',           'Fit selection (or whole model)'],
+      ]},
+      { title: 'Navigator', rows: [
+        ['Click',       'Select element'],
+        ['Shift + Click','Add element to selection'],
+        ['Double click','Fly to element'],
+      ]},
+      { title: 'Walk mode', rows: [
+        ['W A S D',     'Move'],
+        ['Mouse',       'Look around'],
+        ['Scroll',      'Adjust field of view'],
+        ['Shift',       'Sprint'],
+        ['Esc',         'Exit walk mode'],
+      ]},
+      { title: 'Presentation / saved views', rows: [
+        ['Space',       'Toggle auto-advance'],
+        ['← →','Previous / next saved view'],
+      ]},
+    ];
+    var kbdStyle = {fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)',background:'var(--bg-tertiary)',border:'1px solid var(--border)',borderBottom:'2px solid var(--border)',borderRadius:'var(--radius-xs)',padding:'2px 6px',color:'var(--text-primary)',whiteSpace:'nowrap',display:'inline-block',lineHeight:'var(--leading-tight)'};
+    return html`<div class="cc-modal-backdrop" style=${S_BACKDROP} role="dialog" aria-modal="true" aria-labelledby="cc-shortcuts-title"
+      onClick=${onClose}>
+      <div class="cc-modal-card" style=${{...S_MODAL_CARD,width:560}} onClick=${function(e){e.stopPropagation();}}>
+        <div style=${S_MODAL_HEADER}>
+          <h2 id="cc-shortcuts-title" style=${S_MODAL_TITLE}>Keyboard shortcuts</h2>
+          <button aria-label="Close shortcuts" style=${S_MODAL_CLOSE} onClick=${onClose}>×</button>
+        </div>
+        <div style=${{...S_MODAL_BODY,gap:'var(--space-5)'}}>
+          ${sections.map(function(sec){
+            return html`<div key=${sec.title}>
+              <div style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',fontWeight:'var(--weight-bold)',textTransform:'uppercase',letterSpacing:'.08em',color:'var(--text-muted)',marginBottom:'var(--space-2)'}}>${sec.title}</div>
+              <div style=${{display:'flex',flexDirection:'column',gap:'var(--space-2)'}}>
+                ${sec.rows.map(function(r){
+                  return html`<div key=${r[0]} style=${{display:'flex',alignItems:'center',gap:'var(--space-3)',fontSize:'var(--text-sm)'}}>
+                    <span style=${{...kbdStyle,minWidth:88,textAlign:'center'}}>${r[0]}</span>
+                    <span style=${{color:'var(--text-secondary)',flex:1}}>${r[1]}</span>
+                  </div>`;
+                })}
+              </div>
+            </div>`;
+          })}
+        </div>
       </div>
     </div>`;
   }
@@ -15102,7 +15160,7 @@ function startApp() {
           <span style=${{fontSize:'0.92rem',color:'var(--text-primary)',lineHeight:1.45}}>
             ClashControl is free and open-source.
             ${' '}<a href="https://github.com/sponsors/clashcontrol-io" target="_blank" rel="noopener"
-              style=${{color:'#c4b5fd',textDecoration:'underline',fontWeight:600}}>Support the project</a>${' '}to help keep it running.
+              style=${{color:'var(--accent)',textDecoration:'underline',fontWeight:600}}>Support the project</a>${' '}to help keep it running.
           </span>
         </div>
         <div style=${SEC}>Viewer</div>
@@ -15180,7 +15238,7 @@ function startApp() {
                 if(!anyData||!dataConsent) return;
                 try{var cur=window._ccLatestState;if(cur){_beaconSendTrainingData();_beaconSendNLTrainingData(cur.models);}_beaconSendDetectionRuns();}catch(e){}
               }} disabled=${!anyData||!dataConsent}
-                style=${{...S_BTN,fontSize:'0.8rem',padding:'.3rem .6rem',background:anyData&&dataConsent?'rgba(124,58,237,.2)':'var(--bg-secondary)',color:anyData&&dataConsent?'#c4b5fd':'var(--text-faint)',border:'1px solid '+(anyData&&dataConsent?'rgba(124,58,237,.4)':'var(--border)')}}>Send now</button>
+                style=${{...S_BTN,fontSize:'0.8rem',padding:'.3rem .6rem',background:anyData&&dataConsent?'var(--accent-bg-deep)':'var(--bg-secondary)',color:anyData&&dataConsent?'var(--accent)':'var(--text-faint)',border:'1px solid '+(anyData&&dataConsent?'var(--accent-subtle)':'var(--border)')}}>Send now</button>
               ${!showDelConfirm && html`<button onClick=${function(){if(anyData)setShowDelConfirm(true);}} disabled=${!anyData}
                 style=${{...S_BTN,fontSize:'0.8rem',padding:'.3rem .6rem',background:'none',color:anyData?'var(--text-muted)':'var(--text-faint)',border:'1px solid var(--border)',opacity:anyData?1:0.5}}>Delete all data</button>`}
               ${showDelConfirm && html`<button onClick=${function(){
@@ -15390,8 +15448,8 @@ function startApp() {
                       }}
                       onClick=${function(e){e.stopPropagation();}}
                       style=${{...S_INPUT,width:48,textAlign:'center',fontSize:'0.67rem',padding:'2px 3px',
-                        background:hasVal?'rgba(124,58,237,.1)':'var(--bg-secondary)',
-                        borderColor:hasVal?'rgba(124,58,237,.3)':'var(--border)',
+                        background:hasVal?'var(--accent-bg)':'var(--bg-secondary)',
+                        borderColor:hasVal?'var(--accent-subtle)':'var(--border)',
                         color:hasVal?'var(--text-primary)':'var(--text-faint)'}} />
                     <span style=${{color:'var(--text-faint)',fontSize:'0.57rem',marginLeft:2}}>mm</span>
                   </td>
@@ -15493,8 +15551,8 @@ function startApp() {
       if(this.state.hasError){
         var self=this;
         return h('div',{style:{padding:'2rem',textAlign:'center',color:'var(--text-primary)',background:'var(--bg-primary)',height:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}},
-          h('div',{style:{width:48,height:48,background:'var(--logo-gradient)',borderRadius:12,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'1rem',boxShadow:'0 8px 24px rgba(124,58,237,.35)'}},
-            h('span',{style:{display:'inline-flex',alignItems:'center',color:'#fff',fontWeight:800,fontSize:14,fontFamily:'Syne,system-ui,sans-serif',lineHeight:1}},
+          h('div',{style:{width:48,height:48,background:'var(--text-primary)',borderRadius:'var(--radius-lg)',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'1rem'}},
+            h('span',{style:{display:'inline-flex',alignItems:'center',color:'var(--bg-primary)',fontWeight:800,fontSize:14,fontFamily:'Syne,system-ui,sans-serif',lineHeight:1}},
             h('span',null,'C'),
             h('span',{style:{display:'inline-block',transform:'scaleX(-1)',marginLeft:'-1px'}},'C'))),
           h('h2',{style:{marginBottom:'.5rem'}},'Something went wrong'),
@@ -19197,7 +19255,7 @@ function startApp() {
       <div style=${{fontWeight:600,marginBottom:'.5rem',color:'var(--text-primary)',display:'flex',alignItems:'center',gap:'.3rem'}}>
         Clash Detection Setup
       </div>
-      ${setup._multiSelf && html`<div style=${{background:'rgba(124,58,237,.1)',border:'1px solid rgba(124,58,237,.3)',borderRadius:6,padding:'.35rem .5rem',marginBottom:'.5rem',fontSize:'0.71rem',color:'#a78bfa'}}>
+      ${setup._multiSelf && html`<div style=${{background:'var(--accent-bg)',border:'1px solid var(--accent-subtle)',borderRadius:'var(--radius-sm)',padding:'.35rem .5rem',marginBottom:'.5rem',fontSize:'0.71rem',color:'var(--accent)'}}>
         Self-clash mode: ${setup._multiSelf.map(function(p){return p.name;}).join(', ')} — each group checked against itself
       </div>`}
 
@@ -19815,7 +19873,7 @@ function startApp() {
     var isDocked = !!props.docked && !_isMobile;
     var _serverReady = _serverAIAvailable;
     var backendLabel = window._ccTourActive ? 'AI loaded' : _serverReady ? 'Gemma 4' : backend === 'server' ? 'Gemma 4' : null;
-    var backendColor = window._ccTourActive ? '#a78bfa' : _serverReady ? '#22c55e' : mutedCol;
+    var backendColor = window._ccTourActive ? 'var(--accent)' : _serverReady ? '#22c55e' : mutedCol;
 
     /* ── Closed-state Ask button (only when NOT docked and not open) ──
        Demoted from the prior wide centred pill to a quiet 36-px round button
@@ -20067,7 +20125,7 @@ function startApp() {
           background:_lp!=null ? 'linear-gradient(90deg, rgba(96,165,250,.18) '+_lp+'%, transparent '+_lp+'%)' : 'transparent',
           display:'flex', alignItems:'center', gap:'.4rem', flexShrink:0,
           transition:'background .3s',
-          animation:_lp==null?'nlBorderPulse 2s ease-in-out infinite':'none'
+          animation:'none'
         }}>
           <span class="spin" style=${{display:'inline-block',width:'.6rem',height:'.6rem',borderRadius:'50%',border:'1.4px solid rgba(26,107,74,.25)',borderTopColor:'#1a6b4a',flexShrink:0}}></span>
           <span style=${{fontSize:'0.74rem',color:'var(--accent)',fontWeight:500,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${modelLoadMsg || 'Model loading'}</span>
@@ -20080,13 +20138,12 @@ function startApp() {
       }}>
         <div style=${{
           flex:1, display:'flex', alignItems:'center', gap:'.45rem',
-          background:detectPct>0 ? 'linear-gradient(90deg, rgba(124,58,237,.25) '+detectPct+'%, '+inputBg+' '+detectPct+'%)' : inputBg,
-          border:'1px solid rgba(96,165,250,.35)',
-          borderRadius:8, padding:'.5rem .65rem',
-          transition:'background .3s',
-          animation:detectPct===0?'nlBorderPulse 2s ease-in-out infinite':'none'
+          background:detectPct>0 ? 'linear-gradient(90deg, rgba(26,107,74,.25) '+detectPct+'%, '+inputBg+' '+detectPct+'%)' : inputBg,
+          border:'1px solid var(--accent-subtle)',
+          borderRadius:'var(--radius-md)', padding:'.5rem .65rem',
+          transition:'background .3s'
         }}>
-          <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(26,107,74,.25)',borderTopColor:'#1a6b4a',flexShrink:0}}></span>
+          <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(26,107,74,.25)',borderTopColor:'var(--accent)',flexShrink:0}}></span>
           <span style=${{fontSize:'0.85rem',color:'var(--accent)',fontWeight:500,display:'flex',flexDirection:'column',gap:'.1rem'}}>
             <span>${(function(){
               var p=detectPct, t=detectElapsed;
@@ -20144,7 +20201,7 @@ function startApp() {
     }
 
     // ── Floating mode (original overlay behavior) ──
-    var panelAnimation = panelGlow ? 'nlBorderPulse 2s ease-in-out infinite' : 'none';
+    var panelAnimation = 'none';
     var panelBorderCol = panelGlow ? 'rgba(96,165,250,.5)' : borderCol;
     return html`<div style=${{position:'fixed',inset:0,zIndex:1199}} onClick=${function(){setOpen(false);}}><div class="cc-nlpanel" onClick=${function(e){e.stopPropagation();}} style=${{
       position:'fixed', bottom:'1rem', left:'50%', transform:'translateX(-50%)',
@@ -20198,7 +20255,7 @@ function startApp() {
           background:_lp!=null ? 'linear-gradient(90deg, rgba(96,165,250,.18) '+_lp+'%, transparent '+_lp+'%)' : 'transparent',
           display:'flex', alignItems:'center', gap:'.4rem',
           transition:'background .3s',
-          animation:_lp==null?'nlBorderPulse 2s ease-in-out infinite':'none'
+          animation:'none'
         }}>
           <span class="spin" style=${{display:'inline-block',width:'.6rem',height:'.6rem',borderRadius:'50%',border:'1.4px solid rgba(26,107,74,.25)',borderTopColor:'#1a6b4a',flexShrink:0}}></span>
           <span style=${{fontSize:'0.74rem',color:'var(--accent)',fontWeight:500,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${modelLoadMsg || 'Model loading'}</span>
@@ -20211,13 +20268,12 @@ function startApp() {
       }}>
         <div style=${{
           flex:1, display:'flex', alignItems:'center', gap:'.45rem',
-          background:detectPct>0 ? 'linear-gradient(90deg, rgba(124,58,237,.25) '+detectPct+'%, '+inputBg+' '+detectPct+'%)' : inputBg,
-          border:'1px solid rgba(96,165,250,.35)',
-          borderRadius:8, padding:'.5rem .65rem',
-          transition:'background .3s',
-          animation:detectPct===0?'nlBorderPulse 2s ease-in-out infinite':'none'
+          background:detectPct>0 ? 'linear-gradient(90deg, rgba(26,107,74,.25) '+detectPct+'%, '+inputBg+' '+detectPct+'%)' : inputBg,
+          border:'1px solid var(--accent-subtle)',
+          borderRadius:'var(--radius-md)', padding:'.5rem .65rem',
+          transition:'background .3s'
         }}>
-          <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(26,107,74,.25)',borderTopColor:'#1a6b4a',flexShrink:0}}></span>
+          <span class="spin" style=${{display:'inline-block',width:'.7rem',height:'.7rem',borderRadius:'50%',border:'1.5px solid rgba(26,107,74,.25)',borderTopColor:'var(--accent)',flexShrink:0}}></span>
           <span style=${{fontSize:'0.85rem',color:'var(--accent)',fontWeight:500,display:'flex',flexDirection:'column',gap:'.1rem'}}>
             <span>${(function(){
               var p=detectPct, t=detectElapsed;
@@ -20496,7 +20552,7 @@ function startApp() {
       display:'flex', alignItems:'center', gap:'.65rem',
       fontSize:'0.82rem', color:'var(--text-secondary)', lineHeight:1.5
     }}>
-      <span style=${{fontSize:'1.1rem',color:'#a78bfa',flexShrink:0}}>\u2139</span>
+      <span style=${{fontSize:'1.1rem',color:'var(--accent)',flexShrink:0}}>\u2139</span>
       <span style=${{flex:1}}>
         ClashControl shares <strong style=${{color:'var(--text-primary)'}}>anonymous IFC type and geometry data</strong> to improve clash detection. No project names, element names, or coordinates are sent. Change anytime in Settings.
       </span>
@@ -20646,7 +20702,7 @@ function startApp() {
             <span style=${{fontSize:'1.26rem',fontWeight:700}}>Quick Start Guide</span>
             <button onClick=${function(){setShowTutorial(false)}} style=${{...S_BTN,background:'none',color:'var(--text-muted)',fontSize:'1.38rem',padding:'0 .3rem',lineHeight:1}}>✕</button>
           </div>
-          <div style=${{background:'rgba(124,58,237,.08)',border:'1px solid rgba(124,58,237,.25)',borderRadius:8,padding:'.75rem',marginBottom:'1rem'}}>
+          <div style=${{background:'var(--accent-bg)',border:'1px solid var(--accent-subtle)',borderRadius:'var(--radius-md)',padding:'.75rem',marginBottom:'1rem'}}>
             <div style=${{fontSize:'0.94rem',fontWeight:600,color:'var(--text-primary)',marginBottom:'.3rem'}}>What is ClashControl?</div>
             <div style=${{fontSize:'0.86rem',color:'var(--text-secondary)',lineHeight:1.6}}>
               A free, open-source tool for detecting geometric clashes in IFC building models \u2014 right in your browser. Load BIM files, find collisions between building systems, manage issues, and export results to BCF.
@@ -20692,14 +20748,14 @@ function startApp() {
               </div>
               ${/* Faster model loading (GLB+sidecar) — hidden until Ifc2Ifc is fully released */ false && html`<div>
                 <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
-                  <span style=${{color:'#a78bfa',fontSize:'0.9rem',animation:'roadmapGlow 2s ease-in-out infinite'}}>◉</span>
+                  <span style=${{color:'var(--accent)',fontSize:'0.9rem'}}>◉</span>
                   <span style=${{color:'var(--text-primary)',fontWeight:600}}>Faster model loading</span>
                 </div>
                 <div style=${{fontSize:'0.75rem',color:'var(--text-muted)',marginLeft:'1.3rem',lineHeight:1.5,marginTop:'.15rem'}}>Load Revit models near-instantly using GLB + IFC + .ifcmeta bundles — no heavy IFC geometry parsing. Create bundles with <a href="https://github.com/thomhoffer-arch/Ifc2Ifc" target="_blank" rel="noopener" style=${{color:'#60a5fa'}}>Ifc2Ifc</a>.</div>
               </div>`}
               <div>
                 <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
-                  <span style=${{color:'#a78bfa',fontSize:'0.9rem',animation:'roadmapGlow 2s ease-in-out infinite'}}>◉</span>
+                  <span style=${{color:'var(--accent)',fontSize:'0.9rem'}}>◉</span>
                   <span style=${{color:'var(--text-primary)',fontWeight:600}}>Gather training data for AI clash classifier</span>
                 </div>
                 <div style=${{fontSize:'0.75rem',color:'var(--text-muted)',marginLeft:'1.3rem',lineHeight:1.5,marginTop:'.15rem'}}>When you label clashes as true/false positives and use the NL command panel, anonymous metadata is collected (with your consent). This builds the dataset needed to train ClashControl\u2019s AI to automatically classify clashes.</div>
@@ -21380,7 +21436,7 @@ function startApp() {
       zIndex:1100
     }}>
       <div onMouseDown=${onResizeDown} style=${{position:'absolute',left:0,top:0,bottom:0,width:8,cursor:'col-resize',zIndex:10,
-        background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='rgba(124,58,237,0.3)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
+        background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='var(--accent-bg-deep)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
       <!-- Tab bar + collapse -->
       <div style=${{display:'flex',alignItems:'center',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,height:40,gap:0,paddingLeft:12}}>
         ${['details','ai'].map(function(tab){
@@ -22521,7 +22577,7 @@ function startApp() {
 
             ${rd.connected && html`<div style=${{display:'flex',gap:'.4rem'}}>
               <button onClick=${function(){if(window._revitClearHighlights) window._revitClearHighlights(); d({t:'BRIDGE_LOG',logType:'info',text:'Cleared Revit highlights.'});}}
-                style=${{...S_BTN2,flex:1,background:'#3b0764',color:'#c084fc'}}>Clear Revit Highlights</button>
+                style=${{...S_BTN2,flex:1,background:'var(--accent-bg-deep)',color:'var(--accent)'}}>Clear Revit Highlights</button>
             </div>`}
 
             ${rd.loading && html`<div>
@@ -22934,6 +22990,25 @@ function startApp() {
     }, [showWhatsNew]);
     var _storeyPicker = useState(false), storeyPickerOpen=_storeyPicker[0], setStoreyPickerOpen=_storeyPicker[1];
     window._ccShowStoreyPicker = setStoreyPickerOpen;
+    var _shortcuts = useState(false), shortcutsOpen=_shortcuts[0], setShortcutsOpen=_shortcuts[1];
+    useEffect(function(){
+      function onShow(){ setShortcutsOpen(true); }
+      function onKey(e){
+        if (e.key !== '?') return;
+        var t = e.target;
+        var tag = t && t.tagName;
+        if (tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+        if (t && t.isContentEditable) return;
+        e.preventDefault();
+        setShortcutsOpen(true);
+      }
+      window.addEventListener('cc-show-shortcuts', onShow);
+      window.addEventListener('keydown', onKey);
+      return function(){
+        window.removeEventListener('cc-show-shortcuts', onShow);
+        window.removeEventListener('keydown', onKey);
+      };
+    }, []);
     useEffect(function(){
       function onUpdate(){ setPwaUpdateAvail(true); }
       function onInstall(){ setPwaInstallAvail(true); }
@@ -23204,12 +23279,13 @@ function startApp() {
       </div>
       ${s.showModal && html`<${NewIssueModal} d=${d} el=${s.modalElement} prefs=${s.prefs} clashes=${s.clashes} activeId=${s.activeId} />`}
       ${storeyPickerOpen && html`<${StoreyPickerModal} s=${s} d=${d} onClose=${function(){setStoreyPickerOpen(false);}} />`}
+      ${shortcutsOpen && html`<${ShortcutsModal} onClose=${function(){setShortcutsOpen(false);}} />`}
       ${s.showSettings && html`<${SettingsModal} d=${d} s=${s} prefs=${s.prefs} models=${s.models} rules=${s.rules} />`}
       ${s.showShare && html`<${ShareModal} d=${d} s=${s} />`}
       ${s.showSmartViews && html`<${SmartViewsModal} d=${d} s=${s} />`}
       ${s.commentMode && html`<div style=${{position:'fixed',top:'1rem',left:'50%',transform:'translateX(-50%)',zIndex:9990,
-        background:'rgba(168,85,247,.95)',color:'#fff',padding:'.5rem .9rem',borderRadius:8,
-        boxShadow:'0 4px 20px rgba(168,85,247,.4)',display:'flex',alignItems:'center',gap:'.6rem',
+        background:'var(--accent)',color:'#fff',padding:'.5rem .9rem',borderRadius:'var(--radius-md)',
+        boxShadow:'var(--shadow-md)',display:'flex',alignItems:'center',gap:'.6rem',
         fontSize:'0.82rem',fontWeight:500,fontFamily:'inherit'}}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s-8-4.5-8-12a8 8 0 1 1 16 0c0 7.5-8 12-8 12z"/><circle cx="12" cy="10" r="3"/></svg>
         <span>Click on the model to drop a comment pin</span>
