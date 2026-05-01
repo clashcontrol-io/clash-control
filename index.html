@@ -6236,6 +6236,36 @@ function startApp() {
           return true;
         });
 
+        // Helper: resolve expressId from a hit (handles InstancedMesh)
+        function _hitExpressId(h){
+          var hEid = h.object.userData.expressId;
+          var hInst = h.instanceId != null ? h.instanceId : -1;
+          if(hEid==null && h.object.isInstancedMesh && hInst >= 0)
+            hEid = (h.object.userData.instanceExprIds || [])[hInst];
+          return hEid != null ? {eid:hEid, instId:hInst} : null;
+        }
+        // Helper: true when the hit face is visible from the camera
+        // (face normal opposes ray direction — i.e. front-face hit)
+        function _isFrontFaceHit(h){
+          if(!h.face) return true; // no face data, allow
+          var n = h.face.normal.clone();
+          n.transformDirection(h.object.matrixWorld).normalize();
+          return raycaster.ray.direction.dot(n) < 0;
+        }
+        // Prefer front-face hits (prevents DoubleSide back-face of a beam
+        // behind a wall from stealing the click). Fall back to all hits if
+        // the geometry has inverted winding or no front-face hit exists.
+        var frontHits = hits.filter(_isFrontFaceHit);
+        var candidateHits = frontHits.length > 0 ? frontHits : hits;
+        // Pick the first candidate that has a valid expressId — not blindly
+        // hits[0], which may be a helper/marker mesh with no expressId.
+        var _pickedHit = null, _pickedEid = null, _pickedInstId = -1;
+        for(var _phi=0; _phi<candidateHits.length; _phi++){
+          var _ph = candidateHits[_phi];
+          var _phR = _hitExpressId(_ph);
+          if(_phR){ _pickedHit=_ph; _pickedEid=_phR.eid; _pickedInstId=_phR.instId; break; }
+        }
+
         // ── Section Pick: click any surface to use it as a section plane ──
         if (window._ccSectionPickPending && hits.length > 0) {
           var spHit = hits[0];
@@ -6415,12 +6445,10 @@ function startApp() {
           }
         }
 
-        if(hits.length>0) {
-          var hit = hits[0].object;
-          var _hitInstId = hits[0].instanceId != null ? hits[0].instanceId : -1;
-          var eid = hit.userData.expressId;
-          if(eid==null && hit.isInstancedMesh && _hitInstId >= 0)
-            eid = (hit.userData.instanceExprIds || [])[_hitInstId];
+        if(_pickedHit) {
+          var hit = _pickedHit.object;
+          var _hitInstId = _pickedInstId;
+          var eid = _pickedEid;
           if(eid!=null) {
             try {
             var found = null;
@@ -6507,8 +6535,8 @@ function startApp() {
             var hitCtr = hitBox.getCenter(new THREE.Vector3());
             var hitPt = [hitCtr.x, hitCtr.y, hitCtr.z];
             var hitNormal = null;
-            if(hits[0].face && hits[0].face.normal) {
-              var fn = hits[0].face.normal.clone();
+            if(_pickedHit.face && _pickedHit.face.normal) {
+              var fn = _pickedHit.face.normal.clone();
               fn.transformDirection(_hitWorldMx);
               hitNormal = [fn.x, fn.y, fn.z];
             }
@@ -6520,8 +6548,8 @@ function startApp() {
             }
             } catch(pickErr) { console.warn('Element pick failed:', pickErr.message||pickErr); }
           }
-        } else {
-          // Empty click — but Ctrl/Cmd+empty should preserve multi-selection
+        } else if (hits.length === 0) {
+          // Empty click (no geometry hit at all) — clear selection
           if (!(e.ctrlKey || e.metaKey)) {
             selectedRefsRef.current = [];
             window._ccSelectedRefs = selectedRefsRef.current;
