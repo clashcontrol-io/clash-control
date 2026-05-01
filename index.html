@@ -5005,6 +5005,26 @@ function startApp() {
       S.renderer = renderer;
       window._ccState3d = S;
 
+      /* Project a 3D point to viewport screen coordinates so DOM overlays
+         (clash chips, comment chips, future inline labels) can follow the
+         model as the camera moves. Returns null when the point is behind
+         the camera or outside the canvas. */
+      var _projVec = new THREE.Vector3();
+      window._ccProjectToScreen = function(pt) {
+        if (!pt || !S.camera || !S.renderer) return null;
+        _projVec.set(pt[0], pt[1], pt[2]);
+        _projVec.project(S.camera);
+        // Behind the camera or beyond the far plane → not visible
+        if (_projVec.z > 1 || _projVec.z < -1) return null;
+        var rect = S.renderer.domElement.getBoundingClientRect();
+        var x = rect.left + (_projVec.x * 0.5 + 0.5) * rect.width;
+        var y = rect.top  + (-_projVec.y * 0.5 + 0.5) * rect.height;
+        // Off-canvas (with a small margin so just-barely-off chips still pin to edge later)
+        var visible = (x >= rect.left - 80 && x <= rect.right + 80 &&
+                       y >= rect.top  - 40 && y <= rect.bottom + 40);
+        return {x:x, y:y, visible:visible};
+      };
+
       // ── Image-based lighting (Enscape/V-Ray style) ────────────────────
       // Generate a PMREM environment map from a procedural sky gradient.
       // Every MeshStandardMaterial automatically samples this for ambient
@@ -21847,6 +21867,89 @@ function startApp() {
   // ── Model Load Card — shown when no model is loaded ──────────────
 
   /* ── Empty state ── */
+  // ── Active Clash Chip (DOM-anchored 3D label) ────────────────
+  // Floats above the active clash point in 3D, projected each frame
+  // through the perspective camera. Severity-coloured dot + title.
+  // Hides itself when the clash point is behind the camera or off-canvas.
+
+  function ClashChips(props) {
+    var s = props.s;
+    var stPos = useState(null);
+    var pos = stPos[0], setPos = stPos[1];
+    var rafRef = useRef(0);
+
+    // Hide during presentation / walk / 2D sheet — chip would compete with
+    // those modes' own controls and isn't useful in 2D anyway.
+    var hide = s.presenting || s.walkMode || s.underlayMode === 'view2d' || s.underlayMode === 'compare';
+    var active = (!hide && s.activeId && (s.clashes||[]).find(function(c){return c.id===s.activeId;})) || null;
+    var key = active ? active.id : '';
+
+    useEffect(function(){
+      cancelAnimationFrame(rafRef.current);
+      if (!active || !active.point || active.point.length < 3) { setPos(null); return; }
+      var lastX = -1, lastY = -1, lastVis = null;
+      function tick() {
+        var p = window._ccProjectToScreen ? window._ccProjectToScreen(active.point) : null;
+        // Only re-render when the projected coords actually change (>=1px)
+        if (p && (Math.abs(p.x - lastX) > 0.5 || Math.abs(p.y - lastY) > 0.5 || p.visible !== lastVis)) {
+          lastX = p.x; lastY = p.y; lastVis = p.visible;
+          setPos({x:p.x, y:p.y, visible:p.visible});
+        } else if (!p && lastVis !== false) {
+          lastVis = false;
+          setPos(null);
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      }
+      rafRef.current = requestAnimationFrame(tick);
+      return function(){ cancelAnimationFrame(rafRef.current); };
+    }, [key]);
+
+    if (!active || !pos || !pos.visible) return null;
+
+    var sevColor = active.type === 'hard'      ? 'var(--color-danger)'
+                 : active.type === 'soft'      ? 'var(--color-warning)'
+                 : active.type === 'duplicate' ? 'var(--text-muted)'
+                 : 'var(--accent)';
+    var title = active.aiTitle || active.title || ('Clash ' + active.id);
+    if (typeof title === 'string' && title.length > 56) title = title.slice(0, 53) + '…';
+    var dist = (typeof active.distance === 'number')
+      ? (active.distance < 1 ? Math.round(active.distance * 1000) + ' mm'
+                              : active.distance.toFixed(2) + ' m')
+      : null;
+
+    return html`<div aria-hidden="true" style=${{
+      position:'fixed', left:pos.x, top:pos.y,
+      transform:'translate(-50%, calc(-100% - 16px))',
+      pointerEvents:'none', zIndex:200,
+      background:'var(--surface)', border:'1px solid '+sevColor,
+      color:'var(--text-primary)', fontFamily:'var(--font-body)',
+      fontSize:'var(--text-xs)', fontWeight:'var(--weight-medium)',
+      padding:'4px 8px',
+      borderRadius:'var(--radius-sm)',
+      boxShadow:'var(--shadow-md)',
+      whiteSpace:'nowrap', maxWidth:280,
+      display:'flex', alignItems:'center', gap:'.4rem',
+      lineHeight:'var(--leading-tight)'
+    }}>
+      <span style=${{width:7,height:7,borderRadius:'50%',background:sevColor,flexShrink:0,boxShadow:'0 0 0 2px var(--surface)'}}></span>
+      <span style=${{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${title}</span>
+      ${dist != null ? html`<span style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--text-muted)',flexShrink:0}}>${dist}</span>` : ''}
+      <!-- Pointer down toward the clash point -->
+      <span aria-hidden="true" style=${{
+        position:'absolute', left:'50%', bottom:-7,
+        transform:'translateX(-50%)', width:0, height:0,
+        borderLeft:'7px solid transparent', borderRight:'7px solid transparent',
+        borderTop:'7px solid '+sevColor
+      }}></span>
+      <span aria-hidden="true" style=${{
+        position:'absolute', left:'50%', bottom:-5,
+        transform:'translateX(-50%)', width:0, height:0,
+        borderLeft:'6px solid transparent', borderRight:'6px solid transparent',
+        borderTop:'6px solid var(--surface)'
+      }}></span>
+    </div>`;
+  }
+
   function WelcomePopup(props) {
     var d = props.d, s = props.s;
     if (s.models && s.models.length > 0) return null;
@@ -23689,6 +23792,7 @@ function startApp() {
       ${shortcutsOpen && html`<${ShortcutsModal} onClose=${function(){setShortcutsOpen(false);}} />`}
       ${cmdkOpen && html`<${CmdKPalette} s=${s} d=${d} onClose=${function(){setCmdkOpen(false);}} />`}
       <${LoadProgressCard} />
+      <${ClashChips} s=${s} />
       ${s.showSettings && html`<${SettingsModal} d=${d} s=${s} prefs=${s.prefs} models=${s.models} rules=${s.rules} />`}
       ${s.showShare && html`<${ShareModal} d=${d} s=${s} />`}
       ${s.showSmartViews && html`<${SmartViewsModal} d=${d} s=${s} />`}
