@@ -11431,6 +11431,35 @@ function startApp() {
           <!-- Type-pair tolerances -->
           ${_renderTypePairTolerances(rules, models, tpState, setTPState, d)}
 
+          <!-- Engine selector (browser ↔ local Python, ↔ WASM) -->
+          ${(function(){
+            var le = s.localEngine || {};
+            var we = s.wasmEngine || {};
+            var engineLabel, engineDot, engineHint, onClickEngine;
+            if (le.active && le.available) {
+              engineLabel = 'ClashControlEngine'; engineDot = 'var(--color-success)';
+              engineHint = 'Local server · exact mesh intersection';
+              onClickEngine = function(){ try{ if(window._ccDeactivateAddon) window._ccDeactivateAddon('local-engine'); }catch(e){} };
+            } else if (we.active) {
+              engineLabel = 'WASM engine'; engineDot = 'var(--color-success)';
+              engineHint = 'Hardware-accelerated · in-browser';
+              onClickEngine = function(){ try{ if(window._ccActivateAddon) window._ccActivateAddon('local-engine'); }catch(e){} };
+            } else {
+              engineLabel = 'Browser engine'; engineDot = 'var(--text-faint)';
+              engineHint = 'Built-in JavaScript OBB engine';
+              onClickEngine = function(){ try{ if(window._ccActivateAddon) window._ccActivateAddon('local-engine'); }catch(e){} };
+            }
+            return html`<button onClick=${onClickEngine}
+              title="Click to switch detection engine"
+              style=${{...S_BTN,width:'100%',padding:'.3rem .55rem',marginBottom:'.35rem',
+                background:'var(--bg-secondary)',color:'var(--text-secondary)',border:'1px solid var(--border)',
+                display:'flex',alignItems:'center',gap:'.4rem',fontSize:'.7rem',justifyContent:'flex-start',textAlign:'left'}}>
+              <span style=${{width:6,height:6,borderRadius:'50%',background:engineDot,flexShrink:0}}></span>
+              <span style=${{fontWeight:600,color:'var(--text-primary)'}}>${engineLabel}</span>
+              <span style=${{color:'var(--text-faint)',fontSize:'.65rem',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${engineHint}</span>
+            </button>`;
+          })()}
+
           <!-- Run / Stop button -->
           ${s.detecting ? html`<button onClick=${function(){cancelDetection()}}
             style=${{...S_BTN,width:'100%',padding:'.4rem',background:'#dc2626',color:'#fff',fontWeight:600,fontSize:'0.78rem',borderRadius:6}}>
@@ -21916,7 +21945,14 @@ function startApp() {
           <div style=${{height:1,background:'var(--hairline)',margin:'.3rem 0'}}></div>
           ${row('Theme: '+(isDark?'Dark':'Light'), function(){ d({t:A.UPD_PREFS,u:{theme:isDark?'light':'dark'}}); })}
           ${row('Settings…', function(){ d({t:A.SETTINGS,v:true}); }, ',')}
-          ${row('Add-ons…', function(){ d({t:A.TAB,v:'addons'}); })}
+          ${(function(){
+            // PWA: show "Install app" when the browser has surfaced a deferred
+            // install prompt. Hidden once the app is installed (standalone mode).
+            var canInstall = !!(window._ccPwaInstallPrompt && window._ccPwaInstallPrompt());
+            var standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+            if (!canInstall || standalone) return null;
+            return row('Install ClashControl', function(){ if(window._ccPwaPromptInstall) window._ccPwaPromptInstall(); });
+          })()}
           ${row('Enter presentation', function(){ d({t:A.PRESENT,v:true}); })}
           ${row('Keyboard shortcuts', function(){ try{ window.dispatchEvent(new CustomEvent('cc-show-shortcuts')); }catch(e){} }, '?')}
         </div>
