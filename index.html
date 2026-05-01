@@ -7626,78 +7626,25 @@ function startApp() {
         </div>
       </div>`}
       ${s.walkMode && html`<${WalkModeHUD} d=${d} />`}
-      <div style=${{position:'absolute',bottom:'.75rem',left:'.75rem',pointerEvents:'auto',maxWidth:'calc(100vw - 1.5rem)'}}>
-        <div style=${{display:'flex',flexWrap:'wrap',gap:'.2rem',background:'var(--overlay-bg)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem'}}>
-          ${['standard','shaded','rendered','wireframe'].map(function(rs){
-            var cur = s.prefs.renderStyle||'standard';
-            var labels = {standard:'Standard',shaded:'Shaded',rendered:'Rendered',wireframe:'Wireframe'};
-            return html`<button key=${rs} onClick=${function(){d({t:A.UPD_PREFS,u:{renderStyle:rs}})}}
-              style=${{...S_BTN,fontSize:'0.63rem',padding:'.15rem .4rem',background:cur===rs?'var(--accent)':'transparent',color:cur===rs?'#fff':'var(--text-muted)',border:'1px solid '+(cur===rs?'var(--accent-hover)':'transparent')}}>${labels[rs]}</button>`;
-          })}
-          <span style=${{width:1,background:'var(--border)',margin:'0 .1rem'}}></span>
-          <button onClick=${function(){
-            var S=state3d.current; if(!S||!S.camera) return;
-            var isOrtho = S.camera.isOrthographicCamera;
-            var el2=S.renderer.domElement.parentElement;
-            var aspect=el2.clientWidth/el2.clientHeight;
-            if(isOrtho) {
-              var newCam=new THREE.PerspectiveCamera(55,aspect,0.01,10000);
-              newCam.position.copy(S.camera.position);
-              newCam.quaternion.copy(S.camera.quaternion);
-              S.camera=newCam; S.orbit.camera=newCam;
-              S.orbit.sync(); S.orbit.apply();
-            } else {
-              var dist=S.camera.position.distanceTo(S.orbit.target);
-              var h=dist*Math.tan(THREE.MathUtils.degToRad(55/2));
-              var newCam=new THREE.OrthographicCamera(-h*aspect,h*aspect,h,-h,0.01,10000);
-              newCam.position.copy(S.camera.position);
-              newCam.quaternion.copy(S.camera.quaternion);
-              newCam.zoom=1;newCam.updateProjectionMatrix();
-              S.camera=newCam; S.orbit.camera=newCam;
-              S.orbit.sync(); S.orbit.apply();
-            }
-            invalidate();
-          }}
-            style=${{...S_BTN,fontSize:'0.63rem',padding:'.15rem .4rem',background:'transparent',color:'var(--text-muted)',border:'1px solid transparent'}}
-            title=${(function(){var S=state3d.current;return S&&S.camera&&S.camera.isOrthographicCamera?'Switch to Perspective':'Switch to Orthographic'})()}>
-            ${(function(){var S=state3d.current;return S&&S.camera&&S.camera.isOrthographicCamera?'Persp':'Ortho'})()}
-          </button>
-        </div>
-      </div>
       <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end',maxHeight:'calc(100% - 5rem)',overflowY:'auto'}}>
-        <div style=${{display:'flex',gap:'.2rem',background:'var(--overlay-bg)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem'}}>
-          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode?null:'length'});measurePtsRef.current=[];}}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .5rem',background:s.measureMode?'var(--accent)':'var(--bg-secondary)',color:s.measureMode?'#fff':'var(--text-secondary)',border:'1px solid '+(s.measureMode?'var(--accent-light)':'var(--border)')}}>
-            ${s.measureMode?'Measuring':'Measure'}
-          </button>
-          ${s.measureMode && ['length','angle','area'].map(function(m){return html`<button key=${m} onClick=${function(){d({t:A.MEASURE_MODE,v:m});measurePtsRef.current=[];}}
-            style=${{...S_BTN,fontSize:'0.63rem',padding:'.15rem .35rem',background:s.measureMode===m?'var(--accent-bg)':'transparent',color:s.measureMode===m?'var(--accent-subtle)':'var(--text-muted)',border:'1px solid '+(s.measureMode===m?'var(--accent-bg)':'transparent')}}>${m.charAt(0).toUpperCase()+m.slice(1)}</button>`})}
-          ${s.measurements.length>0 && html`<button onClick=${function(){d({t:A.CLEAR_MEASUREMENTS});}}
-            style=${{...S_BTN,fontSize:'0.63rem',padding:'.2rem .3rem',background:'#450a0a',color:'#fca5a5'}}>Clear (${s.measurements.length})</button>`}
-        </div>
-        ${s.measureMode && html`<div style=${{fontSize:'0.63rem',color:'var(--accent-subtle)',background:'rgba(30,58,138,.85)',padding:'.2rem .5rem',borderRadius:6}}>
-          ${s.measureMode==='length'?'Click 2 points to measure 3D distance':s.measureMode==='angle'?'Click 3 points: start, vertex, end':'Click points to define area, double-click to close'}
+        ${s.measureMode && html`<div style=${{fontSize:'0.69rem',color:'var(--text-primary)',background:'var(--overlay-bg)',border:'1px solid var(--border)',padding:'.25rem .55rem',borderRadius:6,boxShadow:'var(--shadow-sm)'}}>
+          ${s.measureMode==='length'?'Click 2 points to measure distance':s.measureMode==='angle'?'Click 3 points: start, vertex, end':'Click points to define area, double-click to close'}
         </div>`}
-        ${s.measurements.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:120,overflowY:'auto',width:200}}>
+        ${s.measurements.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:120,overflowY:'auto',width:200,boxShadow:'var(--shadow-sm)'}}>
           ${s.measurements.map(function(m){return html`<div key=${m.id} style=${{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.15rem .2rem',fontSize:'0.69rem',borderBottom:'1px solid var(--border-subtle)'}}>
-            <span style=${{color:m.type==='length'?'#22c55e':m.type==='angle'?'#f59e0b':'#60a5fa'}}>${m.type}</span>
-            <span style=${{color:'var(--text-primary)',fontWeight:600}}>${m.label}</span>
+            <span style=${{color:m.type==='length'?'var(--color-success)':m.type==='angle'?'var(--color-warning)':'var(--color-info)',fontWeight:500}}>${m.type}</span>
+            <span style=${{color:'var(--text-primary)',fontWeight:600,fontFamily:'var(--font-mono)'}}>${m.label}</span>
             <button onClick=${function(){d({t:A.DEL_MEASUREMENT,id:m.id})}} style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'0.57rem'}} aria-label="Delete measurement">✕</button>
           </div>`})}
         </div>`}
         <div style=${{display:'flex',gap:'.2rem'}}>
-          <button onClick=${function(){if(_resetView)_resetView();if(s.floorPlan)d({t:A.FLOOR_PLAN,v:null});}}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .5rem',background:'var(--overlay-bg)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}
-            title="Reset camera to fit all models">
-            Reset View
-          </button>
           <button onClick=${function(){if(_captureViewpoint){var vp=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:A.ADD_VIEWPOINT,v:vp});}}}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .5rem',background:'var(--overlay-bg)',color:'var(--text-secondary)',border:'1px solid var(--border)'}}>
+            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .5rem',background:'var(--overlay-bg)',color:'var(--text-secondary)',border:'1px solid var(--border)',boxShadow:'var(--shadow-sm)'}}>
             Save Viewpoint
           </button>
           ${s.viewpoints.length>0 && html`<span style=${{fontSize:'0.63rem',color:'var(--text-muted)',alignSelf:'center'}}>${s.viewpoints.length} saved</span>`}
         </div>
-        ${s.viewpoints.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:160,overflowY:'auto',width:220}}>
+        ${s.viewpoints.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:160,overflowY:'auto',width:220,boxShadow:'var(--shadow-sm)'}}>
           ${s.viewpoints.map(function(vp){return html`<div key=${vp.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.2rem',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer'}}
             onClick=${function(){if(_restoreViewpoint)_restoreViewpoint(vp);}}>
             ${vp.snapshot && html`<img src=${vp.snapshot} style=${{width:40,height:25,borderRadius:3,objectFit:'cover',border:'1px solid var(--border)'}} />`}
@@ -21132,15 +21079,6 @@ function startApp() {
         </div>
       </div>
 
-      <!-- Render Style -->
-      <div style=${{padding:'.75rem',borderBottom:'1px solid var(--border-subtle)'}}>
-        <span style=${SEC}>Render Style</span>
-        <div style=${{display:'flex',gap:'.2rem',flexWrap:'wrap'}}>
-          ${['standard','shaded','rendered','wireframe'].map(function(rs){return html`<button key=${rs}
-            onClick=${function(){d({t:A.UPD_PREFS,u:{renderStyle:rs}});if(window._ccSetRenderStyle)window._ccSetRenderStyle(rs);}}
-            style=${{...S_BTN,padding:'.25rem .5rem',fontSize:'0.86rem',background:(s.prefs.renderStyle||'standard')===rs?'#2563eb':'var(--bg-secondary)',color:(s.prefs.renderStyle||'standard')===rs?'#fff':'var(--text-muted)'}}>${rs.charAt(0).toUpperCase()+rs.slice(1)}</button>`})}
-        </div>
-      </div>
 
 
       <!-- Export -->
@@ -21519,6 +21457,28 @@ function startApp() {
                 onClick:function(){ if(activeMode==='walk') clearAllModes(); else setMode('walk'); }})}
         ${btn({k:'plan',  active:activeMode==='plan',  title:'2D plan (P)', label:'Plan', icon:I.plan,
                 onClick:function(){ if(activeMode==='plan') clearAllModes(); else setMode('plan'); }})}
+        ${btn({k:'ortho', active:function(){var S=state3d.current;return !!(S&&S.camera&&S.camera.isOrthographicCamera);}(),
+                title:'Perspective / Orthographic', label:'Toggle projection', icon:'<path d="M5 5l14 0"/><path d="M5 19l14 0"/><path d="M5 5l0 14"/><path d="M19 5l0 14"/>',
+                onClick:function(){
+                  var S=state3d.current; if(!S||!S.camera) return;
+                  var isOrtho=S.camera.isOrthographicCamera;
+                  var el2=S.renderer.domElement.parentElement;
+                  var aspect=el2.clientWidth/el2.clientHeight;
+                  if(isOrtho){
+                    var nc=new THREE.PerspectiveCamera(55,aspect,0.01,10000);
+                    nc.position.copy(S.camera.position); nc.quaternion.copy(S.camera.quaternion);
+                    S.camera=nc; S.orbit.camera=nc; S.orbit.sync(); S.orbit.apply();
+                  } else {
+                    var dist=S.camera.position.distanceTo(S.orbit.target);
+                    var h=dist*Math.tan(THREE.MathUtils.degToRad(55/2));
+                    var nc=new THREE.OrthographicCamera(-h*aspect,h*aspect,h,-h,0.01,10000);
+                    nc.position.copy(S.camera.position); nc.quaternion.copy(S.camera.quaternion);
+                    nc.zoom=1; nc.updateProjectionMatrix();
+                    S.camera=nc; S.orbit.camera=nc; S.orbit.sync(); S.orbit.apply();
+                  }
+                  invalidate();
+                }
+        })}
         ${div()}
         <!-- NOTES -->
         ${btn({k:'note',  active:activeMode==='note',  title:'Drop a pin (N)', label:'Pin', icon:I.pin,
