@@ -4552,6 +4552,7 @@ function startApp() {
     if (_walkActive) return;
     _walkActive = true;
     _walkPointerLocked = false;
+    _walkLMB = true; // Enscape-style: walk is always "engaged" while in walk mode
     var models = (window._ccLatestState || {}).models || [];
     var _storeyUs = (typeof _ccDetectUnitScale === 'function') ? _ccDetectUnitScale(models) : 1;
     var _geoF = (typeof _ccStoreyToGeoFactor === 'function') ? _ccStoreyToGeoFactor(models) : 1;
@@ -4587,6 +4588,7 @@ function startApp() {
     if (!_walkActive) return;
     _walkActive = false;
     _walkPointerLocked = false;
+    _walkLMB = false;
     _walkKeys = {};
     try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {}
     if (_walkSavedCam && S.orbit) {
@@ -5170,7 +5172,7 @@ function startApp() {
       S.orbit = makeOrbit(camera, renderer.domElement, _wlAdd);
       S.orbit.apply(); // ensure camera looks at orbit target on init
 
-      // ── Walk mode event listeners (Enscape-style: hold LMB for WASD+look) ──
+      // ── Walk mode event listeners (Enscape-style: free WASD + mouse look) ──
       _wlAdd('keydown', function(e) {
         if (!_walkActive) return;
         _walkKeys[e.code] = true;
@@ -5185,27 +5187,27 @@ function startApp() {
         if (!_walkActive) return;
         delete _walkKeys[e.code];
       });
-      // Enscape-style: hold LMB on canvas to walk+look. Pointer lock acquired
-      // on press; released on up. WASD only moves while LMB is held.
-      renderer.domElement.addEventListener('mousedown', function(e) {
-        if (!_walkActive || e.button !== 0) return;
-        _walkLMB = true;
-        try { renderer.domElement.requestPointerLock(); } catch (err) {}
-        e.preventDefault();
-      });
-      _wlAdd('mouseup', function(e) {
-        if (e.button !== 0) return;
-        if (_walkLMB) {
-          _walkLMB = false;
-          try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) {}
+      // Single click on canvas while in walk mode acquires pointer lock so
+      // mouse controls look continuously. Esc releases and exits walk mode.
+      renderer.domElement.addEventListener('click', function(e) {
+        if (!_walkActive) return;
+        if (document.pointerLockElement !== renderer.domElement) {
+          try { renderer.domElement.requestPointerLock(); } catch (err) {}
         }
       });
+      _wlAdd('pointerlockchange', function() {
+        _walkPointerLocked = (document.pointerLockElement === renderer.domElement);
+        try { window.dispatchEvent(new CustomEvent('cc-walk-locked',{detail:{locked:_walkPointerLocked}})); } catch(e){}
+      });
       renderer.domElement.addEventListener('mousemove', function(e) {
-        if (!_walkActive || !_walkLMB) return;
-        // Pointer lock provides movementX/Y; without lock we still respect the
-        // delta but capped to avoid jitter when the cursor leaves the canvas.
+        if (!_walkActive) return;
+        // Mouse look works always in walk mode; pointer-locked feels best
+        // but unlocked still drives look (with a clamp against jitter when
+        // cursor leaves canvas).
         var mx = e.movementX || 0, my = e.movementY || 0;
-        if (Math.abs(mx) > 200 || Math.abs(my) > 200) return;
+        if (!_walkPointerLocked) {
+          if (Math.abs(mx) > 200 || Math.abs(my) > 200) return;
+        }
         _walkYaw -= mx * 0.002;
         _walkPitch += my * -0.002;
         _walkPitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, _walkPitch));
@@ -20911,7 +20913,10 @@ function startApp() {
     var dragRef=useRef(null);
     var onResizeDown = _makeResizeHandler(dragRef, function(w){ setPanelW(w); try{localStorage.setItem('cc_ai_panel_w',String(w));}catch(e){} }, 250, 600, true);
 
-    // Poll window._ccSelectedEl to drive the Details tab
+    // Poll window._ccSelectedEl to drive the Details tab. Behaviour:
+    //   • new element selected → store it, set tab to Details (but do NOT
+    //     auto-uncollapse the panel — user may have closed it manually)
+    //   • element deselected → reset tab to AI; keep collapse state as-is
     useEffect(function(){
       var prev = null;
       var t = setInterval(function(){
@@ -20921,17 +20926,13 @@ function startApp() {
           setDrawerEl(cur);
           if (cur) {
             setDrawerTab('details');
-            if (collapsed) setCollapsed(false);
           } else {
-            // Element deselected — collapse and reset to AI tab
-            setCollapsed(true);
             setDrawerTab('ai');
-            try { localStorage.setItem('cc_ai_panel_collapsed','1'); } catch(e) {}
           }
         }
       }, 250);
       return function(){ clearInterval(t); };
-    }, [collapsed]);
+    }, []);
 
     // Collapsed: thin tab on the right edge
     if (collapsed) {
