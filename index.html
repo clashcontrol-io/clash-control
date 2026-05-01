@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>(function(){try{var t=localStorage.getItem('cc_theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>ClashControl — Open BIM Clash Detection</title>
@@ -600,7 +601,7 @@ function startApp() {
     defaultPriority:_ccLoadPref('defaultPriority','normal'), defaultCategory:_ccLoadPref('defaultCategory','design'), defaultStatus:_ccLoadPref('defaultStatus','open'),
     defaultMaxGap:_ccLoadPref('defaultMaxGap',50), resetFiltersOnRun:_ccLoadPref('resetFiltersOnRun',true),
     defaultTolerances:(function(){try{return JSON.parse(localStorage.getItem('cc_defaultTolerances'))||{};}catch(e){return {};}}()),
-    theme:(function(){ try { return localStorage.getItem('cc_theme')||'dark'; } catch(e){ return 'dark'; } })(),
+    theme:(function(){ try { return localStorage.getItem('cc_theme')||'light'; } catch(e){ return 'light'; } })(),
     renderStyle:_ccLoadPref('renderStyle','standard'), // 'standard','shaded','rendered','wireframe'
     unitScaleOverride:_ccLoadPref('unitScaleOverride','auto'), // 'auto','1','100','1000'
   };
@@ -21867,7 +21868,7 @@ function startApp() {
       console.groupEnd();
     };
     useEffect(function(){
-      var t = s.prefs.theme||'dark';
+      var t = s.prefs.theme||'light';
       document.documentElement.setAttribute('data-theme', t);
       try { localStorage.setItem('cc_theme', t); } catch(e) {}
     }, [s.prefs.theme]);
