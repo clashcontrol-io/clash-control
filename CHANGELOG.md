@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.1.4 (2026-05-01)
+- feat(toolbar+section): default to Standard, click-surface section, Add model
+
 ## v5.1.3 (2026-05-01)
 - fix(toolbar+panels): unbreak app, redesign panel headers, drop sample model
 
