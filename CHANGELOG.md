@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.1.13 (2026-05-01)
+- Fix element picker selecting wrong element (wall click picking beam)
+
 ## v5.1.12 (2026-05-01)
 - Fix toolbar tooltip (remove native title attr) and redesign Present details as property table
 
