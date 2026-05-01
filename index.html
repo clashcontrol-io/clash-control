@@ -688,7 +688,7 @@ function startApp() {
     renderStyle:_ccLoadPref('renderStyle','standard'), // 'standard','shaded','rendered','wireframe' — default 'standard' for fast/clean first paint
     unitScaleOverride:_ccLoadPref('unitScaleOverride','auto'), // 'auto','1','100','1000'
     // Rendered-mode lighting controls (sliders surfaced in the toolbar Style popover)
-    lightSettings:_ccLoadPref('lightSettings',{sun:1.0, ambient:1.0, exposure:1.0, shadow:1.0}),
+    lightSettings:_ccLoadPref('lightSettings',{sun:1.0, ambient:1.0, exposure:1.0, shadow:1.0, time:13}),
   };
   var INIT = {
     models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:null,
@@ -7567,28 +7567,75 @@ function startApp() {
       var ambMul = (typeof ls.ambient === 'number') ? ls.ambient : 1.0;
       var expoMul = (typeof ls.exposure === 'number') ? ls.exposure : 1.0;
       var shadowOp = (typeof ls.shadow === 'number') ? ls.shadow : 1.0;
+      var todHour = (typeof ls.time === 'number') ? ls.time : 13;
+
+      // ── Time-of-day → sun position, color, intensity (rendered mode) ──
+      // Maps 6 (sunrise) → 20 (sunset) onto a realistic east→south→west arc
+      // and a warm-cool-warm color curve. Used only in 'rendered' style.
+      function _ccTimeToSun(hour) {
+        var t = Math.max(0, Math.min(1, (hour - 6) / 14)); // 0..1 over 6→20h
+        var altitude = Math.sin(t * Math.PI) * 70;          // peaks at 70° midday
+        var azimuth  = 90 + t * 180;                        // 90°(E) → 270°(W)
+        var altRad = altitude * Math.PI / 180;
+        var azRad  = azimuth  * Math.PI / 180;
+        // Direction TO the sun (so light points FROM sun, sun.position is opposite)
+        var dirX = Math.cos(altRad) * Math.sin(azRad);
+        var dirY = Math.sin(altRad);
+        var dirZ = Math.cos(altRad) * Math.cos(azRad);
+        // Color: warm at edges (sunrise/sunset), neutral at noon
+        var warmth = Math.pow(1 - Math.abs(t - 0.5) * 2, 0.6); // 1 at noon, 0 at edges
+        var r = 1.00, g = 0.85 + 0.10 * warmth, b = 0.55 + 0.32 * warmth;
+        // Intensity drops at low sun (atmospheric extinction proxy)
+        var intensityMul = Math.max(0.15, Math.sin(altRad)) * 1.4;
+        return {dx:dirX, dy:dirY, dz:dirZ, r:r, g:g, b:b, intensity:intensityMul, alt:altitude};
+      }
 
       // ── Lighting model per style (Revit-inspired): ──
       //   standard  → flat white surfaces, thin black edges   (technical drawing)
       //   shaded    → original colors, ambient-only, no shadows (architectural massing)
       //   rendered  → PBR-like, sun + shadows + contact plane  (presentation)
       //   wireframe → edges only, transparent fills           (CAD wireframe)
-      if (S.renderer) S.renderer.toneMappingExposure = expoMul * (style==='rendered' ? 1.0 : 1.15);
+      if (S.renderer) S.renderer.toneMappingExposure = expoMul * (style==='rendered' ? 1.0 : style==='shaded' ? 0.92 : 1.0);
       if (S._sunLight) {
         if (style==='rendered') {
-          S._sunLight.intensity = 1.4 * sunMul;
-          S._sunLight.castShadow = shadowOp > 0;
+          var sun = _ccTimeToSun(todHour);
+          // Position sun based on time arc, scaled by current shadow frustum
+          var sunRadius = 200;
+          try {
+            var box = (typeof _elemsBBox === 'function') ? _elemsBBox() : null;
+            if (box && !box.isEmpty()) {
+              var sz = new THREE.Vector3(); box.getSize(sz);
+              sunRadius = Math.max(sz.x, sz.y, sz.z) * 1.5 + 50;
+              var ctr = new THREE.Vector3(); box.getCenter(ctr);
+              S._sunLight.position.set(
+                ctr.x + sun.dx * sunRadius,
+                ctr.y + sun.dy * sunRadius,
+                ctr.z + sun.dz * sunRadius
+              );
+              if (S._sunLight.target) {
+                S._sunLight.target.position.copy(ctr);
+                S._sunLight.target.updateMatrixWorld();
+              }
+            } else {
+              S._sunLight.position.set(sun.dx * sunRadius, sun.dy * sunRadius, sun.dz * sunRadius);
+            }
+          } catch(e) { S._sunLight.position.set(sun.dx * sunRadius, sun.dy * sunRadius, sun.dz * sunRadius); }
+          S._sunLight.color.setRGB(sun.r, sun.g, sun.b);
+          S._sunLight.intensity = sun.intensity * sunMul;
+          S._sunLight.castShadow = shadowOp > 0 && sun.alt > 5; // no shadows when sun below horizon
         } else {
-          // Non-rendered: lower sun, no shadows (avoid the dark/blurry look)
-          S._sunLight.intensity = (style==='shaded' ? 0.4 : style==='wireframe' ? 0 : 0.7) * sunMul;
+          // Non-rendered: lower sun, no shadows
+          S._sunLight.color.setRGB(1, 0.96, 0.88);
+          S._sunLight.intensity = (style==='shaded' ? 0.55 : style==='wireframe' ? 0 : 0.7) * sunMul;
           S._sunLight.castShadow = false;
         }
       }
       if (S._fillLight) {
-        S._fillLight.intensity = (style==='rendered' ? 0.35 : style==='shaded' ? 0.55 : 0.45) * ambMul;
+        S._fillLight.intensity = (style==='rendered' ? 0.35 : style==='shaded' ? 0.3 : 0.45) * ambMul;
       }
       if (S._ambLight) {
-        S._ambLight.intensity = (style==='rendered' ? 0.55 : style==='shaded' ? 1.0 : style==='wireframe' ? 0.8 : 0.9) * ambMul;
+        // Shaded gets less ambient than before — Lambert + ambient was too hot
+        S._ambLight.intensity = (style==='rendered' ? 0.55 : style==='shaded' ? 0.55 : style==='wireframe' ? 0.8 : 0.9) * ambMul;
       }
 
       // Disable post-processing entirely — SAO + SMAA caused blur. Plain
@@ -7679,15 +7726,17 @@ function startApp() {
             transparent: true, opacity: 0.85, side: THREE.FrontSide
           }));
         } else if (style === 'standard') {
-          // Revit "Hidden Line" feel: lit but flat — Lambert, no env, no shadows.
+          // Revit "Hidden Line" feel: uniform light gray surfaces (no IFC
+          // colors), Lambert-lit so faces show geometry, no shadows.
           mat = cache.standard || (cache.standard = new THREE.MeshLambertMaterial({
-            color: origColor,
-            transparent: orig.transparent, opacity: orig.opacity,
+            color: light ? 0xe8e8e8 : 0x4a4a4a,
             side: THREE.FrontSide
           }));
         } else if (style === 'shaded') {
-          // Revit "Consistent Colors": pure flat color, no lighting variation.
-          mat = cache.shaded || (cache.shaded = new THREE.MeshBasicMaterial({
+          // Revit "Consistent Colors": IFC material colors WITH subtle
+          // Lambert shading — gives surface variation so it doesn't read
+          // as a single flat tone, but no shadows or environment.
+          mat = cache.shaded || (cache.shaded = new THREE.MeshLambertMaterial({
             color: origColor,
             transparent: orig.transparent, opacity: orig.opacity,
             side: THREE.FrontSide
@@ -21869,26 +21918,45 @@ function startApp() {
                   <span style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--ink-faint)'}}>${i+1}</span>
                 </button>`;
               })}
-              ${curStyle==='rendered' && html`<div style=${{borderTop:'1px solid var(--hairline)',marginTop:'.3rem',padding:'.5rem .8rem',display:'flex',flexDirection:'column',gap:'.4rem'}}>
-                <div style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--ink-muted)',textTransform:'uppercase',letterSpacing:'.06em'}}>Lighting</div>
-                ${[{k:'sun',label:'Sun',min:0.2,max:2.5},{k:'ambient',label:'Ambient',min:0.2,max:2.0},{k:'exposure',label:'Exposure',min:0.5,max:1.8},{k:'shadow',label:'Shadow',min:0,max:1.5}].map(function(row){
-                  var ls=(s.prefs.lightSettings)||{}; var v = (typeof ls[row.k]==='number') ? ls[row.k] : 1.0;
-                  return html`<label key=${row.k} style=${{display:'flex',alignItems:'center',gap:'.5rem',fontSize:'var(--text-xs)',color:'var(--ink-secondary)'}}>
-                    <span style=${{width:60}}>${row.label}</span>
-                    <input type="range" min=${row.min} max=${row.max} step="0.05" value=${v}
+              ${curStyle==='rendered' && function(){
+                var ls=(s.prefs.lightSettings)||{};
+                var tv = (typeof ls.time==='number') ? ls.time : 13;
+                var hh = Math.floor(tv); var mm = Math.round((tv-hh)*60);
+                var clock = (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm;
+                return html`<div style=${{borderTop:'1px solid var(--hairline)',marginTop:'.3rem',padding:'.55rem .8rem',display:'flex',flexDirection:'column',gap:'.5rem'}}>
+                  <div style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--ink-muted)',textTransform:'uppercase',letterSpacing:'.06em'}}>Sun position</div>
+                  <label style=${{display:'flex',alignItems:'center',gap:'.5rem',fontSize:'var(--text-xs)',color:'var(--ink-secondary)'}}>
+                    <span style=${{width:60}}>Time</span>
+                    <input type="range" min="6" max="20" step="0.25" value=${tv}
                       onInput=${function(e){
                         var nv=parseFloat(e.target.value);
-                        var ls2=Object.assign({sun:1,ambient:1,exposure:1,shadow:1},(s.prefs.lightSettings)||{});
-                        ls2[row.k]=nv;
+                        var ls2=Object.assign({sun:1,ambient:1,exposure:1,shadow:1,time:13},(s.prefs.lightSettings)||{});
+                        ls2.time=nv;
                         d({t:A.UPD_PREFS,u:{lightSettings:ls2}});
                       }}
                       style=${{flex:1,accentColor:'var(--accent)'}} />
-                    <span style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--ink-muted)',width:30,textAlign:'right'}}>${v.toFixed(2)}</span>
-                  </label>`;
-                })}
-                <button onClick=${function(){ d({t:A.UPD_PREFS,u:{lightSettings:{sun:1,ambient:1,exposure:1,shadow:1}}}); }}
-                  style=${{alignSelf:'flex-end',background:'none',border:'1px solid var(--hairline-strong)',padding:'.18rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',fontSize:'var(--text-2xs)',color:'var(--ink-muted)',fontFamily:'var(--font-body)'}}>Reset</button>
-              </div>`}
+                    <span style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--ink-primary)',width:42,textAlign:'right'}}>${clock}</span>
+                  </label>
+                  <div style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--ink-muted)',textTransform:'uppercase',letterSpacing:'.06em',marginTop:'.2rem'}}>Lighting</div>
+                  ${[{k:'sun',label:'Sun',min:0.2,max:2.5},{k:'ambient',label:'Ambient',min:0.2,max:2.0},{k:'exposure',label:'Exposure',min:0.5,max:1.8},{k:'shadow',label:'Shadow',min:0,max:1.5}].map(function(row){
+                    var v = (typeof ls[row.k]==='number') ? ls[row.k] : 1.0;
+                    return html`<label key=${row.k} style=${{display:'flex',alignItems:'center',gap:'.5rem',fontSize:'var(--text-xs)',color:'var(--ink-secondary)'}}>
+                      <span style=${{width:60}}>${row.label}</span>
+                      <input type="range" min=${row.min} max=${row.max} step="0.05" value=${v}
+                        onInput=${function(e){
+                          var nv=parseFloat(e.target.value);
+                          var ls2=Object.assign({sun:1,ambient:1,exposure:1,shadow:1,time:13},(s.prefs.lightSettings)||{});
+                          ls2[row.k]=nv;
+                          d({t:A.UPD_PREFS,u:{lightSettings:ls2}});
+                        }}
+                        style=${{flex:1,accentColor:'var(--accent)'}} />
+                      <span style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--ink-muted)',width:30,textAlign:'right'}}>${v.toFixed(2)}</span>
+                    </label>`;
+                  })}
+                  <button onClick=${function(){ d({t:A.UPD_PREFS,u:{lightSettings:{sun:1,ambient:1,exposure:1,shadow:1,time:13}}}); }}
+                    style=${{alignSelf:'flex-end',background:'none',border:'1px solid var(--hairline-strong)',padding:'.18rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',fontSize:'var(--text-2xs)',color:'var(--ink-muted)',fontFamily:'var(--font-body)'}}>Reset</button>
+                </div>`;
+              }()}
             </div>
           </div>`}
         </div>
