@@ -395,7 +395,7 @@
     @media(max-width:768px){
       .cc-mobile-theme{display:flex;position:fixed;top:max(env(safe-area-inset-top,8px),8px);left:8px;z-index:1060;
         width:36px;height:36px;align-items:center;justify-content:center;border-radius:50%;
-        background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
+        background:var(--bg-secondary);
         border:1px solid var(--glass-border);color:var(--text-secondary);cursor:pointer;
         box-shadow:0 4px 16px rgba(0,0,0,.2)}
     }
@@ -420,8 +420,8 @@
       background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.45) 100%)}
     .cc-present-controls{position:fixed;bottom:1.4rem;left:50%;transform:translateX(-50%);
       pointer-events:auto;z-index:62;display:flex;align-items:center;gap:.55rem;
-      background:rgba(15,23,42,.85);color:#fff;padding:.5rem .85rem;border-radius:10px;
-      border:1px solid rgba(148,163,184,.25);backdrop-filter:blur(8px);font-size:0.78rem;
+      background:rgba(15,23,42,.92);color:#fff;padding:.5rem .85rem;border-radius:4px;
+      border:1px solid rgba(148,163,184,.2);font-size:0.78rem;
       opacity:.4;transition:opacity .25s ease}
     .cc-present-controls:hover,body[data-presenting="1"]:hover .cc-present-controls{opacity:1}
   </style>
@@ -2168,6 +2168,7 @@ function startApp() {
               geoCache[geoExpId] = geo;
             } else { _geoReused++; }
             var c = placed.color;
+            if (c && c.w < 0.05) continue;
             var col = c ? new THREE.Color(c.x, c.y, c.z) : new THREE.Color(fallbackColor);
             var matKey = (col.r).toFixed(3)+','+(col.g).toFixed(3)+','+(col.b).toFixed(3)+','+(c?c.w:1).toFixed(3);
             var mat = matCache[matKey];
@@ -2606,6 +2607,7 @@ function startApp() {
               }
               var _tM = performance.now();
               var c = gData.color;
+              if (c && c.a < 0.05) continue;
               var col = c ? new THREE.Color(c.r, c.g, c.b) : new THREE.Color(fallbackColor);
               var matKey = col.r.toFixed(3)+','+col.g.toFixed(3)+','+col.b.toFixed(3)+','+(c?c.a:1).toFixed(3);
               var mat = matCache[matKey];
@@ -3052,26 +3054,12 @@ function startApp() {
     grpB.forEach(function(m){ inB[m.id]=true; });
 
     var exTypes = rules.excludeTypes&&rules.excludeTypes.length ? rules.excludeTypes : null;
-    // Glass elements (windows, glazed plates, curtain wall panels) are always
-    // excluded from collision: they are decorative/visual elements that intersect
-    // their host frame by design and produce noise clashes by the thousand.
-    // Detected by IFC type or by material name containing glass/glazing.
-    var GLASS_TYPES = {IfcWindow:1, IfcCurtainWall:1};
-    var GLASS_MAT_RE = /\b(glass|glas|glazing|glaz)\b/i;
-    function _isGlassEl(el){
-      if (!el || !el.props) return false;
-      if (GLASS_TYPES[el.props.ifcType]) return true;
-      var m = el.props.material||'';
-      if (m && GLASS_MAT_RE.test(String(m))) return true;
-      return false;
-    }
     var seenModels = {}, items = [];
     grpA.concat(grpB).forEach(function(m) {
       if (seenModels[m.id]) return; seenModels[m.id]=true;
       (m.elements||[]).forEach(function(el) {
         if (!el.box) return;
         if (exTypes && el.props && exTypes.indexOf(el.props.ifcType)!==-1) return;
-        if (rules.excludeGlass !== false && _isGlassEl(el)) return;
         items.push({el:el, m:m});
       });
     });
@@ -7931,8 +7919,7 @@ function startApp() {
       ${s.switchingProject && html`<div style=${{
         position:'absolute',inset:0,zIndex:50,
         background:'rgba(15,23,42,.82)',
-        display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'1rem',
-        backdropFilter:'blur(3px)'
+        display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'1rem'
       }}>
         <div style=${{
           width:48,height:48,borderRadius:'50%',
@@ -7986,18 +7973,18 @@ function startApp() {
       </div>`}
       ${s.clashes.length>0 && html`<div class="cc-overlay-top" style=${{position:'absolute',top:'var(--space-3)',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'var(--space-1)',pointerEvents:'auto'}}>
         <button class="cc-btn-press" onClick=${function(){if(_fitToClashes)_fitToClashes(s.clashes);}}
-          style=${{...S_BTN,background:'var(--overlay-bg-strong)',color:'var(--color-info-fg)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'}}>
+          style=${{...S_BTN,background:'var(--overlay-bg-strong)',color:'var(--color-info-fg)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',border:'1px solid var(--border)'}}>
           Fit All Clashes
         </button>
         <button class="cc-btn-press" onClick=${function(){d({t:A.UPD_PREFS,u:{showMarkers:!s.prefs.showMarkers}})}}
-          style=${{...S_BTN,background:s.prefs.showMarkers?'var(--accent)':'var(--overlay-bg-strong)',color:s.prefs.showMarkers?'#fff':'var(--text-muted)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'}}>
+          style=${{...S_BTN,background:s.prefs.showMarkers?'var(--accent)':'var(--overlay-bg-strong)',color:s.prefs.showMarkers?'#fff':'var(--text-muted)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',border:'1px solid var(--border)'}}>
           ${s.prefs.showMarkers?'Markers On':'Markers Off'}
         </button>
       </div>`}
       ${s.models.length>0 && html`<div style=${{position:'absolute',top:'var(--space-3)',right:'50%',transform:'translateX(50%)',marginRight:'-45%',pointerEvents:'auto'}}>
         <div style=${{display:'flex',alignItems:'center',gap:'var(--space-1)'}}>
           <button class="cc-btn-press" onClick=${function(){setFinderOpen(!finderOpen);if(finderOpen){doFind('');setFindQuery('');}}}
-            style=${{...S_BTN,background:finderOpen?'var(--accent)':'var(--overlay-bg-strong)',color:finderOpen?'#fff':'var(--text-secondary)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'}}>
+            style=${{...S_BTN,background:finderOpen?'var(--accent)':'var(--overlay-bg-strong)',color:finderOpen?'#fff':'var(--text-secondary)',border:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-3)',border:'1px solid var(--border)'}}>
             Find Elements
           </button>
         </div>
@@ -8419,43 +8406,37 @@ function startApp() {
     var triColor = light ? '#404040' : '#a0a0a0';
     var adj = activeFace >= 0 ? FACE_ADJACENTS[activeFace] : null;
 
+    var nav = adj || FACE_ADJACENTS[0]; // always show arrows; default to FRONT-face compass when no face hovered
     return html`<div class="cc-viewcube-wrap" style=${{position:'absolute',top:'3rem',right:'1rem',pointerEvents:'auto',width:98,height:98,overflow:'visible'}}>
-      <!-- Revit-style ground ring (subtle compass under the cube) -->
-      <div aria-hidden="true" style=${{position:'absolute',left:4,top:60,width:90,height:18,
-        borderRadius:'50%',border:'1px solid '+(light?'rgba(0,0,0,.18)':'rgba(255,255,255,.18)'),
-        boxShadow:'inset 0 1px 0 '+(light?'rgba(255,255,255,.5)':'rgba(255,255,255,.06)'),
-        pointerEvents:'none'}}></div>
       <canvas ref=${canvasRef} width="84" height="84" style=${{cursor:'pointer',position:'absolute',top:7,left:7,width:84,height:84}} />
-      ${adj && html`
-        <!-- Left arrow: triangle pointing left, hugs the cube's left edge -->
-        <button aria-label="Left view" onClick=${function(){flyToDir(adj.left);}}
-          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-          onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
-          style=${{...triBase,left:-2,top:42,
-            borderTop:'5px solid transparent',borderBottom:'5px solid transparent',
-            borderRight:'7px solid '+triColor}}></button>
-        <!-- Right arrow -->
-        <button aria-label="Right view" onClick=${function(){flyToDir(adj.right);}}
-          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-          onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
-          style=${{...triBase,right:-2,top:42,
-            borderTop:'5px solid transparent',borderBottom:'5px solid transparent',
-            borderLeft:'7px solid '+triColor}}></button>
-        <!-- Top arrow -->
-        <button aria-label="Top view" onClick=${function(){flyToDir(adj.up);}}
-          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-          onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
-          style=${{...triBase,left:42,top:-2,
-            borderLeft:'5px solid transparent',borderRight:'5px solid transparent',
-            borderBottom:'7px solid '+triColor}}></button>
-        <!-- Bottom arrow -->
-        <button aria-label="Bottom view" onClick=${function(){flyToDir(adj.down);}}
-          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-          onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
-          style=${{...triBase,left:42,bottom:-2,
-            borderLeft:'5px solid transparent',borderRight:'5px solid transparent',
-            borderTop:'7px solid '+triColor}}></button>
-      `}
+      <!-- Left arrow -->
+      <button aria-label="Left view" onClick=${function(){flyToDir(nav.left);}}
+        onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
+        onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
+        style=${{...triBase,left:-2,top:42,
+          borderTop:'5px solid transparent',borderBottom:'5px solid transparent',
+          borderRight:'7px solid '+triColor}}></button>
+      <!-- Right arrow -->
+      <button aria-label="Right view" onClick=${function(){flyToDir(nav.right);}}
+        onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
+        onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
+        style=${{...triBase,right:-2,top:42,
+          borderTop:'5px solid transparent',borderBottom:'5px solid transparent',
+          borderLeft:'7px solid '+triColor}}></button>
+      <!-- Top arrow -->
+      <button aria-label="Top view" onClick=${function(){flyToDir(nav.up);}}
+        onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
+        onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
+        style=${{...triBase,left:42,top:-2,
+          borderLeft:'5px solid transparent',borderRight:'5px solid transparent',
+          borderBottom:'7px solid '+triColor}}></button>
+      <!-- Bottom arrow -->
+      <button aria-label="Bottom view" onClick=${function(){flyToDir(nav.down);}}
+        onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
+        onMouseLeave=${function(e){e.currentTarget.style.opacity=.55;}}
+        style=${{...triBase,left:42,bottom:-2,
+          borderLeft:'5px solid transparent',borderRight:'5px solid transparent',
+          borderTop:'7px solid '+triColor}}></button>
     </div>`;
   }
 
@@ -8504,7 +8485,7 @@ function startApp() {
   var S_PANELR  = {background:'var(--bg-primary)',borderLeft:'1px solid var(--border-subtle)',display:'flex',flexDirection:'column',flexShrink:0};
   var S_BTN     = {border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:'var(--text-base)',borderRadius:'var(--radius-sm)',padding:'var(--space-2) var(--space-4)',lineHeight:'var(--leading-tight)',transition:'background var(--duration-fast) var(--ease-standard),color var(--duration-fast) var(--ease-standard),border-color var(--duration-fast) var(--ease-standard),transform var(--duration-fast) var(--ease-standard)'};
   var S_INPUT   = {width:'100%',background:'var(--bg-tertiary)',color:'var(--text-primary)',fontSize:'var(--text-md)',borderRadius:'var(--radius-md)',padding:'var(--space-2) var(--space-3)',border:'1px solid var(--border)',outline:'none',transition:'border-color var(--duration-fast) var(--ease-standard),box-shadow var(--duration-fast) var(--ease-standard)'};
-  var S_BACKDROP = {position:'fixed',inset:0,background:'var(--modal-bg)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,overflow:'hidden',padding:'var(--space-6) 0',backdropFilter:'blur(2px)',WebkitBackdropFilter:'blur(2px)'};
+  var S_BACKDROP = {position:'fixed',inset:0,background:'var(--modal-bg)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,overflow:'hidden',padding:'var(--space-6) 0'};
   var S_MODAL_CARD = {background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-lg)',maxWidth:'95vw',maxHeight:'85vh',overflowY:'auto',WebkitOverflowScrolling:'touch',boxShadow:'var(--shadow-lg)',flexShrink:0};
   var S_MODAL_HEADER = {display:'flex',alignItems:'center',justifyContent:'space-between',padding:'var(--space-4) var(--space-5)',borderBottom:'1px solid var(--border-subtle)',gap:'var(--space-3)'};
   var S_MODAL_TITLE = {fontFamily:'var(--font-display)',fontWeight:'var(--weight-bold)',fontSize:'var(--text-lg)',color:'var(--text-primary)',lineHeight:'var(--leading-tight)',letterSpacing:'-.01em'};
@@ -10062,191 +10043,130 @@ function startApp() {
       window.addEventListener('mousemove',onMove);
       window.addEventListener('mouseup',onUp);
     }
-    return html`<div style=${{display:'flex',flexDirection:'column',flex:1,overflow:'hidden'}} onDrop=${onDrop} onDragOver=${onDragOver} onDragEnter=${onDragEnter} onDragLeave=${onDragLeave}>
-      <div style=${{padding:'.85rem .9rem',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>
-        <div style=${{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'.55rem'}}>
-          <span style=${{fontSize:'.78rem',fontWeight:500,color:'var(--text-secondary)',letterSpacing:'-.005em'}}>Loaded models</span>
-          <span style=${{fontSize:'.7rem',fontFamily:'var(--font-mono)',color:'var(--text-muted)'}}>${s.models.length}</span>
-        </div>
-        <input ref=${fileRef} type="file" accept=".ifc,.glb,.ifcmeta,.ifcprops" multiple style=${{display:'none'}} onChange=${onFiles} />
-        <input ref=${file2dRef} type="file" accept=".dxf,.pdf,.dwg,.nwd,.nwc,.nwf" multiple style=${{display:'none'}} onChange=${onFiles} />
-        <button class="cc-tip cc-tip-left" data-tip=${dragging?'Drop to load':'Add IFC / GLB / DXF / PDF'} title=${'Load IFC, GLB, DXF, or PDF.\n\nFor fast Revit import: drop IFC + GLB + .ifcmeta together.\n• GLB = pre-tessellated geometry (fast)\n• IFC = properties, storeys, spatial hierarchy\n• .ifcmeta = Revit data (phase, workset, design option, layers, constraints)\n\nCreate bundles with Ifc2Ifc:\ngithub.com/thomhoffer-arch/Ifc2Ifc'} onClick=${function(){setErr('');fileRef.current&&fileRef.current.click()}} disabled=${loading}
-          style=${{width:'100%',padding:'.55rem .75rem',background:dragging?'var(--accent-bg)':'var(--bg-secondary)',color:dragging?'var(--accent)':'var(--text-secondary)',border:dragging?'1px solid var(--accent)':'1px solid var(--border)',borderRadius:'var(--radius-sm)',display:'flex',alignItems:'center',justifyContent:'center',gap:'.45rem',transition:'all .15s',cursor:loading?'wait':'pointer',fontSize:'.78rem',fontFamily:'inherit'}}>
-          ${loading?html`<span class="spin">⟳</span>`:html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>`}
-          <span>${loading?'Loading…':'Add model'}</span>
+    return html`<div style=${{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',minHeight:0}}
+      onDrop=${onDrop} onDragOver=${onDragOver} onDragEnter=${onDragEnter} onDragLeave=${onDragLeave}>
+
+      <!-- Header: count + add button -->
+      <div style=${{padding:'.7rem .85rem .55rem',borderBottom:'1px solid var(--hairline)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'space-between',gap:'.5rem'}}>
+        <span style=${{fontSize:'.75rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>
+          Models${s.models.length>0?html` <span style=${{fontWeight:400,color:'var(--text-faint)',fontFamily:'var(--font-mono)'}}>${s.models.length}</span>`:''}
+        </span>
+        <button onClick=${function(){fileRef.current&&fileRef.current.click()}} disabled=${loading}
+          style=${{display:'inline-flex',alignItems:'center',gap:'.3rem',padding:'.25rem .55rem',
+            background:'var(--accent)',color:'#fff',border:'none',borderRadius:'var(--radius-xs)',
+            cursor:loading?'wait':'pointer',fontSize:'.72rem',fontFamily:'var(--font-body)',fontWeight:500}}>
+          ${loading
+            ? html`<svg class="spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>`
+            : html`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`}
+          ${loading?loadMsg||'Loading…':'Add'}
         </button>
-        <div style=${{marginTop:'.5rem',fontSize:'.7rem',color:'var(--text-muted)',lineHeight:1.5}}>
-          For faster loading, use${' '}<a href="https://github.com/thomhoffer-arch/Ifc2Ifc" target="_blank" rel="noopener" style=${{color:'var(--accent)',textDecoration:'underline',textUnderlineOffset:2}}>Ifc2Ifc</a>${' '}to convert IFC → GLB + sidecar.
-        </div>
-        ${err && html`<div style=${{marginTop:'.5rem',padding:'.5rem .65rem',background:'var(--color-danger-bg)',border:'1px solid var(--color-danger-border)',borderRadius:'var(--radius-sm)',fontSize:'.72rem',color:'var(--color-danger-fg)',whiteSpace:'pre-line',lineHeight:1.4}}>${err}</div>`}
       </div>
-      <div style=${{flex:splitPct,overflowY:'auto',padding:'.4rem',display:'flex',flexDirection:'column',gap:'.25rem',minHeight:0}}>
-        ${s.models.length===0 && html`<div style=${{textAlign:'center',color:'var(--text-faint)',fontSize:'0.86rem',padding:'2rem 0'}}><div style=${{marginBottom:'.3rem',display:'flex',justifyContent:'center'}}><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg></div>No models loaded</div>`}
+
+      <input ref=${fileRef} type="file" accept=".ifc,.glb,.ifcmeta,.ifcprops" multiple style=${{display:'none'}} onChange=${onFiles} />
+      <input ref=${file2dRef} type="file" accept=".dxf,.pdf,.dwg,.nwd,.nwc,.nwf" multiple style=${{display:'none'}} onChange=${onFiles} />
+
+      <!-- Error banner -->
+      ${err && html`<div style=${{padding:'.4rem .75rem',background:'var(--color-danger-bg)',borderBottom:'1px solid var(--color-danger-border)',fontSize:'.7rem',color:'var(--color-danger-fg)',whiteSpace:'pre-line',lineHeight:1.4}}>${err}</div>`}
+
+      <!-- Model list + levels in one scrollable column -->
+      <div style=${{flex:1,overflowY:'auto',minHeight:0,padding:'.45rem .5rem',display:'flex',flexDirection:'column',gap:'.2rem'}}>
+
+        <!-- Empty state -->
+        ${s.models.length===0 && html`<div style=${{textAlign:'center',padding:'2.5rem 1rem',color:'var(--text-faint)'}}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style=${{margin:'0 auto .75rem',display:'block',opacity:.5}}>
+            <path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          </svg>
+          <div style=${{fontSize:'.8rem',marginBottom:'.35rem'}}>No models loaded</div>
+          <div style=${{fontSize:'.7rem',lineHeight:1.5}}>Drop an IFC, GLB, PDF or DXF file here, or click Add above.</div>
+        </div>`}
+
+        <!-- Model cards -->
         ${s.models.map(function(m){return html`<${ModelCard} key=${m.id} m=${m} d=${d} s=${s} />`})}
-        ${s.underlays.length > 0 && html`<div style=${{marginTop:'.4rem',borderTop:'1px solid var(--border-subtle)',paddingTop:'.4rem'}}>
-          <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}}>
-            <span style=${{fontSize:'0.69rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>2D Underlays</span>
+
+        <!-- 2D underlays -->
+        ${s.underlays.length > 0 && html`<div style=${{marginTop:'.35rem',borderTop:'1px solid var(--hairline)',paddingTop:'.35rem'}}>
+          <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem',padding:'0 .2rem'}}>
+            <span style=${{fontSize:'.68rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>2D Underlays</span>
             <button onClick=${function(){d({t:A.UNDERLAY_MODE,v:'view2d'})}}
-              style=${{...S_BTN,fontSize:'0.63rem',padding:'.1rem .3rem',background:'var(--accent)',color:'#fff'}}>View 2D</button>
+              style=${{fontSize:'.68rem',padding:'.15rem .4rem',background:'none',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',cursor:'pointer',color:'var(--text-secondary)',fontFamily:'var(--font-body)'}}>View 2D</button>
           </div>
           ${s.underlays.map(function(ul){
-            return html`<div key=${ul.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.25rem .3rem',background:s.activeUnderlay===ul.id?'var(--bg-tertiary)':'transparent',borderRadius:4,cursor:'pointer'}}
+            return html`<div key=${ul.id}
+              style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.22rem .35rem',borderRadius:'var(--radius-xs)',cursor:'pointer',background:s.activeUnderlay===ul.id?'var(--accent-bg)':'transparent'}}
               onClick=${function(){d({t:A.SET_UNDERLAY,id:ul.id})}}>
-              <span style=${{width:8,height:8,borderRadius:2,background:ul.type==='dxf'?'#22c55e':'#ef4444',flexShrink:0}}></span>
-              <span style=${{fontSize:'0.69rem',color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${ul.name}</span>
-              <span style=${{fontSize:'0.57rem',color:'var(--text-faint)',textTransform:'uppercase'}}>${ul.type}</span>
+              <span style=${{width:6,height:6,borderRadius:1,background:ul.type==='dxf'?'var(--color-success)':'var(--color-danger)',flexShrink:0}}></span>
+              <span style=${{fontSize:'.72rem',color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${ul.name}</span>
+              <span style=${{fontSize:'.63rem',color:'var(--text-faint)',textTransform:'uppercase',fontFamily:'var(--font-mono)'}}>${ul.type}</span>
               <button onClick=${function(e){e.stopPropagation();d({t:A.DEL_UNDERLAY,id:ul.id})}}
-                style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'0.69rem'}}>✕</button>
+                style=${{background:'none',border:'none',cursor:'pointer',color:'var(--text-faint)',lineHeight:1,padding:'0 2px',fontSize:'.72rem'}}>✕</button>
             </div>`;
           })}
         </div>`}
-      </div>
-      <div onMouseDown=${onSplitDown}
-        style=${{height:6,flexShrink:0,cursor:'row-resize',background:'var(--bg-secondary)',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-        <span style=${{width:20,height:2,background:'var(--text-faint)',borderRadius:1}}></span>
-      </div>
-      ${function(){
-        var allStoreys = {};
-        var elevMap = {}; // storeyName -> elevation
-        s.models.filter(function(m){return m.visible!==false}).forEach(function(m){
-          (m.storeys||[]).forEach(function(st){
-            if(!allStoreys[st]) allStoreys[st]={models:[]};
-            allStoreys[st].models.push(m.id);
-          });
-          (m.storeyData||[]).forEach(function(sd){
-            if(sd.name && sd.elevation!=null) elevMap[sd.name] = sd.elevation;
-          });
-        });
-        var stKeys = Object.keys(allStoreys).sort(function(a,b){return (elevMap[a]||0)-(elevMap[b]||0)});
-        if(stKeys.length===0) return null;
-        var activePlan = s.floorPlan;
-        return html`<div style=${{padding:'.5rem .75rem',flex:100-splitPct,overflowY:'auto',minHeight:0}}>
-          <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem'}}>
-            <span style=${{fontSize:'0.75rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Levels</span>
-            <div style=${{display:'flex',gap:'.2rem'}}>
-              ${activePlan && html`<button onClick=${function(){d({t:A.FLOOR_PLAN,v:null})}}
-                style=${{...S_BTN,fontSize:'0.69rem',padding:'.1rem .3rem',background:'var(--accent)',color:'#fff'}}>Exit Plan</button>`}
-              <button onClick=${function(){s.models.forEach(function(m){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:(m.storeys||[]).concat(['']),hide:false})})}}
-                style=${{...S_BTN,fontSize:'0.69rem',padding:'.1rem .3rem',background:'var(--bg-primary)',color:'var(--text-secondary)'}}>All on</button>
-              <button onClick=${function(){s.models.forEach(function(m){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:(m.storeys||[]).concat(['']),hide:true})})}}
-                style=${{...S_BTN,fontSize:'0.69rem',padding:'.1rem .3rem',background:'var(--bg-primary)',color:'var(--text-secondary)'}}>All off</button>
-            </div>
-          </div>
-          ${stKeys.map(function(st){
-            var elev = elevMap[st];
-            var hasElev = elev!=null;
-            var isPlanActive = activePlan && activePlan.storeyName===st;
-            var isSectionActive = s.sectionAxis==='y' && s.sectionStorey===st;
-            var isHighlighted = s._highlightedStorey===st;
-            function _storeyEids(){
-              var ids=[];
-              s.models.forEach(function(m){
-                (m.elements||[]).forEach(function(el){
-                  if(el.props&&el.props.storey===st) ids.push(el.expressId);
-                });
-              });
-              return ids;
-            }
-            return html`<div key=${st}
-              onClick=${function(e){
-                e.preventDefault();
-                if(isHighlighted){
-                  if(_unghostAll) _unghostAll();
-                  d({t:A.SET_HIGHLIGHTED_STOREY,v:null});
-                } else {
-                  var ids=_storeyEids();
-                  if(ids.length && _ghostOthers) _ghostOthers(ids);
-                  d({t:A.SET_HIGHLIGHTED_STOREY,v:st});
-                }
-              }}
-              onDblClick=${function(e){
-                e.preventDefault(); e.stopPropagation();
-                var ids=_storeyEids();
-                if(ids.length){
-                  if(_ghostOthers) _ghostOthers(ids);
-                  if(_flyToElements) _flyToElements(ids);
-                }
-                d({t:A.SET_HIGHLIGHTED_STOREY,v:st});
-              }}
-              style=${{display:'flex',alignItems:'center',gap:'.25rem',padding:'.2rem .3rem',cursor:'pointer',borderRadius:4,background:isPlanActive?'#2d1a4e':isHighlighted?'var(--bg-secondary)':'transparent',transition:'background .15s'}}>
-              <span style=${{fontSize:'0.69rem',color:isPlanActive?'#c084fc':isHighlighted?'#38bdf8':'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:isHighlighted||isPlanActive?600:400}} title=${st+(hasElev?' ('+_ccFormatElev(elev)+')':'')}>${st}</span>
-              ${hasElev && html`<span style=${{fontSize:'0.63rem',color:isPlanActive?'#a78bfa':'var(--text-faint)',flexShrink:0}}>${_ccFormatElev(elev)}</span>`}
-              ${hasElev && html`<button
-                onClick=${function(e){
-                  e.preventDefault();e.stopPropagation();
-                  if(isSectionActive){d({t:A.SECTION,axis:null});}
-                  else{
-                    var _us=typeof _ccDetectUnitScale==='function'?_ccDetectUnitScale(s.models):1;
-                    var _gf=typeof _ccStoreyToGeoFactor==='function'?_ccStoreyToGeoFactor(s.models):1;
-                    var _cutGeo=(elev+0.6*_us)*_gf;
-                    var pos=window._ccElevToSectionPos?window._ccElevToSectionPos(_cutGeo):0.5;
-                    d({t:A.SECTION,axis:'y',pos:pos,storeyName:st});
-                  }
-                }}
-                style=${{...S_BTN,fontSize:'0.57rem',padding:'.05rem .22rem',background:isSectionActive?'var(--accent)':'var(--bg-secondary)',color:isSectionActive?'#fff':'var(--text-muted)',flexShrink:0,lineHeight:1.4}}>
-                ${isSectionActive?'✕':'Show'}
-              </button>`}
-            </div>`;
-          })}
-          ${function(){
-            var noLevelIds=[];
-            s.models.forEach(function(m){
-              (m.elements||[]).forEach(function(el){
-                if(!el.props||!el.props.storey) noLevelIds.push(el.expressId);
-              });
+
+        <!-- Levels -->
+        ${function(){
+          var allStoreys = {}, elevMap = {};
+          s.models.filter(function(m){return m.visible!==false}).forEach(function(m){
+            (m.storeys||[]).forEach(function(st){
+              if(!allStoreys[st]) allStoreys[st]={models:[]};
+              allStoreys[st].models.push(m.id);
             });
-            if(!noLevelIds.length) return null;
-            var isHighlighted = s._highlightedStorey==='';
-            var isHidden = s.models.some(function(m){return !!(m.hiddenStoreys&&m.hiddenStoreys['']);});
-            return html`<div
-              onClick=${function(e){
-                e.preventDefault();
-                if(isHighlighted){
-                  if(_unghostAll) _unghostAll();
-                  d({t:A.SET_HIGHLIGHTED_STOREY,v:null});
-                } else {
-                  if(_ghostOthers) _ghostOthers(noLevelIds);
-                  d({t:A.SET_HIGHLIGHTED_STOREY,v:''});
-                }
-              }}
-              style=${{display:'flex',alignItems:'center',gap:'.25rem',padding:'.2rem .3rem',cursor:'pointer',borderRadius:4,background:isHighlighted?'var(--bg-secondary)':'transparent',transition:'background .15s',marginTop:'.15rem',borderTop:'1px solid var(--border-subtle)'}}>
-              <span style=${{fontSize:'0.69rem',color:isHighlighted?'#38bdf8':isHidden?'var(--text-faint)':'var(--text-muted)',flex:1,fontStyle:'italic',fontWeight:isHighlighted?600:400}}>No level assigned</span>
-              <span style=${{fontSize:'0.63rem',color:'var(--text-faint)',flexShrink:0}}>${noLevelIds.length}</span>
-            </div>`;
-          }()}
-          ${activePlan && html`<div style=${{marginTop:'.3rem',padding:'.3rem',background:'#1e1338',border:'1px solid #3b0764',borderRadius:6}}>
-            <div style=${{fontSize:'0.63rem',color:'#c084fc',fontWeight:600,marginBottom:'.2rem'}}>3D Section: ${activePlan.storeyName}</div>
-            <div style=${{fontSize:'0.57rem',color:'var(--text-muted)',marginBottom:'.2rem'}}>Cut at ${_ccFormatElev(activePlan.elevation+(activePlan.cutHeight||1.2))}</div>
-            <div style=${{display:'flex',alignItems:'center',gap:'.2rem',marginBottom:'.15rem'}}>
-              <span style=${{fontSize:'0.57rem',color:'var(--text-muted)'}}>Cut height:</span>
-              <input type="range" min="0.3" max="4" step="0.1" value=${activePlan.cutHeight||1.2}
-                onInput=${function(e){d({t:A.FLOOR_PLAN,v:Object.assign({},activePlan,{cutHeight:parseFloat(e.target.value)})});}}
-                style=${{flex:1,height:10}} />
-              <span style=${{fontSize:'0.57rem',color:'#a78bfa',minWidth:25}}>${(activePlan.cutHeight||1.2).toFixed(1)}m</span>
+            (m.storeyData||[]).forEach(function(sd){
+              if(sd.name && sd.elevation!=null) elevMap[sd.name] = sd.elevation;
+            });
+          });
+          var stKeys = Object.keys(allStoreys).sort(function(a,b){return (elevMap[a]||0)-(elevMap[b]||0)});
+          if(!stKeys.length) return null;
+          return html`<div style=${{marginTop:'.35rem',borderTop:'1px solid var(--hairline)',paddingTop:'.35rem'}}>
+            <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'.3rem',padding:'0 .2rem'}}>
+              <span style=${{fontSize:'.68rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em'}}>Levels</span>
+              <div style=${{display:'flex',gap:'.2rem'}}>
+                <button onClick=${function(){s.models.forEach(function(m){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:(m.storeys||[]).concat(['']),hide:false})})}}
+                  style=${{fontSize:'.63rem',padding:'.1rem .3rem',background:'none',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',cursor:'pointer',color:'var(--text-muted)',fontFamily:'var(--font-body)'}}>All on</button>
+                <button onClick=${function(){s.models.forEach(function(m){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:(m.storeys||[]).concat(['']),hide:true})})}}
+                  style=${{fontSize:'.63rem',padding:'.1rem .3rem',background:'none',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',cursor:'pointer',color:'var(--text-muted)',fontFamily:'var(--font-body)'}}>All off</button>
+              </div>
             </div>
-            <div style=${{fontSize:'0.52rem',color:'var(--text-faint)'}}>Ctrl + scroll to move cut up/down</div>
-          </div>`}
-        </div>`;
-      }()}
-      <div style=${{padding:'.75rem',borderTop:'1px solid var(--border-subtle)',flexShrink:0}}>
-        <span style=${{fontSize:'0.8rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.05em',display:'block',marginBottom:'.4rem'}}>Section / Clipping</span>
-        <div style=${{display:'flex',gap:'.2rem',marginBottom:'.3rem'}}>
-          ${[{axis:'x',label:'X'},{axis:'z',label:'Y'},{axis:'y',label:'Z'}].map(function(item){return html`<button key=${item.axis} onClick=${function(){d({t:A.SECTION_BOX,v:null});d({t:A.SECTION,axis:s.sectionAxis===item.axis?null:item.axis});}}
-            style=${{...S_BTN,flex:1,padding:'.25rem',background:s.sectionAxis===item.axis?'#2563eb':'var(--bg-secondary)',color:s.sectionAxis===item.axis?'#fff':'var(--text-muted)'}}>${item.label}</button>`})}
-          <button onClick=${function(){d({t:A.SECTION,axis:null});d({t:A.SECTION_BOX,v:null});}}
-            style=${{...S_BTN,flex:1,padding:'.25rem',background:!s.sectionAxis&&!s.sectionCustom&&(!s.sectionBox||!s.sectionBox.enabled)?'#2563eb':'var(--bg-secondary)',color:!s.sectionAxis&&!s.sectionCustom&&(!s.sectionBox||!s.sectionBox.enabled)?'#fff':'var(--text-muted)'}}>Off</button>
-        </div>
-        ${s.sectionCustom && html`<div style=${{marginTop:'.3rem',fontSize:'0.69rem',color:'var(--accent-subtle)',background:'var(--accent-bg)',padding:'.2rem .4rem',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <span>Surface section active</span>
-          <span style=${{fontSize:'0.63rem',color:'var(--text-muted)'}}>Right-click to set</span>
-        </div>`}
-        ${(s.sectionAxis||s.sectionCustom) && html`<div style=${{marginTop:'.3rem'}}>
-          <input type="range" min="0" max="1" step="0.005" value=${s.sectionPos}
-            onInput=${function(e){var pos=parseFloat(e.target.value);if(s.sectionAxis)d({t:A.SECTION,axis:s.sectionAxis,pos:pos});else if(s.sectionCustom)d({t:A.SECTION_CUSTOM,v:s.sectionCustom,pos:pos});}}
-            style=${{width:'100%'}} />
-          <span style=${{fontSize:'0.69rem',color:'var(--text-faint)'}}>${Math.round(s.sectionPos*100)}%</span>
-        </div>`}
-        <${SectionBoxUI} s=${s} d=${d} />
+            ${stKeys.map(function(st){
+              var elev = elevMap[st];
+              var hasElev = elev != null;
+              var isHidden = s.models.some(function(m){return !!(m.hiddenStoreys&&m.hiddenStoreys[st]);});
+              var isPlanActive = s.floorPlan && s.floorPlan.storeyName===st;
+              return html`<div key=${st}
+                style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.18rem .35rem',borderRadius:'var(--radius-xs)',
+                  background:isPlanActive?'var(--accent-bg)':'transparent',
+                  borderLeft:isPlanActive?'2px solid var(--accent)':'2px solid transparent',
+                  opacity:isHidden?0.45:1,transition:'opacity .1s,background .1s'}}>
+                <button onClick=${function(){
+                  var hiding=!isHidden;
+                  s.models.forEach(function(m){if((m.storeys||[]).indexOf(st)!==-1){d({t:A.TOGGLE_ALL_STOREYS,id:m.id,storeys:[st],hide:hiding});}});
+                }}
+                  title=${isHidden?'Show level':'Hide level'}
+                  style=${{background:'none',border:'none',cursor:'pointer',color:isHidden?'var(--text-faint)':'var(--text-secondary)',padding:0,lineHeight:0,flexShrink:0}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    ${isHidden
+                      ? html`<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>`
+                      : html`<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`}
+                  </svg>
+                </button>
+                <span style=${{fontSize:'.72rem',color:isPlanActive?'var(--accent)':'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:isPlanActive?500:400}} title=${st}>${st}</span>
+                ${hasElev && html`<span style=${{fontSize:'.62rem',color:'var(--text-faint)',flexShrink:0,fontFamily:'var(--font-mono)'}}>${_ccFormatElev(elev)}</span>`}
+                <button onClick=${function(e){
+                  e.stopPropagation();
+                  if(s.floorPlan&&s.floorPlan.storeyName===st){d({t:A.FLOOR_PLAN,v:null});}
+                  else if(hasElev){d({t:A.FLOOR_PLAN,v:{storeyId:st,storeyName:st,elevation:elev||0,cutHeight:1.2}});}
+                }}
+                  title=${isPlanActive?'Exit plan view':'Open plan view'}
+                  style=${{background:'none',border:'none',cursor:'pointer',color:isPlanActive?'var(--accent)':'var(--text-faint)',padding:0,lineHeight:0,flexShrink:0}}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                    <rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 10h16"/><path d="M10 4v16"/>
+                  </svg>
+                </button>
+              </div>`;
+            })}
+          </div>`;
+        }()}
+
       </div>
     </div>`;
   }
@@ -10335,7 +10255,7 @@ function startApp() {
         <span style=${{color:'var(--text-primary)',fontSize:'0.86rem',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${m.name}>${m.name}</span>
         ${m._version>1 && html`<span style=${{fontSize:'0.57rem',color:'var(--accent)',background:'var(--accent-bg)',padding:'.05rem .25rem',borderRadius:3,flexShrink:0,fontWeight:600}}>v${m._version}</span>`}
         ${m._stub && html`<span style=${{fontSize:'0.63rem',color:'#f59e0b',background:'var(--pill-amber-bg)',padding:'.05rem .3rem',borderRadius:4,flexShrink:0}}>stub</span>`}
-        ${m.stats && m.stats.loadType && html`<span style=${{fontSize:'0.57rem',padding:'1px 4px',borderRadius:3,background:'rgba(124,58,237,.12)',color:'var(--accent)',fontWeight:600,flexShrink:0}}>${m.stats.loadType}</span>`}
+        ${m.stats && m.stats.loadType && html`<span style=${{fontSize:'0.57rem',padding:'1px 4px',borderRadius:3,background:'var(--accent-bg)',color:'var(--accent)',fontWeight:600,flexShrink:0}}>${m.stats.loadType}</span>`}
         ${m.stats && m.stats.loadTime && html`<span style=${{fontSize:'0.63rem',color:'var(--text-faint)',flexShrink:0}}>${(m.stats.loadTime/1000).toFixed(1)}s</span>`}
         <button onClick=${function(){setOpen(!open)}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'0.69rem'}}>${open?'▲':'▼'}</button>
         <button onClick=${function(){if(!confirm('Remove "'+m.name+'" from this project?'))return;d({t:A.DEL_MODEL,id:m.id});idbDeleteFile(m.id);idbDeleteGeoCache(m.id);}} style=${{...S_BTN,padding:'0 2px',background:'none',color:'var(--text-faint)',fontSize:'0.69rem'}}>✕</button>
@@ -20370,14 +20290,13 @@ function startApp() {
     var tabs = w === 'review'
       ? [
           {id:'dataquality', svg:SVG_DATAQUALITY, label:'Data Quality'},
-          {id:'standards',   svg:SVG_STANDARDS,   label:'Standards / IDS'},
           {id:'addons',      svg:SVG_INTEG,       label:'Integrations'}
         ]
       : [
-          {id:'clashes',  svg:SVG_CLASHES, label:'Conflicts', badge:clashN},
-          {id:'issues',   svg:SVG_ISSUES,  label:'Issues',    badge:issueN},
-          {id:'navigator',svg:SVG_EXPLORE, label:'Navigator'},
-          {id:'standards',svg:SVG_STANDARDS,label:'Rules'}
+          {id:'clashes',  svg:SVG_CLASHES,   label:'Conflicts', badge:clashN},
+          {id:'issues',   svg:SVG_ISSUES,    label:'Issues',    badge:issueN},
+          {id:'standards',svg:SVG_STANDARDS, label:'Clash Rules'},
+          {id:'navigator',svg:SVG_EXPLORE,   label:'Navigator'}
         ];
 
     return html`<div class="cc-left-rail" style=${{
@@ -20617,7 +20536,7 @@ function startApp() {
       window.open('https://github.com/clashcontrol-io/clash-control/issues/new?template=memory_report.md&title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body), '_blank');
     }
 
-    return html`<div onClick=${function(e){if(e.target===e.currentTarget)onDismiss()}} style=${{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:'2rem',backdropFilter:'blur(4px)'}}>
+    return html`<div onClick=${function(e){if(e.target===e.currentTarget)onDismiss()}} style=${{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:'2rem',background:'rgba(0,0,0,.7)'}}>
       <div style=${{background:'var(--bg-primary)',border:'1px solid #f87171',borderRadius:12,padding:'1.5rem',maxWidth:500,width:'100%',boxShadow:'0 16px 48px rgba(0,0,0,.5)'}}>
         <div style=${{display:'flex',alignItems:'flex-start',gap:'.75rem',marginBottom:'1rem'}}>
           ${hasMem && usedMB > 0 ? html`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>` : html`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`}
@@ -20689,7 +20608,7 @@ function startApp() {
     window._ccStartTour = function(){ setShowTutorial(false); setTourStep(0); };
     if (!showTutorial && tourStep == null) return null;
     return html`<div>
-      ${showTutorial && html`<div onClick=${function(e){if(e.target===e.currentTarget)setShowTutorial(false)}} style=${{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',padding:'2rem 0',backdropFilter:'blur(4px)'}}>
+      ${showTutorial && html`<div onClick=${function(e){if(e.target===e.currentTarget)setShowTutorial(false)}} style=${{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',padding:'2rem 0',background:'rgba(0,0,0,.7)'}}>
         <div style=${{background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:12,padding:'1.5rem',maxWidth:560,width:'90vw',maxHeight:'85vh',overflowY:'auto',WebkitOverflowScrolling:'touch',boxShadow:'0 16px 48px rgba(0,0,0,.5)',flexShrink:0}}>
           <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
             <span style=${{fontSize:'1.26rem',fontWeight:700}}>Quick Start Guide</span>
@@ -21762,19 +21681,19 @@ function startApp() {
         })}
       </div>
       ${hasModel && html`<div style=${{display:'flex',alignItems:'center',marginLeft:'var(--space-3)',paddingLeft:'var(--space-3)',borderLeft:'1px solid var(--hairline-strong)',height:'60%',alignSelf:'center',position:'relative'}}>
-        <button class="cc-btn-press" title="Add a model or 2D drawing" aria-label="Add"
+        <button title="Add a model or 2D drawing" aria-label="Add"
           aria-haspopup="menu" aria-expanded=${addOpen}
           onClick=${function(){ setAddOpen(!addOpen); }}
-          style=${{display:'inline-flex',alignItems:'center',gap:'.3rem',
-            background:addOpen?'var(--surface-warm)':'none',border:'1px solid var(--hairline-strong)',
-            borderRadius:'var(--radius-sm)',cursor:'pointer',padding:'.2rem .55rem',
-            fontFamily:'var(--font-body)',fontSize:'var(--text-xs)',
-            color:'var(--ink-muted)',lineHeight:1.2,whiteSpace:'nowrap'}}
-          onMouseEnter=${function(e){e.currentTarget.style.color='var(--ink-primary)';e.currentTarget.style.background='var(--surface-warm)';}}
-          onMouseLeave=${function(e){if(!addOpen){e.currentTarget.style.color='var(--ink-muted)';e.currentTarget.style.background='none';}}}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          <span>Add</span>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9l6 6 6-6"/></svg>
+          style=${{display:'inline-flex',alignItems:'center',gap:'.25rem',
+            background:'none',border:'none',
+            cursor:'pointer',padding:'0 .45rem',height:'100%',
+            fontFamily:'var(--font-body)',fontSize:'var(--text-sm)',
+            fontWeight:500,color:addOpen?'var(--ink-primary)':'var(--ink-muted)',
+            lineHeight:1.2,whiteSpace:'nowrap',position:'relative'}}
+          onMouseEnter=${function(e){e.currentTarget.style.color='var(--ink-primary)';}}
+          onMouseLeave=${function(e){if(!addOpen)e.currentTarget.style.color='var(--ink-muted)';}}>
+          <span>+ Add</span>
+          ${addOpen && html`<span style=${{position:'absolute',left:'.3rem',right:'.3rem',bottom:0,height:2,background:'var(--ink-accent)'}}></span>`}
         </button>
         ${addOpen && html`<div>
           <div onClick=${function(){setAddOpen(false);}} style=${{position:'fixed',inset:0,zIndex:399}}></div>
@@ -21943,13 +21862,15 @@ function startApp() {
       try { if (window._ccActivateAddon) window._ccActivateAddon('shared-project'); } catch(e){}
       d({t:A.SHARE,v:true});
     }
-    function activeModelName(){
+    function getHeaderTitle(){
+      var proj = (s.projectList||[]).find(function(p){return p.id===s.activeProject;});
+      if (proj && proj.name && proj.name !== 'Default Project') return proj.name;
       if(!s.models||!s.models.length) return null;
       var m = s.models.find(function(mm){return !mm.hidden;}) || s.models[0];
       var n = m.name||'Untitled';
       return n.replace(/\.(ifc|glb|ifczip)$/i,'');
     }
-    var modelName = activeModelName();
+    var modelName = getHeaderTitle();
 
     return html`<div class="cc-desktop-topbar">
       <!-- Brand wordmark -->
@@ -21980,10 +21901,12 @@ function startApp() {
       <div style=${{display:'flex',alignItems:'center',gap:'var(--space-2)',flexShrink:0,height:'100%'}}>
         <button class="cc-btn-press" onClick=${openShare}
           title=${connected?'Shared via '+(sp.folderName||'folder'):'Share this model'}
-          style=${{position:'relative',background:'var(--ink-accent)',color:'#fff',fontWeight:500,
-            padding:'.32rem .7rem',fontSize:'var(--text-xs)',display:'flex',alignItems:'center',gap:'.35rem',
-            border:'none',borderRadius:'var(--radius-sm)',cursor:'pointer',fontFamily:'var(--font-body)',
-            letterSpacing:0,lineHeight:1.2}}>
+          style=${{position:'relative',background:'none',color:'var(--ink-secondary)',fontWeight:500,
+            padding:'.28rem .65rem',fontSize:'var(--text-xs)',display:'flex',alignItems:'center',gap:'.35rem',
+            border:'1px solid var(--hairline-strong)',borderRadius:'var(--radius-sm)',cursor:'pointer',fontFamily:'var(--font-body)',
+            letterSpacing:0,lineHeight:1.2}}
+          onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';e.currentTarget.style.color='var(--ink-primary)';}}
+          onMouseLeave=${function(e){e.currentTarget.style.background='none';e.currentTarget.style.color='var(--ink-secondary)';}}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><line x1="8.5" y1="13.5" x2="15.5" y2="17.5"/><line x1="15.5" y1="6.5" x2="8.5" y2="10.5"/></svg>
           <span>Share</span>
           ${connected && html`<span style=${{width:5,height:5,borderRadius:'50%',background:dotColor,flexShrink:0}}></span>`}
@@ -22213,8 +22136,22 @@ function startApp() {
         ${btn({k:'note',  active:activeMode==='note',  title:'Drop a pin (N)', label:'Pin', icon:I.pin,
                 onClick:function(){ if(activeMode==='note') clearAllModes(); else setMode('note'); }})}
 
+        <!-- PRESENT workspace tools: viewpoints + presentation mode -->
+        ${s.workspace === 'present' && html`${div()}
+          ${btn({k:'vp', title:'Save viewpoint (V)', label:'Save viewpoint',
+            icon:'<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+            onClick:function(){ if(_captureViewpoint){var vp=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:A.ADD_VIEWPOINT,v:vp});} }})}
+          ${btn({k:'present', active:s.presenting, title:s.presenting?'Exit presentation (Esc)':'Start presentation', label:'Presentation',
+            icon:'<polygon points="5 3 19 12 5 21 5 3"/>',
+            onClick:function(){ d({t:A.PRESENT,v:!s.presenting}); }})}`}
+
         <!-- spacer -->
         <span style=${{flex:1}}></span>
+        <!-- MODELS button — always visible, opens model list panel -->
+        ${btn({k:'models', active: s.tab==='models', title:'Loaded models', label:'Models',
+          icon:'<path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/><path d="M12 2L2 7l10 5 10-5-10-5z"/>',
+          onClick:function(){ d({t:A.TAB,v: s.tab==='models' ? null : 'models'}); }})}
+        ${div()}
 
         <!-- ASK AI button — opens the right panel in chat mode -->
         <button onClick=${function(){ if(window._ccOpenAIPanel) window._ccOpenAIPanel(); }}
