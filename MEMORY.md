@@ -159,6 +159,79 @@ UI_OVERHAUL.md written (7 chapters, 1469 lines). PLAN.md updated.
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-05-02
+**Summary:** 63 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- c4e11b9 chore: bump version to 5.2.0
+- e56937a feat(ui): DOM-anchored 3D clash chips — selection title floats above the model
+- 3be9ba5 feat(ui): Tier 3 — load progress card, tonal canvas, single icon scale, draw-in welcome
+- 3f1a4e7 feat(ui): Tier 2 — Cmd-K palette, fold Review→Coordinate, share promoted, copy clearer
+- 38d8bf0 feat(ui): Tier 1 — kill violet bleed, forest brand mark, wire shortcuts modal
+- 79c1c16 chore: bump version to 5.1.14
+- 5291125 Distribute remaining integrations into their natural places
+- 0d9f7a1 Distribute integrations to logical contexts; demote unified menu
+- eefc593 Sweep remaining blue colors from user-facing UI
+- 46e258e Replace remaining blue accents in clash/issues UI; clean up mobile chrome
+- 5c975df Hide ground shadow when all models are unchecked
+- 490c143 chore: bump version to 5.1.13
+- dedfabd Fix element picker selecting wrong element (wall click picking beam)
+- a75d334 Add inline project rename + responsive layout fixes
+- c7cc7a7 Add Ctrl/Cmd+Click to multi-select elements in 3D viewer
+- 9ed2d11 chore: bump version to 5.1.12
+- f96160c Fix toolbar tooltip (remove native title attr) and redesign Present details as property table
+- f497440 File-load opens right-panel Models tab; ViewCube arrows only on axis-aligned views
+- 52914bc Fix ground plane floating; hide Models tab label in right panel
+- 0b69d75 chore: bump version to 5.1.11
+- 3b90853 Models toolbar button toggles right panel (Models tab), not left panel
+- 2a652eb Models button back to toolbar; 2D underlay stays in 3D; ground plane glass fix
+- 4648dac Ground plane cutout, Integrations redesign, Details auto-open on element click
+- 3e7d6ac chore: bump version to 5.1.10
+- d498e2b UI reorganization: models to right panel, navigator to review, integrations to avatar menu, toolbar tooltips
+- 3c0e721 Memory optimizations: remove LOD proxy system, strip _glbBuffer from state, free geoCache
+- b3596a8 chore: bump version to 5.1.9
+- 9f7f1f9 ModelSidebar: tighten spacing and sizing in redesign
+- 0cded3c UI fixes: LOC boxes, ViewCube, tabs, modals, toolbar
+- 557fb29 chore: bump version to 5.1.8
+- 442263f Present prose, toolbar Ask AI, +Add dropdown, panel cleanup
+- 15a7735 chore: bump version to 5.1.7
+- 79ebeb2 Section box face arrows + Revit-style ViewCube
+- 1e15b87 chore: bump version to 5.1.6
+- 3e268c0 Workspaces renamed + inspector depth + UX polish
+- 1a2c18c Section box: Revit-style — fits selected element, falls back to full model
+- 7881f80 Popovers, walk HUD redesign, hover fix + Enscape-style scroll speed
+- cd6faaf Fix walk mode entry + default to Shaded style on load
+- 55dc6c5 chore: bump version to 5.1.5
+- 97836aa Render styles: Hidden Line mode + faster rendered view
+- f651b61 fix(walk+inspector): free WASD walk, no forced details re-open
+- a940172 feat(render): time-of-day sun, less-bright shaded, distinct standard
+- 95b2e61 chore: bump version to 5.1.4
+- 6b72c60 feat(toolbar+section): default to Standard, click-surface section, Add model
+- 817f0a2 fix(render): IBL ambient, working sliders, no z-fighting, real ground plane
+- b37640a chore: bump version to 5.1.3
+- ab58a2f fix(toolbar+panels): unbreak app, redesign panel headers, drop sample model
+- 21c6fb2 chore: daily memory sync 2026-05-01
+- 963fb70 chore: bump version to 5.1.2
+- d0731c5 feat(ui): zinc + forest palette, layout fix, Enscape walk, render quality
+- 1b9b0ed fix(inspector): collapse right panel when element is deselected
+- 027364f fix(ui): remove duplicate access points across viewer
+- a20e0f4 chore: bump version to 5.1.1
+- 3c3a46c feat(inspector): workspace-aware element details depth
+- b7f46f1 fix(ui): clean white palette, remove emojis, deduplicate element panel
+- 50cfd86 fix(ui): switch fonts to Syne + DM Sans, fix theme-color meta
+- e09b517 chore: bump version to 5.1.0
+- bf9e3a5 feat(ui): paper + ink + terracotta redesign — workspace switcher, xeokit toolbar, demoted Ask AI
+- 71b094b chore: bump version to 5.0.3
+- fa2d1a1 fix(mobile): hide right drawer entirely + add floating theme toggle (top-left)
+- 939798e feat(theme): default to light mode (Figma/Sketch/Notion convention) — boot script applies before paint to prevent flash
+- 413b0a9 chore: bump version to 5.0.2
+- 0ce33ee fix: sky gradient addColorStop needs hex, not CSS variable (Canvas 2D doesn't resolve var(--))
+
+</details>
+
 ### 2026-05-01
 **Summary:** 64 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
