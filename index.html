@@ -15304,10 +15304,14 @@ function startApp() {
   // peer command, not a special button.
 
   function _ccBuildCommands(s, d) {
+    var ws = s.workspace || 'present';
     var cmds = [];
     function push(c){ cmds.push(c); }
     var renderStyles = ['standard','shaded','rendered','wireframe'];
-    var renderLabels = {standard:'Standard',shaded:'Shaded',rendered:'Rendered (lit)',wireframe:'Wireframe'};
+    var renderLabels = {standard:'Hidden Line',shaded:'Shaded',rendered:'Rendered (lit)',wireframe:'Wireframe'};
+    // r: workspace where this command is most relevant — used to reorder
+    // within each group when no search query is active. List & groups are
+    // identical regardless of workspace; only ordering changes.
     // Workspaces
     push({group:'Workspace', label:'Switch to Present',    keywords:'present view show showcase clean architect',
       onSelect:function(){ d({t:A.SET_WORKSPACE,v:'present'}); }});
@@ -15315,18 +15319,19 @@ function startApp() {
       onSelect:function(){ d({t:A.SET_WORKSPACE,v:'coordinate'}); }});
     push({group:'Workspace', label:'Switch to Review',     keywords:'review data quality audit diagnostics',
       onSelect:function(){ d({t:A.SET_WORKSPACE,v:'review'}); }});
-    push({group:'Workspace', label:'Toggle diagnostics',   keywords:'diagnostics fps perf',
+    push({group:'Workspace', label:'Toggle diagnostics',   keywords:'diagnostics fps perf', r:'review',
       onSelect:function(){ d({t:A.DIAGNOSTICS,v:!s.diagnostics}); }});
     // View
     push({group:'View', label:'Fit to view', hint:'F', keywords:'fit zoom extents reset framing',
       onSelect:function(){ try{ if(window._ccFit) window._ccFit(); }catch(e){} }});
     push({group:'View', label:'Toggle floor plan view', keywords:'plan 2d sheet floor underlay',
       onSelect:function(){ d({t:A.FLOOR_PLAN,v:!s.floorPlan}); }});
-    push({group:'View', label:'Walk mode', keywords:'walk wasd fps first person navigate',
+    push({group:'View', label:'Walk mode', keywords:'walk wasd fps first person navigate', r:'present',
       onSelect:function(){ d({t:A.WALK_MODE,v:!s.walkMode}); }});
     renderStyles.forEach(function(style, i){
       push({group:'Rendering', label:'Render: '+renderLabels[style], hint:String(i+1),
         keywords:'render style material '+style,
+        r: style==='rendered' ? 'present' : null,
         onSelect:function(){ d({t:A.UPD_PREFS,u:{renderStyle:style}}); }});
     });
     // Tools
@@ -15347,16 +15352,16 @@ function startApp() {
       onSelect:function(){ d({t:A.COMMENT_MODE,v:!s.commentMode}); }});
     // Panels & tabs
     push({group:'Panels', label:'Open Conflicts',
-      keywords:'conflicts clashes issues list',
+      keywords:'conflicts clashes issues list', r:'coordinate',
       onSelect:function(){ d({t:A.TAB,v:'clashes'}); }});
     push({group:'Panels', label:'Open Issues',
-      keywords:'issues bcf reports tickets',
+      keywords:'issues bcf reports tickets', r:'coordinate',
       onSelect:function(){ d({t:A.TAB,v:'issues'}); }});
     push({group:'Panels', label:'Open Navigator',
       keywords:'navigator tree elements explorer browse',
       onSelect:function(){ d({t:A.TAB,v:'navigator'}); }});
     push({group:'Panels', label:'Open Standards',
-      keywords:'standards rules ids data quality compliance',
+      keywords:'standards rules ids data quality compliance', r:'review',
       onSelect:function(){ d({t:A.TAB,v:'standards'}); }});
     push({group:'Panels', label:'Toggle Models panel',
       keywords:'models files ifc list panel',
@@ -15370,13 +15375,13 @@ function startApp() {
       onSelect:function(){ try{ if(window._ccOpenIFC) window._ccOpenIFC(); }catch(e){} }});
     // Modals & global
     push({group:'Project', label:'Run clash detection',
-      keywords:'detect run clashes coordination check find',
+      keywords:'detect run clashes coordination check find', r:'coordinate',
       onSelect:function(){ try{ if(window._ccRunDetection) window._ccRunDetection(); }catch(e){} }});
     push({group:'Project', label:'Share project',
       keywords:'share collaboration team url link invite send',
       onSelect:function(){ d({t:A.SHARE,v:true}); }});
     push({group:'Project', label:'Smart Views',
-      keywords:'smart views saved viewpoints presets',
+      keywords:'smart views saved viewpoints presets', r:'present',
       onSelect:function(){ d({t:A.SMART_VIEWS,v:true}); }});
     push({group:'Project', label:'Settings',
       keywords:'settings preferences config options',
@@ -15398,7 +15403,25 @@ function startApp() {
     push({group:'Assistant', label:'Open AI chat panel',
       keywords:'ai assistant chat ask conversation gemma',
       onSelect:function(){ try{ if(window._ccOpenAIPanel) window._ccOpenAIPanel(); }catch(e){} }});
-    return cmds;
+
+    // Stable sort within each group: items tagged with r === current
+    // workspace bubble to the top of their group; everything else keeps
+    // original insertion order. Groups themselves stay in insertion order.
+    cmds.forEach(function(c, i){ c._ix = i; });
+    var seen = {};
+    var groupOrder = [];
+    cmds.forEach(function(c){ if (!seen[c.group]) { seen[c.group] = []; groupOrder.push(c.group); } seen[c.group].push(c); });
+    var sorted = [];
+    groupOrder.forEach(function(g){
+      seen[g].sort(function(a,b){
+        var ar = a.r === ws ? 0 : 1;
+        var br = b.r === ws ? 0 : 1;
+        if (ar !== br) return ar - br;
+        return a._ix - b._ix;
+      });
+      sorted = sorted.concat(seen[g]);
+    });
+    return sorted;
   }
 
   function CmdKPalette(props) {
