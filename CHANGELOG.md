@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.2.2 (2026-05-02)
+- UI polish: remove LeftRail, fix Style dropdown, resize ViewCube, clean up viewer
+
 ## v5.2.1 (2026-05-02)
 - perf(render): Hidden Line uses one shared Lambert, not N per-mesh
 
