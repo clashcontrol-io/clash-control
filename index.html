@@ -5386,20 +5386,35 @@ function startApp() {
         window._ccPendingScreenshot = function(dataUrl) {
           var title = opts.title || document.title || 'ClashControl';
           var w = renderer.domElement.width, h = renderer.domElement.height;
-          var pw = window.open('','_blank','width='+w+',height='+(h+80));
+          var cssW = renderer.domElement.clientWidth, cssH = renderer.domElement.clientHeight;
+          // Capture markup SVG overlay (if present) at the same size as the canvas
+          var svgEl = renderer.domElement.parentElement && renderer.domElement.parentElement.querySelector(':scope > svg');
+          var svgMarkup = '';
+          if (svgEl) {
+            try {
+              var clone = svgEl.cloneNode(true);
+              clone.setAttribute('viewBox','0 0 '+cssW+' '+cssH);
+              clone.setAttribute('width', cssW); clone.setAttribute('height', cssH);
+              clone.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
+              svgMarkup = new XMLSerializer().serializeToString(clone);
+            } catch(e){}
+          }
+          var pw = window.open('','_blank','width='+cssW+',height='+(cssH+80));
           if (!pw) return;
           pw.document.write('<!DOCTYPE html><html><head><title>'+title+'</title><style>'
-            +'body{margin:0;background:#fff;display:flex;flex-direction:column;align-items:center;}'
-            +'img{max-width:100%;display:block;}'
-            +'.meta{font-family:sans-serif;font-size:11px;color:#555;padding:6px 12px;width:100%;box-sizing:border-box;}'
+            +'body{margin:0;background:#fff;display:flex;flex-direction:column;align-items:center;font-family:sans-serif;}'
+            +'.frame{position:relative;display:block;width:100%;max-width:'+cssW+'px;}'
+            +'.frame img{display:block;width:100%;height:auto;}'
+            +'.frame svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}'
+            +'.meta{font-size:11px;color:#555;padding:6px 12px;width:100%;box-sizing:border-box;}'
             +'@media print{'
             +'  body{display:block;}'
-            +'  img{width:100%;page-break-inside:avoid;}'
+            +'  .frame{width:100%;page-break-inside:avoid;}'
             +'  .meta{font-size:9px;}'
             +'  .noprint{display:none}'
             +'}'
             +'</style></head><body>'
-            +'<img src="'+dataUrl+'" width="'+w+'" height="'+h+'" />'
+            +'<div class="frame"><img src="'+dataUrl+'" />'+svgMarkup+'</div>'
             +'<div class="meta">'+title+' &nbsp;·&nbsp; '+new Date().toLocaleString()+'</div>'
             +'<div class="meta noprint" style="margin-top:4px">'
             +'<button onclick="window.print()" style="padding:4px 12px;cursor:pointer;margin-right:8px">Print / Save PDF</button>'
@@ -8092,6 +8107,50 @@ function startApp() {
     var fo2 = useState(false), finderOpen=fo2[0], setFinderOpen=fo2[1];
     window._ccToggleFinder = function(){setFinderOpen(function(o){if(o){doFind('');setFindQuery('');}return !o;});};
 
+    // ── 3D-canvas markup state ──────────────────────────────────
+    var mt3d = useState(null), markupTool3D = mt3d[0], setMarkupTool3D = mt3d[1];
+    var mc3d = useState('#dc2626'), markupColor3D = mc3d[0], setMarkupColor3D = mc3d[1];
+    var ma3d = useState([]), markups3D = ma3d[0], setMarkups3D = ma3d[1];
+    var dr3d = useState(null), drawing3D = dr3d[0], setDrawing3D = dr3d[1];
+    function _markup3DStart(e){
+      if(!markupTool3D) return;
+      var rect = e.currentTarget.getBoundingClientRect();
+      var x = e.clientX-rect.left, y = e.clientY-rect.top;
+      if(markupTool3D==='text'){
+        var txt = prompt('Text:'); if(!txt) return;
+        setMarkups3D(function(prev){return prev.concat([{id:uid(),type:'text',x:x,y:y,text:txt,color:markupColor3D}]);});
+        setMarkupTool3D(null);
+        return;
+      }
+      if(markupTool3D==='freehand'){
+        setDrawing3D({type:'freehand',points:[[x,y]],color:markupColor3D});
+        return;
+      }
+      setDrawing3D({type:markupTool3D,x1:x,y1:y,x2:x,y2:y,color:markupColor3D});
+    }
+    function _markup3DMove(e){
+      if(!drawing3D) return;
+      var rect = e.currentTarget.getBoundingClientRect();
+      var x = e.clientX-rect.left, y = e.clientY-rect.top;
+      if(drawing3D.type==='freehand'){
+        var pts = drawing3D.points.slice(); pts.push([x,y]);
+        setDrawing3D(Object.assign({},drawing3D,{points:pts}));
+      } else {
+        setDrawing3D(Object.assign({},drawing3D,{x2:x,y2:y}));
+      }
+    }
+    function _markup3DEnd(){
+      if(!drawing3D) return;
+      setMarkups3D(function(prev){return prev.concat([Object.assign({id:uid()},drawing3D)]);});
+      setDrawing3D(null);
+    }
+    useEffect(function(){
+      window._ccToggleMarkup3D = function(){
+        setMarkupTool3D(function(cur){return cur ? null : 'arrow';});
+      };
+      return function(){ window._ccToggleMarkup3D = null; };
+    }, []);
+
     function doFind(q) {
       setFindQuery(q);
       if(!q||q.length<2){setFindResults([]);if(_clearFoundElements)_clearFoundElements();return;}
@@ -8108,6 +8167,61 @@ function startApp() {
     }
     return html`<div style=${{flex:1,position:'relative',overflow:'hidden'}}>
       <div ref=${ref} style=${{width:'100%',height:'100%'}}></div>
+      ${/* 3D markup SVG overlay — captures pointer events only when a tool is active */ ''}
+      <svg style=${{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:markupTool3D?'auto':'none',cursor:markupTool3D==='text'?'text':'crosshair',zIndex:8}}
+        onMouseDown=${_markup3DStart} onMouseMove=${_markup3DMove} onMouseUp=${_markup3DEnd}>
+        ${(markups3D||[]).concat(drawing3D?[drawing3D]:[]).map(function(m){
+          if(m.type==='freehand'){
+            var dPath = m.points.map(function(p,i){return (i===0?'M':'L')+p[0]+' '+p[1];}).join(' ');
+            return html`<path key=${m.id||'_'} d=${dPath} stroke=${m.color} stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
+          }
+          if(m.type==='line'){
+            return html`<line key=${m.id||'_'} x1=${m.x1} y1=${m.y1} x2=${m.x2} y2=${m.y2} stroke=${m.color} stroke-width="2.5" stroke-linecap="round" />`;
+          }
+          if(m.type==='arrow'){
+            var dx=m.x2-m.x1, dy=m.y2-m.y1, len=Math.sqrt(dx*dx+dy*dy)||1;
+            var ah=12, ax=dx/len, ay=dy/len;
+            var px=-ay, py=ax;
+            var hx1=m.x2-ax*ah+px*ah*0.5, hy1=m.y2-ay*ah+py*ah*0.5;
+            var hx2=m.x2-ax*ah-px*ah*0.5, hy2=m.y2-ay*ah-py*ah*0.5;
+            return html`<g key=${m.id||'_'}>
+              <line x1=${m.x1} y1=${m.y1} x2=${m.x2} y2=${m.y2} stroke=${m.color} stroke-width="2.5" stroke-linecap="round" />
+              <polygon points=${m.x2+','+m.y2+' '+hx1+','+hy1+' '+hx2+','+hy2} fill=${m.color} />
+            </g>`;
+          }
+          if(m.type==='rect'){
+            var rx=Math.min(m.x1,m.x2), ry=Math.min(m.y1,m.y2), rw=Math.abs(m.x2-m.x1), rh=Math.abs(m.y2-m.y1);
+            return html`<rect key=${m.id||'_'} x=${rx} y=${ry} width=${rw} height=${rh} stroke=${m.color} stroke-width="2.5" fill="none" />`;
+          }
+          if(m.type==='text'){
+            return html`<text key=${m.id||'_'} x=${m.x} y=${m.y} fill=${m.color} font-family="var(--font-body)" font-size="14" font-weight="600" style=${{textShadow:'0 0 3px rgba(255,255,255,0.7)'}}>${m.text}</text>`;
+          }
+          return null;
+        })}
+      </svg>
+      ${(markupTool3D || (markups3D && markups3D.length>0)) && html`<div style=${{position:'absolute',top:'.5rem',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'.25rem',padding:'.3rem',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',alignItems:'center'}}>
+        ${[
+          ['line','╱','Line'],
+          ['arrow','→','Arrow'],
+          ['rect','▭','Rectangle'],
+          ['text','T','Text label'],
+          ['freehand','✎','Freehand']
+        ].map(function(t){
+          var active = markupTool3D===t[0];
+          return html`<button key=${t[0]} onClick=${function(){setMarkupTool3D(active?null:t[0]);}}
+            title=${t[2]}
+            style=${{fontSize:'.78rem',padding:'.2rem .45rem',background:active?'var(--accent)':'var(--bg-secondary)',color:active?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer',fontFamily:'inherit',minWidth:24}}>${t[1]}</button>`;
+        })}
+        <input type="color" value=${markupColor3D} onInput=${function(e){setMarkupColor3D(e.target.value);}}
+          title="Color" style=${{width:24,height:24,border:'1px solid var(--border)',borderRadius:3,cursor:'pointer',padding:0,background:'none'}} />
+        <span style=${{width:1,height:18,background:'var(--border)',margin:'0 .15rem'}}></span>
+        ${markups3D.length>0 && html`<button onClick=${function(){setMarkups3D([]);}}
+          title="Clear all markup"
+          style=${{fontSize:'.65rem',padding:'.2rem .4rem',background:'var(--bg-secondary)',color:'var(--text-muted)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer',fontFamily:'inherit'}}>Clear</button>`}
+        <button onClick=${function(){setMarkupTool3D(null);setMarkups3D([]);}}
+          title="Close markup toolbar"
+          style=${{fontSize:'.65rem',padding:'.2rem .4rem',background:'none',color:'var(--text-muted)',border:'none',cursor:'pointer',fontFamily:'inherit'}}>×</button>
+      </div>`}
       ${s.switchingProject && html`<div style=${{
         position:'absolute',inset:0,zIndex:50,
         background:'rgba(15,23,42,.82)',
@@ -23007,6 +23121,12 @@ function startApp() {
         <!-- NOTES -->
         ${btn({k:'note',  active:activeMode==='note',  title:'Drop a pin (N)', label:'Pin', icon:I.pin,
                 onClick:function(){ if(activeMode==='note') clearAllModes(); else setMode('note'); }})}
+        <!-- MARKUP — opens 3D-canvas markup toolbar (line/arrow/rect/text/freehand) -->
+        ${btn({k:'markup', title:'Markup the 3D view (arrows, text, freehand)', label:'Markup',
+                icon:'<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>',
+                onClick:function(){
+                  if(window._ccToggleMarkup3D) window._ccToggleMarkup3D();
+                }})}
         ${div()}
         <!-- EXPORT PDF -->
         ${btn({k:'exportpdf', title:'Export view as PDF', label:'Export PDF',
