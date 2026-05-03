@@ -681,7 +681,7 @@ function startApp() {
     lightSettings:_ccLoadPref('lightSettings',{sun:1.0, ambient:1.0, exposure:1.0, shadow:1.0, time:13}),
   };
   var INIT = {
-    models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:null, isRecording:false,
+    models:[], clashes:[], issues:[], activeId:null, showModal:false, showSettings:false, modalElement:null, tab:null, isRecording:false, selectionSets:[],
     rules:{ modelA:'all', modelB:'all', hard:true, maxGap:50, minGap:0, duplicates:false, changeAware:false, excludeSelf:true, excludeTypes:[], excludeTypePairs:[], minOverlapVolM3:1e-5, toleranceByTypePair:{}, useSemanticFilter:true },
     detectionSettings:null, // Captured at detection run time: {clearance_mm, discipline_filters}
     trainingMode:(function(){try{var v=localStorage.getItem('cc_trainingMode');return v===null?true:v==='1';}catch(e){return true;}}()),
@@ -1032,6 +1032,12 @@ function startApp() {
       }
       case A.DIAGNOSTICS: { var d=!!a.v; _ccPersistUI('diagnostics',d); return Object.assign({},s,{diagnostics:d}); }
       case 'RECORDING_STATE': return Object.assign({},s,{isRecording:!!a.v});
+      case 'ADD_SELSET': {
+        var nset = {id:a.v.id||uid(), name:a.v.name||'Selection', refs:a.v.refs||[], color:a.v.color||null, createdAt:new Date().toISOString()};
+        return Object.assign({},s,{selectionSets:(s.selectionSets||[]).concat([nset])});
+      }
+      case 'DEL_SELSET': return Object.assign({},s,{selectionSets:(s.selectionSets||[]).filter(function(x){return x.id!==a.id;})});
+      case 'REN_SELSET': return Object.assign({},s,{selectionSets:(s.selectionSets||[]).map(function(x){return x.id===a.id?Object.assign({},x,{name:a.name}):x;})});
       case A.PANEL_OPEN:    { var p=!!a.v; _ccPersistUI('panelOpen',p); return Object.assign({},s,{panelOpen:p}); }
       case A.INSPECTOR_OPEN:{ var io=!!a.v; _ccPersistUI('inspectorOpen',io); return Object.assign({},s,{inspectorOpen:io}); }
       case A.ASK_OPEN:      { var ao=!!a.v; _ccPersistUI('askOpen',ao); return Object.assign({},s,{askOpen:ao}); }
@@ -4177,6 +4183,7 @@ function startApp() {
       lastDeltaSummary: s.lastDeltaSummary || null,
       viewpoints: (s.viewpoints||[]).map(function(v){return Object.assign({},v,{snapshot:undefined})}),
       measurements: s.measurements||[],
+      selectionSets: s.selectionSets||[],
       changelog: s.changelog||[],
     };
     var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
@@ -4206,6 +4213,7 @@ function startApp() {
           (data.issues||[]).forEach(function(i) { d({ t:A.ADD_ISSUE, v:i }); });
           (data.viewpoints||[]).forEach(function(v) { d({ t:A.ADD_VIEWPOINT, v:v }); });
           if (data.measurements) data.measurements.forEach(function(m) { d({ t:A.ADD_MEASUREMENT, v:m }); });
+          if (data.selectionSets) data.selectionSets.forEach(function(ss){ d({t:'ADD_SELSET', v:ss}); });
           if (data.changelog && data.changelog.length) d({ t:A.MERGE_CHANGELOG, v:data.changelog });
         } catch(err) {
           alert('Load failed: ' + err.message);
@@ -5378,20 +5386,35 @@ function startApp() {
         window._ccPendingScreenshot = function(dataUrl) {
           var title = opts.title || document.title || 'ClashControl';
           var w = renderer.domElement.width, h = renderer.domElement.height;
-          var pw = window.open('','_blank','width='+w+',height='+(h+80));
+          var cssW = renderer.domElement.clientWidth, cssH = renderer.domElement.clientHeight;
+          // Capture markup SVG overlay (if present) at the same size as the canvas
+          var svgEl = renderer.domElement.parentElement && renderer.domElement.parentElement.querySelector(':scope > svg');
+          var svgMarkup = '';
+          if (svgEl) {
+            try {
+              var clone = svgEl.cloneNode(true);
+              clone.setAttribute('viewBox','0 0 '+cssW+' '+cssH);
+              clone.setAttribute('width', cssW); clone.setAttribute('height', cssH);
+              clone.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
+              svgMarkup = new XMLSerializer().serializeToString(clone);
+            } catch(e){}
+          }
+          var pw = window.open('','_blank','width='+cssW+',height='+(cssH+80));
           if (!pw) return;
           pw.document.write('<!DOCTYPE html><html><head><title>'+title+'</title><style>'
-            +'body{margin:0;background:#fff;display:flex;flex-direction:column;align-items:center;}'
-            +'img{max-width:100%;display:block;}'
-            +'.meta{font-family:sans-serif;font-size:11px;color:#555;padding:6px 12px;width:100%;box-sizing:border-box;}'
+            +'body{margin:0;background:#fff;display:flex;flex-direction:column;align-items:center;font-family:sans-serif;}'
+            +'.frame{position:relative;display:block;width:100%;max-width:'+cssW+'px;}'
+            +'.frame img{display:block;width:100%;height:auto;}'
+            +'.frame svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}'
+            +'.meta{font-size:11px;color:#555;padding:6px 12px;width:100%;box-sizing:border-box;}'
             +'@media print{'
             +'  body{display:block;}'
-            +'  img{width:100%;page-break-inside:avoid;}'
+            +'  .frame{width:100%;page-break-inside:avoid;}'
             +'  .meta{font-size:9px;}'
             +'  .noprint{display:none}'
             +'}'
             +'</style></head><body>'
-            +'<img src="'+dataUrl+'" width="'+w+'" height="'+h+'" />'
+            +'<div class="frame"><img src="'+dataUrl+'" />'+svgMarkup+'</div>'
             +'<div class="meta">'+title+' &nbsp;·&nbsp; '+new Date().toLocaleString()+'</div>'
             +'<div class="meta noprint" style="margin-top:4px">'
             +'<button onclick="window.print()" style="padding:4px 12px;cursor:pointer;margin-right:8px">Print / Save PDF</button>'
@@ -5829,6 +5852,25 @@ function startApp() {
           invalidate();
         }
       };
+      function _makeNumberedPinTexture(n, isActive){
+        var c = document.createElement('canvas'); c.width = 96; c.height = 96;
+        var g = c.getContext('2d');
+        // Drop shadow
+        g.beginPath(); g.arc(48, 50, 36, 0, Math.PI*2); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fill();
+        // Main circle
+        g.beginPath(); g.arc(48, 48, 34, 0, Math.PI*2);
+        g.fillStyle = isActive ? '#facc15' : '#a855f7'; g.fill();
+        // White ring
+        g.lineWidth = 4; g.strokeStyle = '#fff'; g.stroke();
+        // Number
+        g.fillStyle = isActive ? '#1f1300' : '#fff';
+        g.font = 'bold 38px -apple-system, sans-serif';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(String(n), 48, 50);
+        var t = new THREE.CanvasTexture(c);
+        t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
+        return t;
+      }
       window._ccShowCommentMarkers = function(comments, activeId) {
         window._ccClearCommentMarkers();
         if (!comments || !comments.length) return;
@@ -5836,25 +5878,17 @@ function startApp() {
         if (!visible.length) return;
         var grp = new THREE.Group();
         grp.name = 'commentMarkers';
-        var pinGeo = new THREE.SphereGeometry(0.18, 14, 14);
-        var ringGeo = new THREE.RingGeometry(0.32, 0.5, 28);
-        var baseMat = new THREE.MeshBasicMaterial({color:0xa855f7, transparent:true, opacity:0.9, depthTest:false});
-        var activeMat = new THREE.MeshBasicMaterial({color:0xfacc15, transparent:true, opacity:1.0, depthTest:false});
-        var ringMat = new THREE.MeshBasicMaterial({color:0xc084fc, transparent:true, opacity:0.45, side:THREE.DoubleSide, depthTest:false});
-        visible.forEach(function(c){
+        visible.forEach(function(c, i){
           var p = c.anchor.point;
           var isAct = c.id===activeId;
-          var pin = new THREE.Mesh(pinGeo, isAct ? activeMat : baseMat);
-          pin.position.set(p[0], p[1], p[2]);
-          pin.userData.commentId = c.id;
-          pin.renderOrder = 1000;
-          if (isAct) pin.scale.setScalar(1.4);
-          grp.add(pin);
-          var ring = new THREE.Mesh(ringGeo, ringMat);
-          ring.position.set(p[0], p[1], p[2]);
-          ring.rotation.x = -Math.PI/2;
-          ring.renderOrder = 999;
-          grp.add(ring);
+          var tex = _makeNumberedPinTexture(i+1, isAct);
+          var spriteMat = new THREE.SpriteMaterial({map:tex, depthTest:false, transparent:true});
+          var sprite = new THREE.Sprite(spriteMat);
+          sprite.position.set(p[0], p[1], p[2]);
+          sprite.scale.set(isAct?0.85:0.7, isAct?0.85:0.7, 1);
+          sprite.userData.commentId = c.id;
+          sprite.renderOrder = 1000;
+          grp.add(sprite);
         });
         scene.add(grp);
         _commentMarkersGroup = grp;
@@ -6110,7 +6144,9 @@ function startApp() {
       var lastHoverOriginals = null;
       var _lastHoverTime = 0;
       renderer.domElement.addEventListener('mousemove', function(e){
-        if(!prefsRef.current.hoverHighlight) return;
+        // Track cursor position for hover-coord display (always, even without hoverHighlight)
+        window._ccCursorXY = {x:e.clientX, y:e.clientY};
+        if(!prefsRef.current.hoverHighlight && !measureModeRef.current) return;
         var now = performance.now();
         if(now - _lastHoverTime < 50) return;
         _lastHoverTime = now;
@@ -6119,6 +6155,15 @@ function startApp() {
         hoverMouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
         hoverRaycaster.setFromCamera(hoverMouse, S.camera);
         var hits = hoverRaycaster.intersectObjects(S.mg.children, true);
+        // Update hover world coordinate when in measure mode
+        if (measureModeRef.current && hits.length > 0 && hits[0].point) {
+          var hp = hits[0].point;
+          window._ccHoverPoint = {x:hp.x, y:hp.y, z:hp.z, screenX:e.clientX, screenY:e.clientY};
+          if(window._ccHoverCoordTick) window._ccHoverCoordTick();
+        } else if (window._ccHoverPoint) {
+          window._ccHoverPoint = null;
+          if(window._ccHoverCoordTick) window._ccHoverCoordTick();
+        }
         var hitMesh = null, hitInstanceId = -1;
         if(hits.length>0 && hits[0].object.isMesh) { hitMesh = hits[0].object; hitInstanceId = hits[0].instanceId != null ? hits[0].instanceId : -1; }
         if(hitMesh && _isGhostMat(hitMesh.material)) hitMesh = null;
@@ -8041,6 +8086,8 @@ function startApp() {
       invalidate();
     }, [s.prefs.renderStyle, s.prefs.theme, s.models.length, s.prefs.lightSettings]);
 
+    var hcSt = useState(0), hcTick = hcSt[0], setHcTick = hcSt[1];
+    useEffect(function(){ window._ccHoverCoordTick = function(){ setHcTick(function(x){return (x+1)%1000;}); }; return function(){window._ccHoverCoordTick=null;}; }, []);
     var ps = useState(false), perfOpen=ps[0], setPerfOpen=ps[1];
     var pd = useState({fps:0,tris:0,meshCount:0,drawCalls:0}), perfData=pd[0], setPerfData=pd[1];
     useEffect(function(){
@@ -8071,6 +8118,91 @@ function startApp() {
     var fo2 = useState(false), finderOpen=fo2[0], setFinderOpen=fo2[1];
     window._ccToggleFinder = function(){setFinderOpen(function(o){if(o){doFind('');setFindQuery('');}return !o;});};
 
+    // ── 3D-canvas markup state ──────────────────────────────────
+    var mt3d = useState(null), markupTool3D = mt3d[0], setMarkupTool3D = mt3d[1];
+    var mc3d = useState('#dc2626'), markupColor3D = mc3d[0], setMarkupColor3D = mc3d[1];
+    var ma3d = useState([]), markups3D = ma3d[0], setMarkups3D = ma3d[1];
+    var dr3d = useState(null), drawing3D = dr3d[0], setDrawing3D = dr3d[1];
+    function _markup3DStart(e){
+      if(!markupTool3D) return;
+      var rect = e.currentTarget.getBoundingClientRect();
+      var x = e.clientX-rect.left, y = e.clientY-rect.top;
+      if(markupTool3D==='text'){
+        var txt = prompt('Text:'); if(!txt) return;
+        setMarkups3D(function(prev){return prev.concat([{id:uid(),type:'text',x:x,y:y,text:txt,color:markupColor3D}]);});
+        setMarkupTool3D(null);
+        return;
+      }
+      if(markupTool3D==='freehand'){
+        setDrawing3D({type:'freehand',points:[[x,y]],color:markupColor3D});
+        return;
+      }
+      setDrawing3D({type:markupTool3D,x1:x,y1:y,x2:x,y2:y,color:markupColor3D});
+    }
+    function _markup3DMove(e){
+      if(!drawing3D) return;
+      var rect = e.currentTarget.getBoundingClientRect();
+      var x = e.clientX-rect.left, y = e.clientY-rect.top;
+      if(drawing3D.type==='freehand'){
+        var pts = drawing3D.points.slice(); pts.push([x,y]);
+        setDrawing3D(Object.assign({},drawing3D,{points:pts}));
+      } else {
+        setDrawing3D(Object.assign({},drawing3D,{x2:x,y2:y}));
+      }
+    }
+    function _markup3DEnd(){
+      if(!drawing3D) return;
+      setMarkups3D(function(prev){return prev.concat([Object.assign({id:uid()},drawing3D)]);});
+      setDrawing3D(null);
+    }
+    useEffect(function(){
+      window._ccToggleMarkup3D = function(){
+        setMarkupTool3D(function(cur){return cur ? null : 'arrow';});
+      };
+      return function(){ window._ccToggleMarkup3D = null; };
+    }, []);
+
+    // ── Design option compare ──
+    var cmpSt = useState({open:false, modelA:null, modelB:null, blend:50}), compare = cmpSt[0], setCompare = cmpSt[1];
+    useEffect(function(){
+      window._ccToggleCompare = function(){
+        setCompare(function(c){return Object.assign({},c,{open:!c.open});});
+      };
+      return function(){ window._ccToggleCompare = null; };
+    }, []);
+    useEffect(function(){
+      // Apply compare visibility/opacity
+      if (!compare.open || !compare.modelA || !compare.modelB) return;
+      var S = window._ccState3d; if (!S || !S.mg) return;
+      var aOpacity = compare.blend < 50 ? 1 : (1 - (compare.blend-50)/50);
+      var bOpacity = compare.blend > 50 ? 1 : (compare.blend/50);
+      S.mg.children.forEach(function(modelGroup){
+        var mid = modelGroup.userData && modelGroup.userData.modelId;
+        if (mid === compare.modelA) {
+          modelGroup.visible = aOpacity > 0.01;
+          modelGroup.traverse(function(o){if(o.isMesh && o.material){o.material.transparent = aOpacity < 0.99; o.material.opacity = aOpacity;}});
+        } else if (mid === compare.modelB) {
+          modelGroup.visible = bOpacity > 0.01;
+          modelGroup.traverse(function(o){if(o.isMesh && o.material){o.material.transparent = bOpacity < 0.99; o.material.opacity = bOpacity;}});
+        } else {
+          modelGroup.visible = false;
+        }
+      });
+      invalidate();
+    }, [compare.open, compare.modelA, compare.modelB, compare.blend]);
+    useEffect(function(){
+      // When compare closes, restore visibility of all models
+      if (compare.open) return;
+      var S = window._ccState3d; if (!S || !S.mg) return;
+      S.mg.children.forEach(function(modelGroup){
+        var mid = modelGroup.userData && modelGroup.userData.modelId;
+        var m = (s.models||[]).find(function(x){return x.id===mid;});
+        modelGroup.visible = !m || m.visible !== false;
+        modelGroup.traverse(function(o){if(o.isMesh && o.material){o.material.opacity = 1; o.material.transparent = !!o.material._wasTransparent;}});
+      });
+      invalidate();
+    }, [compare.open]);
+
     function doFind(q) {
       setFindQuery(q);
       if(!q||q.length<2){setFindResults([]);if(_clearFoundElements)_clearFoundElements();return;}
@@ -8087,6 +8219,92 @@ function startApp() {
     }
     return html`<div style=${{flex:1,position:'relative',overflow:'hidden'}}>
       <div ref=${ref} style=${{width:'100%',height:'100%'}}></div>
+      ${/* 3D markup SVG overlay — captures pointer events only when a tool is active */ ''}
+      <svg style=${{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:markupTool3D?'auto':'none',cursor:markupTool3D==='text'?'text':'crosshair',zIndex:8}}
+        onMouseDown=${_markup3DStart} onMouseMove=${_markup3DMove} onMouseUp=${_markup3DEnd}>
+        ${(markups3D||[]).concat(drawing3D?[drawing3D]:[]).map(function(m){
+          if(m.type==='freehand'){
+            var dPath = m.points.map(function(p,i){return (i===0?'M':'L')+p[0]+' '+p[1];}).join(' ');
+            return html`<path key=${m.id||'_'} d=${dPath} stroke=${m.color} stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
+          }
+          if(m.type==='line'){
+            return html`<line key=${m.id||'_'} x1=${m.x1} y1=${m.y1} x2=${m.x2} y2=${m.y2} stroke=${m.color} stroke-width="2.5" stroke-linecap="round" />`;
+          }
+          if(m.type==='arrow'){
+            var dx=m.x2-m.x1, dy=m.y2-m.y1, len=Math.sqrt(dx*dx+dy*dy)||1;
+            var ah=12, ax=dx/len, ay=dy/len;
+            var px=-ay, py=ax;
+            var hx1=m.x2-ax*ah+px*ah*0.5, hy1=m.y2-ay*ah+py*ah*0.5;
+            var hx2=m.x2-ax*ah-px*ah*0.5, hy2=m.y2-ay*ah-py*ah*0.5;
+            return html`<g key=${m.id||'_'}>
+              <line x1=${m.x1} y1=${m.y1} x2=${m.x2} y2=${m.y2} stroke=${m.color} stroke-width="2.5" stroke-linecap="round" />
+              <polygon points=${m.x2+','+m.y2+' '+hx1+','+hy1+' '+hx2+','+hy2} fill=${m.color} />
+            </g>`;
+          }
+          if(m.type==='rect'){
+            var rx=Math.min(m.x1,m.x2), ry=Math.min(m.y1,m.y2), rw=Math.abs(m.x2-m.x1), rh=Math.abs(m.y2-m.y1);
+            return html`<rect key=${m.id||'_'} x=${rx} y=${ry} width=${rw} height=${rh} stroke=${m.color} stroke-width="2.5" fill="none" />`;
+          }
+          if(m.type==='text'){
+            return html`<text key=${m.id||'_'} x=${m.x} y=${m.y} fill=${m.color} font-family="var(--font-body)" font-size="14" font-weight="600" style=${{textShadow:'0 0 3px rgba(255,255,255,0.7)'}}>${m.text}</text>`;
+          }
+          return null;
+        })}
+      </svg>
+      ${compare.open && html`<div style=${{position:'absolute',bottom:'.75rem',left:'50%',transform:'translateX(-50%)',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',padding:'.5rem .65rem',display:'flex',flexDirection:'column',gap:'.4rem',minWidth:380}}>
+        <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
+          <span style=${{fontSize:'0.65rem',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',flex:1}}>Compare versions</span>
+          <button onClick=${function(){setCompare(Object.assign({},compare,{open:false}));}}
+            style=${{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:'1rem',padding:'0 .2rem',lineHeight:1}}>×</button>
+        </div>
+        <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
+          <span style=${{fontSize:'.69rem',color:'var(--text-faint)',width:14}}>A</span>
+          <select value=${compare.modelA||''} onChange=${function(e){setCompare(Object.assign({},compare,{modelA:e.target.value||null}));}}
+            style=${{flex:1,fontSize:'0.72rem',padding:'.2rem .3rem',background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:4}}>
+            <option value="">Select model A…</option>
+            ${(s.models||[]).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+          </select>
+        </div>
+        <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
+          <span style=${{fontSize:'.69rem',color:'var(--text-faint)',width:14}}>B</span>
+          <select value=${compare.modelB||''} onChange=${function(e){setCompare(Object.assign({},compare,{modelB:e.target.value||null}));}}
+            style=${{flex:1,fontSize:'0.72rem',padding:'.2rem .3rem',background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:4}}>
+            <option value="">Select model B…</option>
+            ${(s.models||[]).filter(function(m){return m.id!==compare.modelA;}).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+          </select>
+        </div>
+        ${compare.modelA && compare.modelB && html`<div style=${{display:'flex',gap:'.4rem',alignItems:'center'}}>
+          <span style=${{fontSize:'.65rem',color:'var(--text-muted)',width:32}}>A</span>
+          <input type="range" min="0" max="100" step="1" value=${compare.blend}
+            onInput=${function(e){setCompare(Object.assign({},compare,{blend:+e.target.value}));}}
+            style=${{flex:1}} />
+          <span style=${{fontSize:'.65rem',color:'var(--text-muted)',width:32,textAlign:'right'}}>B</span>
+          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',fontFamily:'var(--font-mono)',minWidth:30,textAlign:'right'}}>${compare.blend}%</span>
+        </div>`}
+      </div>`}
+      ${(markupTool3D || (markups3D && markups3D.length>0)) && html`<div style=${{position:'absolute',top:'.5rem',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'.25rem',padding:'.3rem',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',alignItems:'center'}}>
+        ${[
+          ['line','╱','Line'],
+          ['arrow','→','Arrow'],
+          ['rect','▭','Rectangle'],
+          ['text','T','Text label'],
+          ['freehand','✎','Freehand']
+        ].map(function(t){
+          var active = markupTool3D===t[0];
+          return html`<button key=${t[0]} onClick=${function(){setMarkupTool3D(active?null:t[0]);}}
+            title=${t[2]}
+            style=${{fontSize:'.78rem',padding:'.2rem .45rem',background:active?'var(--accent)':'var(--bg-secondary)',color:active?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer',fontFamily:'inherit',minWidth:24}}>${t[1]}</button>`;
+        })}
+        <input type="color" value=${markupColor3D} onInput=${function(e){setMarkupColor3D(e.target.value);}}
+          title="Color" style=${{width:24,height:24,border:'1px solid var(--border)',borderRadius:3,cursor:'pointer',padding:0,background:'none'}} />
+        <span style=${{width:1,height:18,background:'var(--border)',margin:'0 .15rem'}}></span>
+        ${markups3D.length>0 && html`<button onClick=${function(){setMarkups3D([]);}}
+          title="Clear all markup"
+          style=${{fontSize:'.65rem',padding:'.2rem .4rem',background:'var(--bg-secondary)',color:'var(--text-muted)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer',fontFamily:'inherit'}}>Clear</button>`}
+        <button onClick=${function(){setMarkupTool3D(null);setMarkups3D([]);}}
+          title="Close markup toolbar"
+          style=${{fontSize:'.65rem',padding:'.2rem .4rem',background:'none',color:'var(--text-muted)',border:'none',cursor:'pointer',fontFamily:'inherit'}}>×</button>
+      </div>`}
       ${s.switchingProject && html`<div style=${{
         position:'absolute',inset:0,zIndex:50,
         background:'rgba(15,23,42,.82)',
@@ -8185,6 +8403,12 @@ function startApp() {
         ${s.measureMode && html`<div style=${{fontSize:'0.69rem',color:'var(--text-primary)',background:'var(--overlay-bg)',border:'1px solid var(--border)',padding:'.25rem .55rem',borderRadius:6,boxShadow:'var(--shadow-sm)'}}>
           ${s.measureMode==='length'?'Click 2 points to measure distance':s.measureMode==='angle'?'Click 3 points: start, vertex, end':s.measureMode==='area'?'Click points to define area polygon, double-click to close':'Measuring…'}
         </div>`}
+        ${s.measureMode && window._ccHoverPoint && (function(){
+          var p=window._ccHoverPoint;
+          return html`<div style=${{fontFamily:'var(--font-mono)',fontSize:'0.65rem',color:'var(--text-secondary)',background:'var(--overlay-bg)',border:'1px solid var(--border-subtle)',padding:'.2rem .4rem',borderRadius:4}}>
+            X ${p.x.toFixed(2)} m &nbsp; Y ${p.y.toFixed(2)} m &nbsp; Z ${p.z.toFixed(2)} m
+          </div>`;
+        })()}
         ${s.measurements.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:120,overflowY:'auto',width:200,boxShadow:'var(--shadow-sm)'}}>
           ${s.measurements.map(function(m){return html`<div key=${m.id} style=${{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.15rem .2rem',fontSize:'0.69rem',borderBottom:'1px solid var(--border-subtle)'}}>
             <span style=${{color:m.type==='length'?'var(--color-success)':m.type==='angle'?'var(--color-warning)':'var(--color-info)',fontWeight:500}}>${m.type}</span>
@@ -10544,6 +10768,11 @@ function startApp() {
           ${opts.icon!=null && html`<span class="cc-tv__icon" style=${opts.iconColor?{color:opts.iconColor}:null}>${opts.icon}</span>`}
           <span class="cc-tv__text">${opts.label}${opts.secondary!=null && html`<span class="cc-tv__text-secondary">${opts.secondary}</span>`}</span>
           ${opts.count!=null && html`<span class="cc-tv__count">${opts.count}</span>`}
+          ${opts.onToggleVis && html`<button type="button" onClick=${function(e){e.stopPropagation();opts.onToggleVis();}}
+            title=${opts.visHidden?'Show in 3D':'Hide from 3D'}
+            style=${{background:'none',border:'none',cursor:'pointer',padding:'0 4px',color:opts.visHidden?'var(--text-faint)':'var(--text-muted)',fontSize:'0.75rem',lineHeight:1,opacity:opts.visHidden?0.7:0.6}}>
+            ${opts.visHidden?'⊘':'◉'}
+          </button>`}
         </div>
         ${hasChildren && expanded && html`<ul role="group" class="cc-tv__list--nested cc-tv__list--guides">${opts.children}</ul>`}
       </li>`;
@@ -10636,6 +10865,7 @@ function startApp() {
                         var stKey='st_'+model.id+'_'+sd.name;
                         var stEls = _mIdx.storeyGroups[sd.name] || [];
                         var stIsOpen = !!expanded[stKey];
+                        var stHidden = !!s.hiddenClasses['byStorey:'+sd.name];
                         return tvNode({
                           key:stKey, level:4,
                           icon:'▬', iconColor:'var(--color-success-fg)',
@@ -10643,6 +10873,8 @@ function startApp() {
                           count:stEls.length,
                           hasChildren:stEls.length>0, expanded:stIsOpen,
                           selected:explorerFocus===stKey,
+                          visHidden:stHidden,
+                          onToggleVis:function(){d({t:A.TOGGLE_CLASS_VIS,key:'byStorey:'+sd.name});},
                           onClick:function(){toggle(stKey);setExplorerFocus(stKey);},
                           onToggle:function(){toggle(stKey);setExplorerFocus(stKey);},
                           children:stIsOpen ? [].concat(
@@ -10729,12 +10961,15 @@ function startApp() {
               if(q && filtered.length===0) return;
               var sIsOpen = !!expanded[sKey];
               var topLevel = sIsOpen ? filtered.filter(function(el){ return !_hasParent[el.expressId]; }) : null;
+              var sHiddenT = !!s.hiddenClasses['byStorey:'+st];
               storeyChildren.push(tvNode({
                 key:sKey, level:2,
                 icon:'▬', iconColor:'var(--color-success-fg)',
                 label:st, count:filtered.length,
                 hasChildren:filtered.length>0, expanded:sIsOpen,
                 selected:explorerFocus===sKey,
+                visHidden:sHiddenT,
+                onToggleVis:function(){d({t:A.TOGGLE_CLASS_VIS,key:'byStorey:'+st});},
                 onClick:function(){toggle(sKey);setExplorerFocus(sKey);},
                 onToggle:function(){toggle(sKey);setExplorerFocus(sKey);},
                 children:sIsOpen ? [].concat(
@@ -10795,6 +11030,38 @@ function startApp() {
             </div>
           </div>`;
         })}
+      </div>
+      ${/* Selection Sets — save & restore named element groups */ ''}
+      <div style=${{borderTop:'1px solid var(--border)',padding:'.5rem .6rem',flexShrink:0,background:'var(--bg-secondary)'}}>
+        <div style=${{display:'flex',alignItems:'center',gap:'.3rem',marginBottom:'.3rem'}}>
+          <span style=${{fontSize:'0.69rem',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',flex:1}}>Selection sets</span>
+          <button onClick=${function(){
+            var refs = multiSel.length ? multiSel : (window._ccSelectedExpressId ? [{expressId:window._ccSelectedExpressId, modelId:null}] : []);
+            if(!refs.length){ alert('Select one or more elements first (click in 3D, or shift-click in the navigator).'); return; }
+            var name = prompt('Name this selection set:', 'Set '+((s.selectionSets||[]).length+1));
+            if(!name) return;
+            d({t:'ADD_SELSET', v:{id:uid(), name:name, refs:refs}});
+          }}
+            style=${{fontSize:'0.69rem',padding:'.2rem .45rem',background:'var(--accent-bg)',color:'var(--accent)',border:'1px solid var(--accent-subtle)',borderRadius:4,cursor:'pointer',fontWeight:600,fontFamily:'inherit'}}>
+            + Save
+          </button>
+        </div>
+        ${(s.selectionSets||[]).length === 0
+          ? html`<div style=${{fontSize:'0.65rem',color:'var(--text-faint)'}}>No saved sets. Multi-select with Shift-click in the navigator, then Save.</div>`
+          : html`<div style=${{display:'flex',flexDirection:'column',gap:'.15rem',maxHeight:140,overflowY:'auto'}}>
+              ${s.selectionSets.map(function(ss){
+                return html`<div key=${ss.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.2rem .3rem',background:'var(--bg-primary)',border:'1px solid var(--border-subtle)',borderRadius:4}}>
+                  <span style=${{fontSize:'0.7rem',color:'var(--text-secondary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title=${ss.name+' ('+ss.refs.length+')'}>${ss.name}</span>
+                  <span style=${{fontSize:'0.6rem',color:'var(--text-faint)',flexShrink:0}}>${ss.refs.length}</span>
+                  <button onClick=${function(){if(_highlightRefs)_highlightRefs(ss.refs,true);}}
+                    title="Isolate" style=${{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:'0.65rem',padding:'0 .2rem'}}>◉</button>
+                  <button onClick=${function(){if(_highlightRefs)_highlightRefs(ss.refs,false);}}
+                    title="Highlight" style=${{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:'0.65rem',padding:'0 .2rem'}}>★</button>
+                  <button onClick=${function(){d({t:'DEL_SELSET',id:ss.id});}}
+                    title="Delete" style=${{background:'none',border:'none',cursor:'pointer',color:'#f87171',fontSize:'0.7rem',padding:'0 .2rem'}}>×</button>
+                </div>`;
+              })}
+            </div>`}
       </div>
       ${/* Sidebar property panel removed — the viewer overlay (the
           "Clean element property panel" IIFE further down) is now the
@@ -15170,12 +15437,20 @@ function startApp() {
             <button onClick=${function(){toggleResolve(c);}} style=${btnGhost}>${c.resolved?'Reopen':'Resolve'}</button>
             <button onClick=${function(){delComment(c);}} style=${{...btnGhost,color:'#f87171',borderColor:'#ef444466'}} title="Delete">✕</button>
           </div>
-          ${(!c.text && isActive) ? html`<${ShareCommentDraft} c=${c} sp=${sp} d=${d} />` : html`<div style=${{fontSize:'0.85rem',color:'var(--text-secondary)',whiteSpace:'pre-wrap',lineHeight:1.5}}>${c.text||html`<span style=${{color:'var(--text-faint)',fontStyle:'italic'}}>(no text)</span>`}</div>`}
+          ${(!c.text && isActive) ? html`<${ShareCommentDraft} c=${c} sp=${sp} d=${d} />` : html`<div style=${{fontSize:'0.85rem',color:'var(--text-secondary)',whiteSpace:'pre-wrap',lineHeight:1.5}}>${c.text
+            ? c.text.split(/(@[A-Za-z0-9_-]+)/).map(function(part,i){
+                if(part.charAt(0)==='@') return html`<span key=${i} style=${{color:'var(--accent)',fontWeight:600,background:'var(--accent-bg)',padding:'0 .15rem',borderRadius:3}}>${part}</span>`;
+                return part;
+              })
+            : html`<span style=${{color:'var(--text-faint)',fontStyle:'italic'}}>(no text)</span>`}</div>`}
           ${(c.replies||[]).length>0 && html`<div style=${{marginTop:'.5rem',paddingLeft:'.6rem',borderLeft:'2px solid var(--border)',display:'flex',flexDirection:'column',gap:'.4rem'}}>
             ${c.replies.map(function(r){return html`<div key=${r.id} style=${{fontSize:'0.78rem'}}>
               <span style=${{fontWeight:600,color:'var(--text-primary)'}}>${r.author||'Anonymous'}</span>
               <span style=${{color:'var(--text-faint)',marginLeft:'.4rem',fontSize:'0.68rem'}}>${r.ts?new Date(r.ts).toLocaleString():''}</span>
-              <div style=${{color:'var(--text-secondary)',whiteSpace:'pre-wrap',lineHeight:1.5}}>${r.text||''}</div>
+              <div style=${{color:'var(--text-secondary)',whiteSpace:'pre-wrap',lineHeight:1.5}}>${(r.text||'').split(/(@[A-Za-z0-9_-]+)/).map(function(part,i){
+                if(part.charAt(0)==='@') return html`<span key=${i} style=${{color:'var(--accent)',fontWeight:600,background:'var(--accent-bg)',padding:'0 .15rem',borderRadius:3}}>${part}</span>`;
+                return part;
+              })}</div>
             </div>`})}
           </div>`}
           ${isActive && !c.resolved && c.text && html`<div style=${{marginTop:'.5rem',display:'flex',gap:'.4rem'}}>
@@ -22937,6 +23212,18 @@ function startApp() {
         <!-- NOTES -->
         ${btn({k:'note',  active:activeMode==='note',  title:'Drop a pin (N)', label:'Pin', icon:I.pin,
                 onClick:function(){ if(activeMode==='note') clearAllModes(); else setMode('note'); }})}
+        <!-- MARKUP — opens 3D-canvas markup toolbar (line/arrow/rect/text/freehand) -->
+        ${btn({k:'markup', title:'Markup the 3D view (arrows, text, freehand)', label:'Markup',
+                icon:'<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>',
+                onClick:function(){
+                  if(window._ccToggleMarkup3D) window._ccToggleMarkup3D();
+                }})}
+        <!-- COMPARE — pick two models, blend between them -->
+        ${s.models.length >= 2 && btn({k:'compare', title:'Compare two model versions', label:'Compare',
+                icon:'<rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1" stroke-dasharray="2 2"/>',
+                onClick:function(){
+                  if(window._ccToggleCompare) window._ccToggleCompare();
+                }})}
         ${div()}
         <!-- EXPORT PDF -->
         ${btn({k:'exportpdf', title:'Export view as PDF', label:'Export PDF',
@@ -22973,6 +23260,19 @@ function startApp() {
           ${btn({k:'runDetect', title:s.detecting?'Running detection…':'Run clash detection', label:'Run clash detection',
             icon:'<polygon points="6 3 20 12 6 21 6 3"/><path d="M6 12h14"/>',
             onClick:function(){ if(s.detecting) return; if(window._ccRunDetection){ window._ccRunDetection(); d({t:A.TAB,v:'clashes'}); } }})}
+          ${(function(){
+            var le=s.localEngine||{}, we=s.wasmEngine||{};
+            var lbl, dot, hint, click;
+            if(le.active && le.available){ lbl='Exact'; dot='#22c55e'; hint='ClashControlEngine (local Python · exact mesh)'; click=function(){if(window._ccDeactivateAddon)window._ccDeactivateAddon('local-engine');}; }
+            else if(we.active){ lbl='WASM'; dot='#22c55e'; hint='WASM engine (in-browser, accelerated). Click to try local engine.'; click=function(){if(window._ccActivateAddon)window._ccActivateAddon('local-engine');}; }
+            else { lbl='Browser'; dot='#94a3b8'; hint='Built-in JS OBB engine. Click to switch to local exact-mesh engine (requires Python server on :19800).'; click=function(){if(window._ccActivateAddon)window._ccActivateAddon('local-engine');}; }
+            return html`<button onClick=${click} title=${hint}
+              style=${{height:30,padding:'0 .55rem',background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',cursor:'pointer',fontFamily:'var(--font-body)',fontSize:'.7rem',color:'var(--text-secondary)',display:'inline-flex',alignItems:'center',gap:'.35rem',whiteSpace:'nowrap'}}>
+              <span style=${{width:7,height:7,borderRadius:'50%',background:dot,flexShrink:0}}></span>
+              <span style=${{color:'var(--text-muted)',fontSize:'.6rem',textTransform:'uppercase',letterSpacing:'.04em'}}>Engine</span>
+              <span style=${{fontWeight:600,color:'var(--text-primary)'}}>${lbl}</span>
+            </button>`;
+          })()}
           ${btn({k:'conflicts', active:s.tab==='clashes', title:'Conflicts list', label:'Conflicts',
             icon:'<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
             onClick:function(){ d({t:A.TAB,v:s.tab==='clashes'?null:'clashes'}); }})}

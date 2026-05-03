@@ -100,14 +100,15 @@ On branch `claude/research-design-tools-TzNQG` (2026-05-03) — in progress:
 - ~~B3: Walkthrough recording — `canvas.captureStream()` + MediaRecorder → .webm download; Record toolbar button with active state~~ (2026-05-03)
 - ~~B4: Material preview in Rendered mode — keyword PBR presets (glass/metal/concrete/wood/brick/gypsum/insulation)~~ (2026-05-03)
 - ~~B5: X-Ray render style (key 5) — all geometry semi-transparent (opacity 0.22, DoubleSide)~~ (2026-05-03)
-- ~~B6 (partial): Area measurement toolbar button exposed (was Cmd+K only)~~ (2026-05-03)
+- ~~B6: Area measurement toolbar button + hover coordinate display (X/Y/Z) when in measure modes~~ (2026-05-03)
+- ~~Engine selector moved out of Detection Rules into a visible Coordinate-toolbar pill~~ (2026-05-03)
+- ~~Per-storey hide/show toggle (eye icon on each storey row in Navigator Hierarchy/Flat list)~~ (2026-05-03)
+- ~~B8: Selection sets — save/restore named element groups, persisted in .ccproject~~ (2026-05-03)
+- ~~B2 (rest): Rich markup tools on the 3D canvas (line/arrow/rect/text/freehand) with SVG overlay; PDF export now includes the markup overlay~~ (2026-05-03)
+- ~~B7: Design option compare — pick two models, blend visibility 0–100%~~ (2026-05-03)
+- ~~B1: Numbered Sprite pins (Speckle pattern) + @mention highlighting in comments + replies~~ (2026-05-03)
 
-**Pending (next session):**
-- B1: Unified comment system with threads
-- B6 (remaining): Hover coordinate display (X/Y/Z tooltip on any surface)
-- B7: Design option compare (sliding curtain between two model versions)
-- B8: Saved selection sets
-- Navigator: per-storey hide/show toggle
+**Plan complete.** All Section A and Section B items shipped on this branch.
 
 On branch `claude/redesign-modern-ui-JLbhU` (2026-05-01) — landed:
 
