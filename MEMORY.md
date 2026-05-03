@@ -159,6 +159,28 @@ UI_OVERHAUL.md written (7 chapters, 1469 lines). PLAN.md updated.
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-05-03
+**Summary:** 12 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- 1f5a225 chore: bump version to 5.2.3
+- aa978cc Cmd-K: reorder items within each group by current workspace
+- f326556 Revert "Cmd-K palette: workspace-aware ordering and filtering"
+- 3551c35 Cmd-K palette: workspace-aware ordering and filtering
+- cdbea34 Toolbar tooltips: design-system styling
+- 7dc5520 chore: bump version to 5.2.2
+- 3070986 UI polish: remove LeftRail, fix Style dropdown, resize ViewCube, clean up viewer
+- 3f2e982 chore: bump version to 5.2.1
+- b8201f0 perf(render): Hidden Line uses one shared Lambert, not N per-mesh
+- 510c772 fix(ui): post-screenshot polish — welcome hides on load, restore Review, toolbar icons
+- a2a55de chore: daily memory sync 2026-05-02
+- c4e11b9 chore: bump version to 5.2.0
+
+</details>
+
 ### 2026-05-02
 **Summary:** 63 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
