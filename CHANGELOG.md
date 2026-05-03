@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.4.0 (2026-05-03)
+- Update MEMORY.md — full plan complete
+
 ## v5.3.0 (2026-05-03)
 - Update MEMORY.md with completed session work
 
