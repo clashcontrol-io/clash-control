@@ -8139,9 +8139,6 @@ function startApp() {
     var theme = props.theme || 'dark';
     var canvasRef = useRef(null);
     var vcState = useRef(null);
-    var activeFaceRef = useRef(-1);
-    var afArr = useState(-1); var activeFace = afArr[0]; var setActiveFace = afArr[1];
-
     // Face definitions: label + normal. Order MUST stay fixed (BOX_FACE_MAP depends on it).
     var FACES = [
       {label:'FRONT',  normal:[0,0,1]},
@@ -8155,17 +8152,6 @@ function startApp() {
     var FACE_CLR = theme==='light'
       ? {FRONT:0x8494a7, BACK:0x7a8a9d, RIGHT:0x8494a7, LEFT:0x7a8a9d, TOP:0x8ea0b5, BOTTOM:0x708090}
       : {FRONT:0x3a5f8a, BACK:0x34537a, RIGHT:0x3a5f8a, LEFT:0x34537a, TOP:0x406690, BOTTOM:0x2e4a6e};
-
-    // Adjacent face normals for each face index: used by navigation arrows.
-    // right/left = rotate around world-Y; up/down = toward top/bottom face.
-    var FACE_ADJACENTS = [
-      {right:[1,0,0],  left:[-1,0,0], up:[0,1,0],  down:[0,-1,0]},  // 0 FRONT
-      {right:[-1,0,0], left:[1,0,0],  up:[0,1,0],  down:[0,-1,0]},  // 1 BACK
-      {right:[0,0,-1], left:[0,0,1],  up:[0,1,0],  down:[0,-1,0]},  // 2 RIGHT
-      {right:[0,0,1],  left:[0,0,-1], up:[0,1,0],  down:[0,-1,0]},  // 3 LEFT
-      {right:[1,0,0],  left:[-1,0,0], up:[0,0,-1], down:[0,0,1]},   // 4 TOP
-      {right:[1,0,0],  left:[-1,0,0], up:[0,0,1],  down:[0,0,-1]},  // 5 BOTTOM
-    ];
 
     function flyToDir(dir) {
       var S=state3d.current; if(!S||!S.orbit) return;
@@ -8213,7 +8199,7 @@ function startApp() {
       var canvas = canvasRef.current;
       if(!canvas || vcState.current) return;
 
-      var size = 120;
+      var size = 74;
       var renderer = new THREE.WebGLRenderer({canvas:canvas, alpha:true, antialias:true});
       renderer.setSize(size, size);
       renderer.setPixelRatio(window.devicePixelRatio);
@@ -8279,23 +8265,6 @@ function startApp() {
         if(!S || !vc || !S.orbit) return;
         var theta = S.orbit.sph.theta;
         var phi   = S.orbit.sph.phi;
-
-        // Track which face the camera is roughly aligned with for navigation arrows.
-        // Camera direction = (sin(phi)*sin(theta), cos(phi), sin(phi)*cos(theta))
-        var cx = Math.sin(phi)*Math.sin(theta);
-        var cy = Math.cos(phi);
-        var cz = Math.sin(phi)*Math.cos(theta);
-        var newFace = -1, maxDot = 0.82; // ~34° threshold
-        for(var fi=0; fi<FACES.length; fi++){
-          var n = FACES[fi].normal;
-          var dot = n[0]*cx + n[1]*cy + n[2]*cz;
-          if(dot > maxDot){ maxDot = dot; newFace = fi; }
-        }
-        if(newFace !== activeFaceRef.current){
-          activeFaceRef.current = newFace;
-          setActiveFace(newFace);
-          vc.dirty = true;
-        }
 
         // Skip GPU work if nothing changed.
         if(!vc.dirty && theta === _lastTheta && phi === _lastPhi) return;
@@ -8431,49 +8400,8 @@ function startApp() {
       vc.dirty = true;
     }, [theme]);
 
-    var light = theme==='light';
-    // Revit-style: small triangle arrows rendered INSIDE the cube face area,
-    // visible only when the camera is directly aligned with a face (activeFace >= 0).
-    var triBase = {
-      position:'absolute', cursor:'pointer', userSelect:'none',
-      width:0, height:0, padding:0, border:'none', background:'none',
-      opacity:.7, transition:'opacity .12s'
-    };
-    var triColor = light ? '#404040' : '#a0a0a0';
-    var adj = activeFace >= 0 ? FACE_ADJACENTS[activeFace] : null;
-
-    return html`<div class="cc-viewcube-wrap" style=${{position:'absolute',top:'1rem',right:'1rem',pointerEvents:'auto',width:74,height:74,overflow:'visible'}}>
-      <canvas ref=${canvasRef} width="63" height="63" style=${{cursor:'pointer',position:'absolute',top:6,left:6,width:63,height:63}} />
-      ${adj && html`
-        <!-- Left arrow -->
-        <button aria-label="Left view" onClick=${function(){flyToDir(adj.left);}}
-          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-          onMouseLeave=${function(e){e.currentTarget.style.opacity=.7;}}
-          style=${{...triBase,left:8,top:33,
-            borderTop:'3px solid transparent',borderBottom:'3px solid transparent',
-            borderRight:'5px solid '+triColor}}></button>
-        <!-- Right arrow -->
-        <button aria-label="Right view" onClick=${function(){flyToDir(adj.right);}}
-          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-          onMouseLeave=${function(e){e.currentTarget.style.opacity=.7;}}
-          style=${{...triBase,right:8,top:33,
-            borderTop:'3px solid transparent',borderBottom:'3px solid transparent',
-            borderLeft:'5px solid '+triColor}}></button>
-        <!-- Top arrow -->
-        <button aria-label="Top view" onClick=${function(){flyToDir(adj.up);}}
-          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-          onMouseLeave=${function(e){e.currentTarget.style.opacity=.7;}}
-          style=${{...triBase,left:33,top:8,
-            borderLeft:'3px solid transparent',borderRight:'3px solid transparent',
-            borderBottom:'5px solid '+triColor}}></button>
-        <!-- Bottom arrow -->
-        <button aria-label="Bottom view" onClick=${function(){flyToDir(adj.down);}}
-          onMouseEnter=${function(e){e.currentTarget.style.opacity=1;}}
-          onMouseLeave=${function(e){e.currentTarget.style.opacity=.7;}}
-          style=${{...triBase,left:33,bottom:8,
-            borderLeft:'3px solid transparent',borderRight:'3px solid transparent',
-            borderTop:'5px solid '+triColor}}></button>
-      `}
+    return html`<div class="cc-viewcube-wrap" style=${{position:'absolute',top:'1rem',right:'1rem',pointerEvents:'auto',width:74,height:74,overflow:'hidden'}}>
+      <canvas ref=${canvasRef} style=${{cursor:'pointer',display:'block',width:74,height:74}} />
     </div>`;
   }
 
