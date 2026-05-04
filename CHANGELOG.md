@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.6.8 (2026-05-04)
+- Section handles glow on hover + no modifier needed to drag
+
 ## v5.6.7 (2026-05-04)
 - Fix glass transparency in rendered mode
 
