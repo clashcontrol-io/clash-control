@@ -6856,7 +6856,7 @@ function startApp() {
           if (Math.abs(dx) < 3 && !_secDrag.didDrag) return;
           _secDrag.didDrag = true;
           window._ccSectionDragging = true;
-          var angle = dx * 0.005;
+          var angle = -dx * 0.005;
           var nx = _secDrag.startNormal[0], nz = _secDrag.startNormal[2];
           var cosA = Math.cos(angle), sinA = Math.sin(angle);
           var rn = [nx*cosA - nz*sinA, _secDrag.startNormal[1], nx*sinA + nz*cosA];
@@ -7364,9 +7364,14 @@ function startApp() {
         border.userData._sectionPlane = true;
         border.renderOrder = 999;
         grp.add(border);
-        var stemLen = Math.min(halfW, halfH) * 0.09;
-        var tipLen = stemLen * 0.35;
-        var tipW = tipLen * 0.7;
+        var _arrBox = _elemsBBox();
+        var _arrSz = _arrBox.isEmpty() ? new THREE.Vector3(10,10,10) : _arrBox.getSize(new THREE.Vector3());
+        var _arrMax = Math.max(_arrSz.x, _arrSz.y, _arrSz.z) || 10;
+        // Match section box face-arrow sizing so plane and box handles read at the same scale
+        var arrowSize = Math.max(0.08, Math.min(_arrMax * 0.0173, 0.69));
+        var stemLen = arrowSize * 1.5;
+        var tipLen = arrowSize * 1.6;
+        var tipW = arrowSize * 0.55;
         var arrowMat = new THREE.MeshBasicMaterial({color:0x1a6b4a, transparent:true, opacity:0.95, depthTest:false});
         arrowMat.clippingPlanes = [];
         var stemGeo = new THREE.CylinderGeometry(tipW*0.18, tipW*0.18, stemLen*2, 10);
@@ -8295,7 +8300,8 @@ function startApp() {
             // Keyword-based PBR preset from IFC material name
             var _matName = (obj.userData._ifcMaterial || '').toLowerCase();
             var _r = 0.85, _m = 0.0, _clr = origColor.clone();
-            if (/glass|glazing|curtain.*wall|fenst/.test(_matName)) {
+            var _isGlass = /glass|glazing|curtain.*wall|fenst/.test(_matName) || (orig.transparent && orig.opacity < 0.6);
+            if (_isGlass) {
               _r = 0.05; _m = 0.0; _clr.set(0xbfe8ff);
             } else if (/steel|metal|alum|copper|brass|iron|zinc/.test(_matName)) {
               _r = 0.25; _m = 0.9;
@@ -8314,8 +8320,10 @@ function startApp() {
               color: _matName ? _clr : origColor,
               roughness: _r, metalness: _m,
               envMapIntensity: 0.85,
-              transparent: orig.transparent, opacity: orig.opacity,
-              side: THREE.FrontSide
+              transparent: _isGlass ? true : orig.transparent,
+              opacity: _isGlass ? Math.min(orig.opacity, 0.25) : orig.opacity,
+              depthWrite: _isGlass ? false : true,
+              side: _isGlass ? THREE.DoubleSide : THREE.FrontSide
             });
           }
           mat = cache.rendered;
