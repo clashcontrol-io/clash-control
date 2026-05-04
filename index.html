@@ -677,6 +677,11 @@ function startApp() {
     theme:(function(){ try { return localStorage.getItem('cc_theme')||'light'; } catch(e){ return 'light'; } })(),
     renderStyle:_ccLoadPref('renderStyle','shaded'), // 'shaded','standard','rendered','wireframe' — default 'shaded' (IFC colors, clean first paint)
     unitScaleOverride:_ccLoadPref('unitScaleOverride','auto'), // 'auto','1','100','1000'
+    // Measurement unit + precision (display only — geometry stays in metres)
+    measureUnits:_ccLoadPref('measureUnits','auto'),     // 'auto'|'metric'|'imperial-decimal'|'imperial-fractional'
+    measurePrecision:_ccLoadPref('measurePrecision',2),  // decimals for metric/decimal-imperial; fraction denom is fixed (1/16")
+    measureMagnifier:_ccLoadPref('measureMagnifier',false), // PointerLens magnifier on by default? (perf cost)
+    measureCalibration:_ccLoadPref('measureCalibration',1), // global multiplier from calibration tool (rare; default 1)
     // Rendered-mode lighting controls (sliders surfaced in the toolbar Style popover)
     lightSettings:_ccLoadPref('lightSettings',{sun:1.0, ambient:1.0, exposure:1.0, shadow:1.0, time:13}),
   };
@@ -761,7 +766,7 @@ function startApp() {
     SECTION:'SECTION', SECTION_CUSTOM:'SECTION_CUSTOM', SECTION_BOX:'SECTION_BOX', SECTION_FLIP:'SECTION_FLIP', SECTION_HATCH:'SECTION_HATCH',
     TAB:'TAB', SETTINGS:'SETTINGS', TRAINING_MODE:'TRAINING_MODE',
     UPD_PREFS:'UPD_PREFS',
-    MEASURE_MODE:'MEASURE_MODE', ADD_MEASUREMENT:'ADD_MEASUREMENT',
+    MEASURE_MODE:'MEASURE_MODE', ADD_MEASUREMENT:'ADD_MEASUREMENT', UPD_MEASUREMENT:'UPD_MEASUREMENT',
     DEL_MEASUREMENT:'DEL_MEASUREMENT', CLEAR_MEASUREMENTS:'CLEAR_MEASUREMENTS',
     ADD_VIEWPOINT:'ADD_VIEWPOINT', DEL_VIEWPOINT:'DEL_VIEWPOINT',
     SET_CLASSIFICATIONS:'SET_CLASSIFICATIONS',
@@ -1079,10 +1084,11 @@ function startApp() {
       case A.TRAINING_MODE: var tm=a.v!=null?!!a.v:!s.trainingMode;try{localStorage.setItem('cc_trainingMode',tm?'1':'0');}catch(e){}return Object.assign({},s,{trainingMode:tm});
       case A.UPD_PREFS:
         if(a.u&&a.u.defaultTolerances!==undefined){try{localStorage.setItem('cc_defaultTolerances',JSON.stringify(a.u.defaultTolerances));}catch(e){}}
-        if(a.u){var _pk=['autoFlyTo','autoHighlight','showGrid','showAxes','showMarkers','hoverHighlight','outlineSelected','defaultPriority','defaultCategory','defaultStatus','defaultMaxGap','resetFiltersOnRun','renderStyle','unitScaleOverride','lightSettings'];_pk.forEach(function(k){if(a.u[k]!==undefined){try{localStorage.setItem('cc_'+k,JSON.stringify(a.u[k]));}catch(e){}}});}
+        if(a.u){var _pk=['autoFlyTo','autoHighlight','showGrid','showAxes','showMarkers','hoverHighlight','outlineSelected','defaultPriority','defaultCategory','defaultStatus','defaultMaxGap','resetFiltersOnRun','renderStyle','unitScaleOverride','lightSettings','measureUnits','measurePrecision','measureMagnifier','measureCalibration'];_pk.forEach(function(k){if(a.u[k]!==undefined){try{localStorage.setItem('cc_'+k,JSON.stringify(a.u[k]));}catch(e){}}});}
         return Object.assign({},s,{prefs:Object.assign({},s.prefs,a.u)});
       case A.MEASURE_MODE: return Object.assign({},s,{measureMode:a.v, walkMode:a.v?false:s.walkMode, sectionAxis:a.v?null:s.sectionAxis, sectionCustom:a.v?null:s.sectionCustom, commentMode:a.v?false:s.commentMode});
       case A.ADD_MEASUREMENT: _gcEvent('measurement', a.v&&a.v.type||'length'); return Object.assign({},s,{measurements:s.measurements.concat([a.v])});
+      case A.UPD_MEASUREMENT: return Object.assign({},s,{measurements:s.measurements.map(function(m){return m.id===a.id?Object.assign({},m,a.u):m;})});
       case A.DEL_MEASUREMENT: return Object.assign({},s,{measurements:s.measurements.filter(function(m){return m.id!==a.id})});
       case A.CLEAR_MEASUREMENTS: return Object.assign({},s,{measurements:[]});
       case A.ADD_VIEWPOINT: return Object.assign({},s,{viewpoints:s.viewpoints.concat([a.v])});
@@ -4294,6 +4300,20 @@ function startApp() {
             }));
           }
         });
+        // Custom measurement payload — round-trips ClashControl exports
+        var ccMs = zip.file('clashcontrol/measurements.json');
+        if (ccMs) {
+          ccMs.async('text').then(function(txt){
+            try {
+              var pl = JSON.parse(txt);
+              if (pl && Array.isArray(pl.measurements)) {
+                pl.measurements.forEach(function(m){
+                  if (m && m.id) d({t:A.ADD_MEASUREMENT, v:m});
+                });
+              }
+            } catch(e){ console.warn('[BCF] measurements.json parse failed:', e); }
+          });
+        }
         return Promise.all(promises);
       }).then(function(markups) {
         var imported = 0;
@@ -4485,6 +4505,24 @@ function startApp() {
       markup += '</Markup>';
       f.file('markup.bcf', markup);
     });
+
+    // Custom measurement payload (T3.5). BCF 2.1/3.0 has no native measurement
+    // element, so we ship a sibling `clashcontrol/measurements.json` inside the
+    // zip. Other BCF tools ignore it; ours round-trips cleanly via importBCF.
+    if (state && state.measurements && state.measurements.length) {
+      try {
+        var ccDir = zip.folder('clashcontrol');
+        var msPayload = {
+          tool: ccTool,
+          schema: 1,
+          measurements: state.measurements.map(function(m){
+            // Snapshots stripped to keep file size sane; if needed, reattach on load.
+            return Object.assign({}, m, {snapshot: undefined});
+          })
+        };
+        ccDir.file('measurements.json', JSON.stringify(msPayload, null, 2));
+      } catch(e){ console.warn('[BCF] Failed to attach measurements.json:', e); }
+    }
 
     zip.generateAsync({type:'blob'}).then(function(blob) {
       var a = document.createElement('a');
@@ -4953,6 +4991,8 @@ function startApp() {
     var foundMarkersRef = useRef([]); // items finder highlights
     var measureObjsRef = useRef([]); // measurement 3D objects
     var measurePtsRef = useRef([]); // current measurement click points
+    // Expose to the cursor overlay so live distance can read the in-progress points
+    window._ccMeasurePtsRef = measurePtsRef;
     var modelsRef = useRef(s.models);
     modelsRef.current = s.models;
     // Multi-select: array of {modelId, expressId}. selectedEl is the most-recent.
@@ -6155,6 +6195,454 @@ function startApp() {
         foundMarkersRef.current = [];
       };
 
+      // ── Snap engine + live measurement preview ─────────────────────
+      // Computes the best snap point near the cursor from a raycaster hit:
+      // vertex > midpoint > edge > face-centroid > raw face point.
+      // Returns {point: Vector3, type, normal, screenX, screenY, srcObj}.
+      // Pixel radius scales with element size on screen so dense parts of
+      // the model don't snap too aggressively. Kept side-effect-free so
+      // the click handler can re-call it on the click event.
+      var _SNAP_PX = 18;
+      var _proj = new THREE.Vector3();
+      function _projectToPx(p3, w, h){
+        _proj.copy(p3).project(S.camera);
+        return {x: (_proj.x*0.5+0.5)*w, y: (-_proj.y*0.5+0.5)*h, z:_proj.z};
+      }
+      function _ccComputeSnap(hit, screenX, screenY){
+        if(!hit || !hit.point) return null;
+        var rect = renderer.domElement.getBoundingClientRect();
+        var w = rect.width, h = rect.height;
+        var sx = screenX - rect.left, sy = screenY - rect.top;
+        var face = hit.face, geom = hit.object && hit.object.geometry;
+        var best = {point: hit.point.clone(), type:'face', normal:(hit.face&&hit.face.normal)?hit.face.normal.clone():new THREE.Vector3(0,1,0), dist:_SNAP_PX, srcObj:hit.object};
+        // Apply the mesh's world matrix to all candidate vertices
+        var wm = hit.object && hit.object.matrixWorld;
+        function _consider(localPt, type){
+          if(!localPt) return;
+          var wp = localPt.clone();
+          if (wm) wp.applyMatrix4(wm);
+          var p2 = _projectToPx(wp, w, h);
+          if (p2.z < -1 || p2.z > 1) return;
+          var dx = p2.x - sx, dy = p2.y - sy;
+          var d = Math.sqrt(dx*dx + dy*dy);
+          // Priority weighting: vertex < midpoint < center < edge — smaller weight wins
+          var pri = type==='vertex'?0:(type==='midpoint'?2:(type==='center'?3:4));
+          var weighted = d + pri;
+          if (weighted < best.dist) { best.dist = weighted; best.point = wp; best.type = type; }
+        }
+        if (face && geom && geom.attributes && geom.attributes.position) {
+          var posAttr = geom.attributes.position;
+          var idxAttr = geom.index;
+          var aIdx = face.a, bIdx = face.b, cIdx = face.c;
+          // BufferGeometry index lookup
+          if (idxAttr) { /* face.{a,b,c} are already vertex indices for indexed geom */ }
+          var vA = new THREE.Vector3().fromBufferAttribute(posAttr, aIdx);
+          var vB = new THREE.Vector3().fromBufferAttribute(posAttr, bIdx);
+          var vC = new THREE.Vector3().fromBufferAttribute(posAttr, cIdx);
+          // For instanced meshes, also apply the instance matrix
+          if (hit.object && hit.object.isInstancedMesh && hit.instanceId != null) {
+            var im = new THREE.Matrix4(); hit.object.getMatrixAt(hit.instanceId, im);
+            vA.applyMatrix4(im); vB.applyMatrix4(im); vC.applyMatrix4(im);
+          }
+          _consider(vA, 'vertex'); _consider(vB, 'vertex'); _consider(vC, 'vertex');
+          _consider(new THREE.Vector3().addVectors(vA,vB).multiplyScalar(0.5), 'midpoint');
+          _consider(new THREE.Vector3().addVectors(vB,vC).multiplyScalar(0.5), 'midpoint');
+          _consider(new THREE.Vector3().addVectors(vC,vA).multiplyScalar(0.5), 'midpoint');
+          _consider(new THREE.Vector3().addVectors(vA,vB).add(vC).multiplyScalar(1/3), 'center');
+        }
+        // Re-project final to record screen coords
+        var projF = _projectToPx(best.point, w, h);
+        best.screenX = projF.x + rect.left;
+        best.screenY = projF.y + rect.top;
+        return best;
+      }
+
+      // Live preview: rubberband line + temporary measurement geometry
+      // shown while the user is mid-draw. The geometry is updated in-place
+      // each frame from window._ccMeasurePreviewTick.
+      var _previewGroup = new THREE.Group();
+      _previewGroup.name = '_cc_measure_preview';
+      _previewGroup.renderOrder = 999;
+      scene.add(_previewGroup);
+      var _previewLineMat = new THREE.LineDashedMaterial({color:0xb8533a, dashSize:0.15, gapSize:0.08, depthTest:false, transparent:true, opacity:0.95});
+      var _previewSnapMat = new THREE.MeshBasicMaterial({color:0xb8533a, depthTest:false, transparent:true, opacity:0.9});
+      var _axisLineMatX = new THREE.LineBasicMaterial({color:0xff5555, depthTest:false, transparent:true, opacity:0.6});
+      var _axisLineMatY = new THREE.LineBasicMaterial({color:0x55cc55, depthTest:false, transparent:true, opacity:0.6});
+      var _axisLineMatZ = new THREE.LineBasicMaterial({color:0x5588ff, depthTest:false, transparent:true, opacity:0.6});
+      function _clearPreview(){
+        for (var i=_previewGroup.children.length-1; i>=0; i--){
+          var c=_previewGroup.children[i];
+          _previewGroup.remove(c);
+          if (c.geometry && c.geometry.dispose) c.geometry.dispose();
+        }
+      }
+      // Apply axis-lock from pts[0] toward target along dominant world axis
+      function _axisLock(p0, target){
+        var dx=Math.abs(target.x-p0.x), dy=Math.abs(target.y-p0.y), dz=Math.abs(target.z-p0.z);
+        var locked = target.clone();
+        if (dx >= dy && dx >= dz)      { locked.y=p0.y; locked.z=p0.z; locked._axis='x'; }
+        else if (dy >= dx && dy >= dz) { locked.x=p0.x; locked.z=p0.z; locked._axis='y'; }
+        else                            { locked.x=p0.x; locked.y=p0.y; locked._axis='z'; }
+        return locked;
+      }
+      function _ccUpdateMeasurePreview(){
+        _clearPreview();
+        var mode = measureModeRef.current;
+        var pts = measurePtsRef.current;
+        var snap = window._ccHoverSnap;
+        // Alt-hover instant distance: leader from selected element centre to snap point.
+        // Stateless overlay — nothing is saved, vanishes on Alt-up.
+        if (window._ccAltHeld && window._ccAltHoverFrom && snap && (!mode || !pts.length)) {
+          var f = window._ccAltHoverFrom;
+          var fromV = new THREE.Vector3(f.x, f.y, f.z);
+          var altMat = new THREE.LineDashedMaterial({color:0xd64d3f, dashSize:0.18, gapSize:0.10, depthTest:false, transparent:true, opacity:0.95});
+          var altGeo = new THREE.BufferGeometry().setFromPoints([fromV, snap.point]);
+          var altLine = new THREE.Line(altGeo, altMat);
+          altLine.computeLineDistances && altLine.computeLineDistances();
+          altLine.renderOrder = 1000;
+          _previewGroup.add(altLine);
+          // Anchor dot at the source
+          var srcMat = new THREE.MeshBasicMaterial({color:0xd64d3f, depthTest:false, transparent:true, opacity:0.9});
+          var srcDot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 10), srcMat);
+          srcDot.position.copy(fromV); srcDot.renderOrder = 1001;
+          _previewGroup.add(srcDot);
+          var tgtDot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 10), srcMat);
+          tgtDot.position.copy(snap.point); tgtDot.renderOrder = 1001;
+          _previewGroup.add(tgtDot);
+          invalidate();
+          return;
+        }
+        if (!mode || !pts || !pts.length || !snap) { invalidate(); return; }
+        var lastPt = pts[pts.length-1];
+        var target = snap.point.clone();
+        // Shift held: axis-lock from pts[0] (length) or from previous vertex (area)
+        if (window._ccShiftHeld && pts.length >= 1) {
+          var lockFrom = pts[0];
+          target = _axisLock(lockFrom, target);
+          // Draw thin axis guide
+          var axColor = target._axis==='x'?_axisLineMatX:(target._axis==='y'?_axisLineMatY:_axisLineMatZ);
+          var axGeo = new THREE.BufferGeometry().setFromPoints([lockFrom, target]);
+          var axLine = new THREE.Line(axGeo, axColor); axLine.renderOrder = 1000;
+          _previewGroup.add(axLine);
+        }
+        // Rubberband from lastPt to target
+        var pgeo = new THREE.BufferGeometry().setFromPoints([lastPt, target]);
+        var pline = new THREE.Line(pgeo, _previewLineMat);
+        pline.computeLineDistances && pline.computeLineDistances();
+        pline.renderOrder = 1000;
+        _previewGroup.add(pline);
+        // For area mode: closing dotted line back to pts[0]
+        if (mode === 'area' && pts.length >= 2) {
+          var cgeo = new THREE.BufferGeometry().setFromPoints([target, pts[0]]);
+          var cline = new THREE.Line(cgeo, _previewLineMat);
+          cline.computeLineDistances && cline.computeLineDistances();
+          cline.renderOrder = 1000;
+          _previewGroup.add(cline);
+        }
+        // Snap target dot at the rubberband end
+        var dotGeo = new THREE.SphereGeometry(0.05, 10, 10);
+        var dot = new THREE.Mesh(dotGeo, _previewSnapMat);
+        dot.position.copy(target); dot.renderOrder = 1001;
+        _previewGroup.add(dot);
+        // Stash in case any tick callback wants to read it
+        window._ccPreviewTarget = {x:target.x, y:target.y, z:target.z, axis:target._axis||null, type:snap.type};
+        invalidate();
+      }
+      window._ccMeasurePreviewTick = _ccUpdateMeasurePreview;
+      window._ccClearMeasurePreview = function(){
+        _clearPreview();
+        window._ccPreviewTarget = null;
+        invalidate();
+      };
+      // Drop the most recent N click-marker dots from the in-progress measurement.
+      // N==null drops all dots that haven't been promoted to a measurement yet.
+      // The committed measurement geometry is kept in measureObjsRef but tied to
+      // the placed measurement (separate cleanup path on ADD_MEASUREMENT/CLEAR).
+      window._ccDropInProgressDots = function(n){
+        var pts = measurePtsRef.current || [];
+        var keep = pts.length; // already-popped: pts has been mutated already
+        // Heuristic: in-progress dots are the last N entries in measureObjsRef
+        // that are dot meshes (SphereGeometry) attached after the last "line"
+        // (committed segment). On cancel, drop all dots back to the last commit.
+        var arr = measureObjsRef.current || [];
+        var drop = (n != null) ? n : arr.length;
+        for (var k = 0; k < drop; k++){
+          var obj = arr[arr.length-1];
+          if (!obj) break;
+          // Stop dropping when we hit a Line (committed segment of a prior measurement)
+          if (obj.type === 'Line' && n != null) break;
+          arr.pop();
+          scene.remove(obj);
+          if (obj.geometry && obj.geometry.dispose) obj.geometry.dispose();
+        }
+        invalidate();
+      };
+      // Force the area-close path: synthesize a click at pts[0]
+      window._ccForceCloseArea = function(){
+        var pts = measurePtsRef.current;
+        if (!pts || pts.length < 3) return;
+        var p0 = pts[0];
+        // Manually run the close logic
+        pts.push(p0.clone());
+        var polyMat = new THREE.LineBasicMaterial({color:0x1a6b4a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
+        var polyGeo = new THREE.BufferGeometry().setFromPoints(pts.concat([pts[0]]));
+        var polyLine = new THREE.Line(polyGeo, polyMat); polyLine.renderOrder = 998;
+        scene.add(polyLine);
+        measureObjsRef.current.push(polyLine);
+        var nrm = new THREE.Vector3();
+        for (var i=0;i<pts.length;i++){
+          var a=pts[i], b=pts[(i+1)%pts.length];
+          nrm.x += (a.y-b.y)*(a.z+b.z);
+          nrm.y += (a.z-b.z)*(a.x+b.x);
+          nrm.z += (a.x-b.x)*(a.y+b.y);
+        }
+        var area = nrm.length()/2;
+        var id = uid();
+        d({t:A.ADD_MEASUREMENT, v:{id:id, type:'area', value:area, label:_ccFmtArea(area, window._ccLatestState), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+        if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(id);
+        measurePtsRef.current = [];
+        _clearPreview();
+        invalidate();
+      };
+      // Snapshot capture: 192×120 jpeg of the current viewport, attached to a
+      // measurement on next render frame (after the dispatch settles).
+      window._ccCaptureMeasurementSnapshot = function(measurementId){
+        try {
+          // Defer one frame so the new geometry renders into the snapshot
+          requestAnimationFrame(function(){
+            requestAnimationFrame(function(){
+              try {
+                var src = renderer.domElement;
+                var canvas = document.createElement('canvas');
+                canvas.width = 192; canvas.height = 120;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(src, 0, 0, 192, 120);
+                var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                d({t:A.UPD_MEASUREMENT, id:measurementId, u:{snapshot:dataUrl}});
+              } catch(e) {/* ignore — snapshots are nice-to-have */}
+            });
+          });
+        } catch(e){}
+      };
+      // Fly the camera to a stored measurement
+      window._ccFlyToMeasurement = function(id){
+        var m = ((window._ccLatestState||{}).measurements||[]).find(function(x){return x.id===id;});
+        if (!m || !m.points || !m.points.length) return;
+        var box = new THREE.Box3();
+        m.points.forEach(function(p){ box.expandByPoint(new THREE.Vector3(p[0],p[1],p[2])); });
+        if (window._ccFlyToBox) window._ccFlyToBox(box, 1.6);
+        else if (window._ccFlyTo) {
+          var c = box.getCenter(new THREE.Vector3());
+          window._ccFlyTo(c, 5);
+        }
+      };
+      // Resolve the picked Three.js object back to an IFC element record.
+      // Returns {modelId, expressId, globalId, name, ifcType, props, box} or null.
+      window._ccResolveElementForObject = function(obj, instanceId){
+        if (!obj) return null;
+        // Walk up to find the model group with userData.modelId
+        var cur = obj, modelId = null;
+        while (cur && cur.parent && !modelId){
+          if (cur.userData && cur.userData.modelId) modelId = cur.userData.modelId;
+          cur = cur.parent;
+        }
+        var st = window._ccLatestState; if(!st) return null;
+        var model = (st.models||[]).find(function(m){return m.id===modelId;});
+        if (!model) return null;
+        // Try to read expressId from instance attribute / userData / lookup map
+        var expressId = null;
+        if (obj.userData && obj.userData.expressId != null) expressId = obj.userData.expressId;
+        if (obj.isInstancedMesh && instanceId != null && obj.userData && obj.userData.instanceExpressIds) {
+          expressId = obj.userData.instanceExpressIds[instanceId];
+        }
+        if (expressId == null) return null;
+        var el = (model.elements||[]).find(function(x){return x.expressId===expressId;});
+        if (!el) return null;
+        return {
+          modelId: model.id,
+          expressId: expressId,
+          globalId: el.globalId || (el.props&&el.props.globalId) || '',
+          name: el.name || (el.props&&el.props.name) || ('Element '+expressId),
+          ifcType: el.ifcType || (el.props&&el.props.ifcType) || 'Element',
+          props: el.props || {},
+          box: el.box || null,
+          element: el
+        };
+      };
+      // Open the element-measure mini-menu next to the cursor (T2.1)
+      window._ccOpenElementMeasureMenu = function(elInfo, screenX, screenY){
+        if (!elInfo || !elInfo.props) return;
+        var psets = elInfo.props.psets || elInfo.props.quantities || {};
+        var quantitiesGroup = psets.Qto_Base || null;
+        // Look for any Qto_* group; pick the first match
+        var qto = quantitiesGroup;
+        if (!qto) {
+          for (var k in psets) {
+            if (psets.hasOwnProperty(k) && k.indexOf('Qto_') === 0 && psets[k]) {
+              qto = psets[k]; break;
+            }
+          }
+        }
+        // Fallback: bbox dims
+        var opts = [];
+        var st = window._ccLatestState;
+        if (qto) {
+          // Common keys: Length, Width, Height, NetVolume, GrossVolume, NetSideArea, GrossSideArea, NetArea, GrossArea
+          var keyPriority = ['NetVolume','GrossVolume','NetSideArea','GrossSideArea','NetArea','GrossArea','Length','Width','Height','Perimeter'];
+          keyPriority.forEach(function(k){
+            var v = qto[k];
+            if (v == null) return;
+            var num = (typeof v === 'object' && v.value != null) ? Number(v.value) : Number(v);
+            if (!isFinite(num)) return;
+            // Quantities in IFC are stored in the project's length unit. Geometry is in metres.
+            // Heuristic: if num is huge, assume mm; if reasonable, assume project unit ~ metres.
+            // For volume/area the conversion is ^3/^2.
+            var meters = num;
+            if (k.indexOf('Volume') >= 0) {
+              if (num > 1e6) meters = num / 1e9; // mm³ → m³
+              else if (num > 1e3) meters = num / 1e6; // cm³ → m³
+            } else if (k.indexOf('Area') >= 0) {
+              if (num > 1e4) meters = num / 1e6; // mm² → m²
+              else if (num > 1e2) meters = num / 1e4; // cm² → m²
+            } else {
+              if (num > 1e3) meters = num / 1000; // mm → m
+              else if (num > 1e1) meters = num / 100; // cm → m (rough)
+            }
+            var formatted = (k.indexOf('Volume')>=0) ? _ccFmtVolume(meters, st)
+                           : (k.indexOf('Area')>=0)  ? _ccFmtArea(meters, st)
+                           : _ccFmtLength(meters, st);
+            opts.push({key:k, label:k.replace(/([A-Z])/g,' $1').trim(), value:meters, formatted:formatted});
+          });
+        }
+        if (!opts.length && elInfo.box && !elInfo.box.isEmpty()) {
+          var sz = elInfo.box.getSize(new THREE.Vector3());
+          opts.push({key:'BBoxLength', label:'Length (bbox)', value:sz.x, formatted:_ccFmtLength(sz.x, st)});
+          opts.push({key:'BBoxWidth',  label:'Width (bbox)',  value:sz.z, formatted:_ccFmtLength(sz.z, st)});
+          opts.push({key:'BBoxHeight', label:'Height (bbox)', value:sz.y, formatted:_ccFmtLength(sz.y, st)});
+          opts.push({key:'BBoxVolume', label:'Volume (bbox)', value:sz.x*sz.y*sz.z, formatted:_ccFmtVolume(sz.x*sz.y*sz.z, st)});
+        }
+        if (!opts.length) {
+          if (window._ccToast) window._ccToast('No quantity data on this element.');
+          return;
+        }
+        window._ccElementMeasureMenu = {
+          x: screenX + 8, y: screenY + 8,
+          elementLabel: (elInfo.ifcType || 'Element') + (elInfo.name ? ' · ' + elInfo.name : ''),
+          options: opts,
+          elInfo: elInfo
+        };
+        window._ccPickElementMeasure = function(key){
+          var em = window._ccElementMeasureMenu; if(!em) return;
+          var opt = (em.options||[]).find(function(o){return o.key===key;}); if(!opt) return;
+          var c = elInfo.box ? elInfo.box.getCenter(new THREE.Vector3()) : new THREE.Vector3();
+          var id = uid();
+          d({t:A.ADD_MEASUREMENT, v:{
+            id:id, type:'element', value:opt.value, label:opt.formatted,
+            qtoKey:opt.key, elementId:elInfo.expressId, modelId:elInfo.modelId,
+            globalId:elInfo.globalId, ifcType:elInfo.ifcType,
+            name:(elInfo.ifcType||'Element')+' · '+opt.label,
+            points:[[c.x,c.y,c.z]]
+          }});
+          if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(id);
+          window._ccElementMeasureMenu = null;
+          if (window._ccHoverCoordTick) window._ccHoverCoordTick();
+        };
+        if (window._ccHoverCoordTick) window._ccHoverCoordTick();
+      };
+      // Min-distance / clearance between two elements (T2.2)
+      window._ccComputeClearance = function(aInfo, bInfo){
+        if (!aInfo || !bInfo || !aInfo.box || !bInfo.box) return;
+        var aMesh = (window._ccGetElementMesh && window._ccGetElementMesh(aInfo)) || null;
+        var bMesh = (window._ccGetElementMesh && window._ccGetElementMesh(bInfo)) || null;
+        var bestPair = null, bestDist = Infinity;
+        // Sample mesh A vertices vs mesh B bbox surface, then refine with B vertices.
+        // Cheap O(nA + nB) approximation — accurate enough for clearance sanity-check.
+        function sampleVerts(mesh, max){
+          if (!mesh || !mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) {
+            // Fall back to bbox corners
+            var b = mesh && mesh.userData && mesh.userData.box;
+            if (!b) return [];
+            var c = [b.min.clone(), b.max.clone(),
+                     new THREE.Vector3(b.min.x,b.min.y,b.max.z), new THREE.Vector3(b.min.x,b.max.y,b.min.z),
+                     new THREE.Vector3(b.max.x,b.min.y,b.min.z), new THREE.Vector3(b.min.x,b.max.y,b.max.z),
+                     new THREE.Vector3(b.max.x,b.min.y,b.max.z), new THREE.Vector3(b.max.x,b.max.y,b.min.z)];
+            return c;
+          }
+          var pos = mesh.geometry.attributes.position;
+          var step = Math.max(1, Math.floor(pos.count / max));
+          var verts = [];
+          var wm = mesh.matrixWorld;
+          for (var i=0; i<pos.count; i += step){
+            var v = new THREE.Vector3().fromBufferAttribute(pos, i);
+            if (wm) v.applyMatrix4(wm);
+            verts.push(v);
+          }
+          return verts;
+        }
+        // Always-available fallback: sample bbox corners
+        var aBoxCorners = (function(b){
+          if (!b || b.isEmpty()) return [];
+          return [b.min.clone(), b.max.clone(),
+                  new THREE.Vector3(b.min.x,b.min.y,b.max.z), new THREE.Vector3(b.min.x,b.max.y,b.min.z),
+                  new THREE.Vector3(b.max.x,b.min.y,b.min.z), new THREE.Vector3(b.min.x,b.max.y,b.max.z),
+                  new THREE.Vector3(b.max.x,b.min.y,b.max.z), new THREE.Vector3(b.max.x,b.max.y,b.min.z)];
+        })(aInfo.box);
+        var bBoxCorners = (function(b){
+          if (!b || b.isEmpty()) return [];
+          return [b.min.clone(), b.max.clone(),
+                  new THREE.Vector3(b.min.x,b.min.y,b.max.z), new THREE.Vector3(b.min.x,b.max.y,b.min.z),
+                  new THREE.Vector3(b.max.x,b.min.y,b.min.z), new THREE.Vector3(b.min.x,b.max.y,b.max.z),
+                  new THREE.Vector3(b.max.x,b.min.y,b.max.z), new THREE.Vector3(b.max.x,b.max.y,b.min.z)];
+        })(bInfo.box);
+        var aSet = aMesh ? sampleVerts(aMesh, 400) : aBoxCorners;
+        var bSet = bMesh ? sampleVerts(bMesh, 400) : bBoxCorners;
+        if (!aSet.length || !bSet.length) {
+          // Fallback: bbox-bbox shortest segment via clamp
+          var ax = Math.max(aInfo.box.min.x, Math.min(bInfo.box.max.x, aInfo.box.max.x));
+          var ay = Math.max(aInfo.box.min.y, Math.min(bInfo.box.max.y, aInfo.box.max.y));
+          var az = Math.max(aInfo.box.min.z, Math.min(bInfo.box.max.z, aInfo.box.max.z));
+          var bx = Math.max(bInfo.box.min.x, Math.min(aInfo.box.max.x, bInfo.box.max.x));
+          var by = Math.max(bInfo.box.min.y, Math.min(aInfo.box.max.y, bInfo.box.max.y));
+          var bz = Math.max(bInfo.box.min.z, Math.min(aInfo.box.max.z, bInfo.box.max.z));
+          var pa = new THREE.Vector3(ax, ay, az), pb = new THREE.Vector3(bx, by, bz);
+          bestPair = [pa, pb]; bestDist = pa.distanceTo(pb);
+        } else {
+          for (var i=0;i<aSet.length;i++){
+            for (var j=0;j<bSet.length;j++){
+              var dd = aSet[i].distanceTo(bSet[j]);
+              if (dd < bestDist) { bestDist = dd; bestPair = [aSet[i].clone(), bSet[j].clone()]; }
+            }
+          }
+        }
+        if (!bestPair) return;
+        // Place the measurement
+        var lineMat = new THREE.LineBasicMaterial({color:0xb8533a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
+        var line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(bestPair), lineMat); line.renderOrder=998;
+        scene.add(line); measureObjsRef.current.push(line);
+        [bestPair[0], bestPair[1]].forEach(function(p){
+          var dot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), new THREE.MeshBasicMaterial({color:0xb8533a, depthTest:false, transparent:true, opacity:0.95}));
+          dot.position.copy(p); dot.renderOrder=999;
+          scene.add(dot); measureObjsRef.current.push(dot);
+        });
+        var id = uid();
+        var st = window._ccLatestState;
+        d({t:A.ADD_MEASUREMENT, v:{
+          id:id, type:'clearance', subtype:'min', value:bestDist,
+          label:'min ' + _ccFmtLength(bestDist, st),
+          name:'clearance · '+(aInfo.ifcType||'A')+' ↔ '+(bInfo.ifcType||'B'),
+          points:bestPair.map(function(p){return [p.x,p.y,p.z];}),
+          refA:{modelId:aInfo.modelId, expressId:aInfo.expressId, globalId:aInfo.globalId, ifcType:aInfo.ifcType},
+          refB:{modelId:bInfo.modelId, expressId:bInfo.expressId, globalId:bInfo.globalId, ifcType:bInfo.ifcType}
+        }});
+        if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(id);
+      };
+      // Toast: re-uses any existing toast facility, otherwise console.
+      if (!window._ccToast) {
+        window._ccToast = function(msg){
+          try { if (window._ccShowToast) window._ccShowToast(msg); else console.log('%c[CC]','color:#b8533a', msg); } catch(e){}
+        };
+      }
+
       // ── Hover highlighting ──
       var hoverRaycaster = new THREE.Raycaster();
       var hoverMouse = new THREE.Vector2();
@@ -6164,7 +6652,9 @@ function startApp() {
       renderer.domElement.addEventListener('mousemove', function(e){
         // Track cursor position for hover-coord display (always, even without hoverHighlight)
         window._ccCursorXY = {x:e.clientX, y:e.clientY};
-        if(!prefsRef.current.hoverHighlight && !measureModeRef.current) return;
+        // Compute snap separately so Alt-hover (T2.3) and measure mode share it
+        var _wantSnap = !!measureModeRef.current || !!window._ccAltHeld;
+        if(!prefsRef.current.hoverHighlight && !_wantSnap) return;
         var now = performance.now();
         if(now - _lastHoverTime < 50) return;
         _lastHoverTime = now;
@@ -6173,14 +6663,23 @@ function startApp() {
         hoverMouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
         hoverRaycaster.setFromCamera(hoverMouse, S.camera);
         var hits = hoverRaycaster.intersectObjects(S.mg.children, true);
-        // Update hover world coordinate when in measure mode
-        if (measureModeRef.current && hits.length > 0 && hits[0].point) {
-          var hp = hits[0].point;
+        // Update hover world coordinate + snap when in measure mode (or Alt held)
+        if (_wantSnap && hits.length > 0 && hits[0].point) {
+          var snap = _ccComputeSnap(hits[0], e.clientX, e.clientY) || {point:hits[0].point.clone(), type:'face'};
+          var hp = snap.point;
           window._ccHoverPoint = {x:hp.x, y:hp.y, z:hp.z, screenX:e.clientX, screenY:e.clientY};
+          window._ccHoverSnap = {point:hp, type:snap.type, screenX:snap.screenX||e.clientX, screenY:snap.screenY||e.clientY, srcObj:snap.srcObj||hits[0].object};
           if(window._ccHoverCoordTick) window._ccHoverCoordTick();
+          if((measureModeRef.current && measurePtsRef.current && measurePtsRef.current.length > 0) || (window._ccAltHeld && window._ccAltHoverFrom)) {
+            _ccUpdateMeasurePreview();
+          }
         } else if (window._ccHoverPoint) {
           window._ccHoverPoint = null;
+          window._ccHoverSnap = null;
           if(window._ccHoverCoordTick) window._ccHoverCoordTick();
+          if((measureModeRef.current && measurePtsRef.current && measurePtsRef.current.length > 0) || window._ccAltHeld) {
+            _clearPreview(); invalidate();
+          }
         }
         var hitMesh = null, hitInstanceId = -1;
         if(hits.length>0 && hits[0].object.isMesh) { hitMesh = hits[0].object; hitInstanceId = hits[0].instanceId != null ? hits[0].instanceId : -1; }
@@ -6549,52 +7048,112 @@ function startApp() {
 
         // ── Measurement mode: intercept clicks ──
         if(measureModeRef.current && hits.length>0) {
-          var hitPt = hits[0].point.clone();
+          var _state = window._ccLatestState;
+          var mode = measureModeRef.current;
+          // Compute the precise snap point (vertex/edge/midpoint > face hit)
+          var _evX = e.clientX, _evY = e.clientY;
+          var snap = _ccComputeSnap(hits[0], _evX, _evY) || {point:hits[0].point.clone(), type:'face'};
+          var hitPt = snap.point.clone();
+          // Element pick sub-mode: read Qto_* from the picked element directly
+          if (mode === 'element') {
+            var _elObj = snap.srcObj || hits[0].object;
+            var _elInfo = (typeof window._ccResolveElementForObject === 'function')
+              ? window._ccResolveElementForObject(_elObj, hits[0].instanceId)
+              : null;
+            if (_elInfo) {
+              if (typeof window._ccOpenElementMeasureMenu === 'function') {
+                window._ccOpenElementMeasureMenu(_elInfo, _evX, _evY);
+              }
+            }
+            return;
+          }
+          // Clearance sub-mode: pick element A then element B; compute min distance
+          if (mode === 'clearance') {
+            var _eObj = snap.srcObj || hits[0].object;
+            var _eInfo = (typeof window._ccResolveElementForObject === 'function')
+              ? window._ccResolveElementForObject(_eObj, hits[0].instanceId)
+              : null;
+            if (!_eInfo) return;
+            if (!window._ccClearancePickA) {
+              window._ccClearancePickA = _eInfo;
+              if (window._ccToast) window._ccToast('First element picked. Click the second element to measure clearance.');
+            } else {
+              var aInfo = window._ccClearancePickA;
+              window._ccClearancePickA = null;
+              if (typeof window._ccComputeClearance === 'function') {
+                window._ccComputeClearance(aInfo, _eInfo);
+              }
+            }
+            return;
+          }
+          // Apply Shift axis-lock for the second click in length mode
+          if (window._ccShiftHeld && mode === 'length' && measurePtsRef.current.length === 1) {
+            hitPt = _axisLock(measurePtsRef.current[0], hitPt);
+            delete hitPt._axis;
+          }
           measurePtsRef.current.push(hitPt);
-          var dotGeo = new THREE.SphereGeometry(0.08, 8, 8);
-          var dotMat = new THREE.MeshBasicMaterial({color:0x22c55e});
+          var dotGeo = new THREE.SphereGeometry(0.08, 10, 10);
+          var dotMat = new THREE.MeshBasicMaterial({color:0xb8533a, depthTest:false, transparent:true, opacity:0.95});
           var dot = new THREE.Mesh(dotGeo, dotMat);
-          dot.position.copy(hitPt);
+          dot.position.copy(hitPt); dot.renderOrder = 999;
           scene.add(dot);
           measureObjsRef.current.push(dot);
 
-          var mode = measureModeRef.current;
           var pts = measurePtsRef.current;
 
           if(mode==='length' && pts.length===2) {
-            var lineMat = new THREE.LineBasicMaterial({color:0x22c55e, linewidth:2});
+            var lineMat = new THREE.LineBasicMaterial({color:0xb8533a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
             var lineGeo = new THREE.BufferGeometry().setFromPoints([pts[0], pts[1]]);
-            var line = new THREE.Line(lineGeo, lineMat);
+            var line = new THREE.Line(lineGeo, lineMat); line.renderOrder = 998;
             scene.add(line);
             measureObjsRef.current.push(line);
             var dist = pts[0].distanceTo(pts[1]);
-            var mid = pts[0].clone().add(pts[1]).multiplyScalar(0.5);
-            var label = dist < 1 ? (dist*1000).toFixed(0)+' mm' : dist.toFixed(3)+' m';
-            d({t:A.ADD_MEASUREMENT, v:{id:uid(), type:'length', value:dist, label:label, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+            var label = _ccFmtLength(dist, _state);
+            var _id = uid();
+            d({t:A.ADD_MEASUREMENT, v:{id:_id, type:'length', value:dist, label:label, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+            if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_id);
             measurePtsRef.current = [];
+            _clearPreview();
+            // Calibration finalisation: if a calibration is pending, prompt for
+            // real distance and store a multiplier in prefs.
+            if (window._ccCalibrationPending) {
+              window._ccCalibrationPending = false;
+              setTimeout(function(){
+                var raw = prompt('What is the real distance for this measurement (in metres)?', dist.toFixed(3));
+                if (raw == null) return;
+                var real = parseFloat(raw);
+                if (!isFinite(real) || real <= 0) return;
+                var factor = real / dist;
+                d({t:A.UPD_PREFS, u:{measureCalibration:factor}});
+                if (window._ccToast) window._ccToast('Calibration factor: ×' + factor.toFixed(4));
+              }, 0);
+            }
           }
           else if(mode==='angle' && pts.length===3) {
-            var lineMat2 = new THREE.LineBasicMaterial({color:0xf59e0b, linewidth:2});
+            var lineMat2 = new THREE.LineBasicMaterial({color:0xf59e0b, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
             var lineGeo1 = new THREE.BufferGeometry().setFromPoints([pts[0], pts[1]]);
             var lineGeo2 = new THREE.BufferGeometry().setFromPoints([pts[1], pts[2]]);
-            scene.add(new THREE.Line(lineGeo1, lineMat2));
-            scene.add(new THREE.Line(lineGeo2, lineMat2));
-            measureObjsRef.current.push(scene.children[scene.children.length-1]);
-            measureObjsRef.current.push(scene.children[scene.children.length-2]);
+            var l1=new THREE.Line(lineGeo1, lineMat2); l1.renderOrder=998; scene.add(l1);
+            var l2=new THREE.Line(lineGeo2, lineMat2); l2.renderOrder=998; scene.add(l2);
+            measureObjsRef.current.push(l1, l2);
             var v1 = pts[0].clone().sub(pts[1]).normalize();
             var v2 = pts[2].clone().sub(pts[1]).normalize();
             var angle = Math.acos(Math.max(-1,Math.min(1,v1.dot(v2))));
-            var deg = (angle*180/Math.PI).toFixed(1);
-            d({t:A.ADD_MEASUREMENT, v:{id:uid(), type:'angle', value:angle, label:deg+'°', points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+            var _idA = uid();
+            d({t:A.ADD_MEASUREMENT, v:{id:_idA, type:'angle', value:angle, label:_ccFmtAngle(angle,_state), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+            if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_idA);
             measurePtsRef.current = [];
+            _clearPreview();
           }
           else if(mode==='area' && pts.length>=3) {
-            if(pts.length>3 && pts[pts.length-1].distanceTo(pts[pts.length-2])<0.05) {
-              pts.pop(); // remove duplicate
-              var polyMat = new THREE.LineBasicMaterial({color:0x1a6b4a, linewidth:2});
+            // Close on click within 0.15m of first point, or via window._ccCloseArea() / Enter
+            var _closeNow = (pts.length>=3 && pts[pts.length-1].distanceTo(pts[0])<0.15);
+            if(_closeNow) {
+              pts.pop(); // drop the duplicate close-click
+              var polyMat = new THREE.LineBasicMaterial({color:0x1a6b4a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
               var polyPts = pts.concat([pts[0]]);
               var polyGeo = new THREE.BufferGeometry().setFromPoints(polyPts);
-              var polyLine = new THREE.Line(polyGeo, polyMat);
+              var polyLine = new THREE.Line(polyGeo, polyMat); polyLine.renderOrder = 998;
               scene.add(polyLine);
               measureObjsRef.current.push(polyLine);
               var normal2 = new THREE.Vector3();
@@ -6605,9 +7164,11 @@ function startApp() {
                 normal2.z += (cur2.x-next2.x)*(cur2.y+next2.y);
               }
               var area2 = normal2.length()/2;
-              var areaLabel = area2 < 1 ? (area2*10000).toFixed(0)+' cm²' : area2.toFixed(3)+' m²';
-              d({t:A.ADD_MEASUREMENT, v:{id:uid(), type:'area', value:area2, label:areaLabel, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+              var _idR = uid();
+              d({t:A.ADD_MEASUREMENT, v:{id:_idR, type:'area', value:area2, label:_ccFmtArea(area2,_state), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+              if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_idR);
               measurePtsRef.current = [];
+              _clearPreview();
             }
           }
           return; // Don't do element picking when measuring
@@ -8725,32 +9286,94 @@ function startApp() {
       </div>`}
       ${/* Floating measurement labels — positions tracked in the render loop via window._ccMeasureLabelsTick */ ''}
       <div id="cc-measure-labels" style=${{position:'absolute',inset:0,pointerEvents:'none',zIndex:6,overflow:'hidden'}}>
-        ${s.measurements.map(function(m){
+        ${s.measurements.filter(function(m){return !m.hidden;}).map(function(m){
           var color = m.type==='length' ? 'var(--text-primary)' : m.type==='angle' ? 'var(--color-warning-fg)' : 'var(--accent-hover)';
+          var labelTxt = (m.name && m.name.trim()) ? m.name : (window._ccRelabelMeasurement ? window._ccRelabelMeasurement(m, s) : m.label);
           return html`<div key=${m.id} class="cc-measure-label" data-mid=${m.id}
             style=${{position:'absolute',left:0,top:0,transform:'translate3d(-9999px,-9999px,0)',
               background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:4,
               padding:'1px 6px',fontSize:11,fontFamily:'var(--font-mono)',color:color,
-              boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',userSelect:'none',lineHeight:1.4}}>${m.label}</div>`;
+              boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',userSelect:'none',lineHeight:1.4}}>${labelTxt}</div>`;
         })}
       </div>
+      ${/* Cursor snap glyph + live distance chip while measuring or holding Alt */ ''}
+      ${(s.measureMode || window._ccAltHeld) && window._ccCursorXY && (function(){
+        var cur = window._ccCursorXY;
+        var snap = window._ccHoverSnap;
+        var snapType = snap ? snap.type : 'none';
+        var glyph;
+        if (snapType === 'vertex')   glyph = html`<circle cx="9" cy="9" r="4" fill="var(--accent)" stroke="var(--paper-bg)" stroke-width="1.5"/>`;
+        else if (snapType === 'midpoint') glyph = html`<rect x="4.5" y="4.5" width="9" height="9" fill="var(--accent)" stroke="var(--paper-bg)" stroke-width="1.5" transform="rotate(45 9 9)"/>`;
+        else if (snapType === 'center')   glyph = html`<circle cx="9" cy="9" r="6" fill="none" stroke="var(--accent)" stroke-width="1.5"/><circle cx="9" cy="9" r="2" fill="var(--accent)"/>`;
+        else if (snapType === 'face')     glyph = html`<circle cx="9" cy="9" r="5" fill="none" stroke="var(--accent)" stroke-width="1.5"/>`;
+        else if (snapType === 'edge')     glyph = html`<line x1="3" y1="9" x2="15" y2="9" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>`;
+        else                              glyph = html`<line x1="9" y1="3" x2="9" y2="15" stroke="var(--text-faint)" stroke-width="1"/><line x1="3" y1="9" x2="15" y2="9" stroke="var(--text-faint)" stroke-width="1"/>`;
+        // Live distance chip if a measurement is in progress
+        var pts = window._ccMeasurePtsRef && window._ccMeasurePtsRef.current;
+        var chipTxt = '';
+        if (pts && pts.length > 0 && snap) {
+          var p0 = pts[pts.length-1];
+          var dx = snap.point.x - p0.x, dy = snap.point.y - p0.y, dz = snap.point.z - p0.z;
+          var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+          chipTxt = (window._ccFmtLength ? window._ccFmtLength(dist, s) : dist.toFixed(2)+' m');
+          if (window._ccPreviewTarget && window._ccPreviewTarget.axis) chipTxt += ' · ' + window._ccPreviewTarget.axis.toUpperCase();
+        } else if (window._ccAltHeld && snap && window._ccAltHoverFrom) {
+          var f = window._ccAltHoverFrom;
+          var ax = snap.point.x - f.x, ay = snap.point.y - f.y, az = snap.point.z - f.z;
+          var ad = Math.sqrt(ax*ax + ay*ay + az*az);
+          chipTxt = (window._ccFmtLength ? window._ccFmtLength(ad, s) : ad.toFixed(2)+' m');
+        }
+        return html`<div id="cc-measure-cursor" style=${{position:'absolute',left:(cur.x+12)+'px',top:(cur.y-26)+'px',pointerEvents:'none',zIndex:7,display:'flex',alignItems:'center',gap:'.3rem'}}>
+          <svg width="18" height="18" viewBox="0 0 18 18" style=${{filter:'drop-shadow(0 1px 2px rgba(0,0,0,.35))'}}>${glyph}</svg>
+          ${chipTxt && html`<span style=${{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'var(--text-primary)',background:'var(--bg-primary)',border:'1px solid var(--border)',padding:'.1rem .4rem',borderRadius:4,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap'}}>${chipTxt}</span>`}
+        </div>`;
+      })()}
+      ${/* Element-pick mini-menu shown after Measure → Element click (T2.1) */ ''}
+      ${window._ccElementMeasureMenu && (function(){
+        var em = window._ccElementMeasureMenu;
+        return html`<div style=${{position:'absolute',left:em.x+'px',top:em.y+'px',zIndex:30,
+          background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',
+          boxShadow:'var(--shadow-md)',padding:'.35rem .25rem',minWidth:190,fontSize:'var(--text-xs)',pointerEvents:'auto'}}>
+          <div style=${{padding:'.15rem .55rem',color:'var(--text-muted)',fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>${em.elementLabel||'Element'}</div>
+          ${(em.options||[]).map(function(opt){return html`<button key=${opt.key} onClick=${function(){if(window._ccPickElementMeasure)window._ccPickElementMeasure(opt.key);}}
+            style=${{...S_BTN,display:'flex',justifyContent:'space-between',width:'100%',padding:'.3rem .55rem',background:'transparent',color:'var(--text-primary)',fontFamily:'var(--font-body)',fontSize:'var(--text-xs)',borderRadius:'var(--radius-xs)'}}>
+            <span>${opt.label}</span>
+            <span style=${{fontFamily:'var(--font-mono)',color:'var(--text-secondary)'}}>${opt.formatted}</span>
+          </button>`;})}
+          <div style=${{borderTop:'1px solid var(--border-subtle)',marginTop:'.2rem',paddingTop:'.2rem'}}>
+            <button onClick=${function(){window._ccElementMeasureMenu=null;if(window._ccHoverCoordTick)window._ccHoverCoordTick();}}
+              style=${{...S_BTN,width:'100%',padding:'.2rem',background:'transparent',color:'var(--text-muted)',fontSize:'var(--text-2xs)'}}>Cancel · Esc</button>
+          </div>
+        </div>`;
+      })()}
       ${s.walkMode && html`<${WalkModeHUD} d=${d} />`}
       <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end',maxHeight:'calc(100% - 5rem)',overflowY:'auto'}}>
-        ${s.measureMode && html`<div style=${{fontSize:'0.69rem',color:'var(--text-primary)',background:'var(--overlay-bg)',border:'1px solid var(--border)',padding:'.25rem .55rem',borderRadius:6,boxShadow:'var(--shadow-sm)'}}>
-          ${s.measureMode==='length'?'Click 2 points to measure distance':s.measureMode==='angle'?'Click 3 points: start, vertex, end':s.measureMode==='area'?'Click points to define area polygon, double-click to close':'Measuring…'}
+        ${s.measureMode && html`<div style=${{fontSize:'0.69rem',color:'var(--text-primary)',background:'var(--overlay-bg)',border:'1px solid var(--border)',padding:'.25rem .55rem',borderRadius:6,boxShadow:'var(--shadow-sm)',display:'flex',alignItems:'center',gap:'.4rem'}}>
+          <span>${s.measureMode==='length'?'Click 2 points · Shift to lock axis · Esc to cancel':s.measureMode==='angle'?'Click 3 points: start · vertex · end · Esc to cancel':s.measureMode==='area'?'Click points · click near first point or Enter to close · Esc to cancel':s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A, then element B':'Measuring…'}</span>
         </div>`}
         ${s.measureMode && window._ccHoverPoint && (function(){
           var p=window._ccHoverPoint;
           return html`<div style=${{fontFamily:'var(--font-mono)',fontSize:'0.65rem',color:'var(--text-secondary)',background:'var(--overlay-bg)',border:'1px solid var(--border-subtle)',padding:'.2rem .4rem',borderRadius:4}}>
-            X ${p.x.toFixed(2)} m &nbsp; Y ${p.y.toFixed(2)} m &nbsp; Z ${p.z.toFixed(2)} m
+            X ${p.x.toFixed(2)} &nbsp; Y ${p.y.toFixed(2)} &nbsp; Z ${p.z.toFixed(2)} m
           </div>`;
         })()}
-        ${s.measurements.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:120,overflowY:'auto',width:200,boxShadow:'var(--shadow-sm)'}}>
-          ${s.measurements.map(function(m){return html`<div key=${m.id} style=${{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.15rem .2rem',fontSize:'0.69rem',borderBottom:'1px solid var(--border-subtle)'}}>
-            <span style=${{color:m.type==='length'?'var(--color-success)':m.type==='angle'?'var(--color-warning)':'var(--color-info)',fontWeight:500}}>${m.type}</span>
-            <span style=${{color:'var(--text-primary)',fontWeight:600,fontFamily:'var(--font-mono)'}}>${m.label}</span>
-            <button onClick=${function(){d({t:A.DEL_MEASUREMENT,id:m.id})}} style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'0.57rem'}} aria-label="Delete measurement">✕</button>
-          </div>`})}
+        ${s.measurements.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:160,overflowY:'auto',width:220,boxShadow:'var(--shadow-sm)'}}>
+          ${s.measurements.map(function(m){
+            var glyphColor = m.type==='length'||m.type==='clearance' ? 'var(--accent)' : m.type==='angle' ? 'var(--color-warning)' : m.type==='element' ? 'var(--color-info)' : '#1a6b4a';
+            var labelTxt = (m.name && m.name.trim()) ? m.name : (window._ccRelabelMeasurement ? window._ccRelabelMeasurement(m,s) : m.label);
+            return html`<div key=${m.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.15rem .2rem',fontSize:'0.69rem',borderBottom:'1px solid var(--border-subtle)'}}
+              onDblClick=${function(){var nv=prompt('Rename measurement', m.name||'');if(nv!=null)d({t:A.UPD_MEASUREMENT,id:m.id,u:{name:nv}});}}>
+              <span style=${{width:6,height:6,borderRadius:'50%',background:glyphColor,flex:'0 0 auto'}}></span>
+              <span style=${{flex:1,minWidth:0,color:'var(--text-primary)',fontFamily:'var(--font-mono)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer'}}
+                onClick=${function(){if(window._ccFlyToMeasurement)window._ccFlyToMeasurement(m.id);}}
+                title=${m.type+' · click to fly to · double-click to rename'}>${labelTxt}</span>
+              <button onClick=${function(e){e.stopPropagation();d({t:A.UPD_MEASUREMENT,id:m.id,u:{hidden:!m.hidden}});}}
+                style=${{...S_BTN,padding:'0 3px',background:'none',color:m.hidden?'var(--text-faint)':'var(--text-secondary)',fontSize:'0.6rem'}}
+                title=${m.hidden?'Show':'Hide'}>${m.hidden?'⌐':'◉'}</button>
+              <button onClick=${function(e){e.stopPropagation();d({t:A.DEL_MEASUREMENT,id:m.id});}}
+                style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'0.57rem'}} aria-label="Delete measurement">✕</button>
+            </div>`;
+          })}
         </div>`}
         <div style=${{display:'flex',gap:'.2rem'}}>
           <button onClick=${function(){if(_captureViewpoint){var vp=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:A.ADD_VIEWPOINT,v:vp});}}}
@@ -16362,6 +16985,54 @@ function startApp() {
           </select>
         </div>
 
+        <div style=${SEC}>Measurement</div>
+        <div style=${TROW}>
+          <div>
+            <div style=${TLBL}>Display units</div>
+            <div style=${TSUB}>How measurement values are formatted. Auto detects from the IFC project unit (imperial = feet/inches).</div>
+          </div>
+          <select value=${p.measureUnits||'auto'}
+            onChange=${function(e){d({t:A.UPD_PREFS,u:{measureUnits:e.target.value}})}}
+            style=${{background:'var(--bg-tertiary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:6,padding:'.25rem .5rem',fontSize:'0.8rem'}}>
+            <option value="auto">Auto${' ('+((typeof _ccDetectIfcUnitSystem==='function'?_ccDetectIfcUnitSystem(s.models):'metric')==='imperial'?'Imperial':'Metric')+')'}</option>
+            <option value="metric">Metric (mm / m)</option>
+            <option value="imperial-decimal">Imperial decimal (ft)</option>
+            <option value="imperial-fractional">Imperial fractional (5' 4 3/16")</option>
+          </select>
+        </div>
+        <div style=${TROW}>
+          <div>
+            <div style=${TLBL}>Decimal precision</div>
+            <div style=${TSUB}>Number of decimals shown for metres / feet. mm uses whole numbers; fractional uses 1/16".</div>
+          </div>
+          <select value=${String(p.measurePrecision==null?2:p.measurePrecision)}
+            onChange=${function(e){d({t:A.UPD_PREFS,u:{measurePrecision:Number(e.target.value)}})}}
+            style=${{background:'var(--bg-tertiary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:6,padding:'.25rem .5rem',fontSize:'0.8rem'}}>
+            <option value="0">0 (rounded)</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+        <div style=${TROW}>
+          <div>
+            <div style=${TLBL}>PointerLens magnifier</div>
+            <div style=${TSUB}>Hold Z while measuring to show a 4× magnifier near the cursor. Off by default — small extra GPU cost on large models.</div>
+          </div>
+          <${Toggle} on=${!!p.measureMagnifier} onToggle=${tog('measureMagnifier')} />
+        </div>
+        <div style=${TROW}>
+          <div>
+            <div style=${TLBL}>Calibrate distance</div>
+            <div style=${TSUB}>Rare. Pick two points whose real distance you know to fix mis-scaled imports. The model geometry won't change — only display values do.</div>
+          </div>
+          <button onClick=${function(){if(window._ccStartCalibration)window._ccStartCalibration();d({t:A.SETTINGS,v:false});}}
+            style=${{background:'var(--bg-tertiary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:6,padding:'.25rem .65rem',fontSize:'0.8rem',cursor:'pointer',fontFamily:'inherit'}}>
+            Calibrate…
+          </button>
+        </div>
+
         <div style=${SEC}>Privacy</div>
         <div style=${TROW}>
           <div>
@@ -16937,6 +17608,140 @@ function startApp() {
     if (us >= 100)  return val.toFixed(1) + ' cm';
     return val.toFixed(2) + ' m';
   }
+
+  // ── Measurement format helpers ────────────────────────────────────
+  // Geometry is internally always metres. These format display labels
+  // for measurement values, respecting prefs.measureUnits / prefs.measurePrecision.
+  function _ccDetectIfcUnitSystem(models) {
+    if (!models || !models.length) return 'metric';
+    var m0 = models[0];
+    if (m0 && m0._unitsHint === 'imperial') return 'imperial';
+    if (m0 && m0._unitsHint === 'metric')   return 'metric';
+    // No explicit hint: storey spacing is the signal. Imperial models in feet
+    // give storey spacings ~10 (10 ft ≈ floor height); cm gives ~300; mm ~3000;
+    // m ~3. We only flag "imperial" if spacing is 6–18 AND geoFactor is 1
+    // (no implicit geometry rescale was needed).
+    try {
+      var storeys = (typeof _ccCollectStoreys === 'function') ? _ccCollectStoreys(models) : [];
+      if (storeys.length >= 2) {
+        var span = Math.abs(storeys[storeys.length-1].elevation - storeys[0].elevation);
+        var avg  = span / (storeys.length - 1);
+        var gf   = (typeof _ccStoreyToGeoFactor === 'function') ? _ccStoreyToGeoFactor(models) : 1;
+        if (avg > 6 && avg < 20 && gf === 1) return 'imperial';
+      }
+    } catch(e){}
+    return 'metric';
+  }
+  function _ccMeasureUnitMode(state) {
+    var p = (state && state.prefs && state.prefs.measureUnits) || 'auto';
+    if (p === 'metric' || p === 'imperial-decimal' || p === 'imperial-fractional') return p;
+    var sys = _ccDetectIfcUnitSystem(state && state.models);
+    return sys === 'imperial' ? 'imperial-fractional' : 'metric';
+  }
+  function _ccMeasurePrecision(state) {
+    var p = state && state.prefs && state.prefs.measurePrecision;
+    if (p == null) return 2;
+    p = Number(p);
+    return (isFinite(p) && p >= 0 && p <= 6) ? Math.round(p) : 2;
+  }
+  // Round to nearest 1/16 inch. Returns "5' 4 3/16""
+  function _ccFmtFractionalInches(totalIn) {
+    var sign = totalIn < 0 ? '-' : '';
+    totalIn = Math.abs(totalIn);
+    var sixteenths = Math.round(totalIn * 16);
+    if (sixteenths === 0) return '0"';
+    var feet = Math.floor(sixteenths / (12 * 16));
+    var rem  = sixteenths - feet * 12 * 16;
+    var inches = Math.floor(rem / 16);
+    var frac   = rem - inches * 16;
+    var parts = [];
+    if (feet) parts.push(feet + "'");
+    if (inches || frac === 0) parts.push(inches);
+    if (frac > 0) {
+      var num = frac, den = 16;
+      while (num % 2 === 0 && den > 1) { num/=2; den/=2; }
+      parts.push(num + '/' + den);
+    }
+    var inStr = (inches || frac > 0) ? (parts.slice(feet ? 1 : 0).join(' ') + '"') : '';
+    return sign + (feet ? feet + "'" + (inStr ? ' ' + inStr : '') : inStr);
+  }
+  function _ccCalibration(state){
+    var f = state && state.prefs && state.prefs.measureCalibration;
+    return (f && isFinite(f) && f > 0) ? Number(f) : 1;
+  }
+  function _ccFmtLength(meters, state) {
+    if (meters == null || !isFinite(meters)) return '—';
+    var c = _ccCalibration(state);
+    meters = meters * c;
+    var mode = _ccMeasureUnitMode(state);
+    var p = _ccMeasurePrecision(state);
+    if (mode === 'imperial-decimal') {
+      var ft = meters * 3.28084;
+      return ft.toFixed(p) + ' ft';
+    }
+    if (mode === 'imperial-fractional') {
+      return _ccFmtFractionalInches(meters * 39.3701);
+    }
+    // metric: prefer mm under 1m, else m
+    if (Math.abs(meters) < 1) return Math.round(meters * 1000) + ' mm';
+    return meters.toFixed(p) + ' m';
+  }
+  function _ccFmtArea(m2, state) {
+    if (m2 == null || !isFinite(m2)) return '—';
+    var c = _ccCalibration(state);
+    m2 = m2 * c * c;
+    var mode = _ccMeasureUnitMode(state);
+    var p = _ccMeasurePrecision(state);
+    if (mode.indexOf('imperial') === 0) {
+      var ft2 = m2 * 10.7639;
+      return ft2.toFixed(p) + ' ft²';
+    }
+    if (Math.abs(m2) < 1) return Math.round(m2 * 10000) + ' cm²';
+    return m2.toFixed(p) + ' m²';
+  }
+  function _ccFmtVolume(m3, state) {
+    if (m3 == null || !isFinite(m3)) return '—';
+    var c = _ccCalibration(state);
+    m3 = m3 * c * c * c;
+    var mode = _ccMeasureUnitMode(state);
+    var p = _ccMeasurePrecision(state);
+    if (mode.indexOf('imperial') === 0) {
+      var ft3 = m3 * 35.3147;
+      return ft3.toFixed(p) + ' ft³';
+    }
+    if (Math.abs(m3) < 1) return Math.round(m3 * 1000) + ' L';
+    return m3.toFixed(p) + ' m³';
+  }
+  function _ccFmtAngle(rad, state) {
+    if (rad == null || !isFinite(rad)) return '—';
+    var p = _ccMeasurePrecision(state);
+    return (rad * 180 / Math.PI).toFixed(Math.min(p, 1)) + '°';
+  }
+  function _ccFmtDeltas(p0, p1, state) {
+    return [_ccFmtLength(Math.abs(p1.x-p0.x), state),
+            _ccFmtLength(Math.abs(p1.y-p0.y), state),
+            _ccFmtLength(Math.abs(p1.z-p0.z), state)];
+  }
+  // Recompute label for a stored measurement (used after unit change or edit)
+  function _ccRelabelMeasurement(m, state) {
+    if (!m) return m;
+    if (m.type === 'length' || m.type === 'clearance') return _ccFmtLength(m.value, state);
+    if (m.type === 'angle')  return _ccFmtAngle(m.value, state);
+    if (m.type === 'area')   return _ccFmtArea(m.value, state);
+    if (m.type === 'element'){
+      if (m.qtoKey === 'NetVolume' || m.qtoKey === 'GrossVolume') return _ccFmtVolume(m.value, state);
+      if (m.qtoKey && m.qtoKey.indexOf('Area') >= 0) return _ccFmtArea(m.value, state);
+      return _ccFmtLength(m.value, state);
+    }
+    return m.label || '—';
+  }
+  // Expose for addons + render loop
+  window._ccFmtLength = _ccFmtLength;
+  window._ccFmtArea   = _ccFmtArea;
+  window._ccFmtVolume = _ccFmtVolume;
+  window._ccFmtAngle  = _ccFmtAngle;
+  window._ccFmtDeltas = _ccFmtDeltas;
+  window._ccRelabelMeasurement = _ccRelabelMeasurement;
 
   function _ccMakeSheet(storeyName, elevation) {
     var id = (typeof uid === 'function' ? uid() : 'SH' + Date.now().toString(36).toUpperCase());
@@ -20291,6 +21096,10 @@ function startApp() {
     if (/(?:measure|measurement)\s+(?:length|distance)/.test(text)) { d({t:A.MEASURE_MODE,v:'length'}); return 'Measure mode on — click two points.'; }
     if (/(?:measure|measurement)\s+angle/.test(text)) { d({t:A.MEASURE_MODE,v:'angle'}); return 'Measuring angles — click three points.'; }
     if (/(?:measure|measurement)\s+area/.test(text)) { d({t:A.MEASURE_MODE,v:'area'}); return 'Measuring area — click to define.'; }
+    if (/(?:measure|read)\s+(?:element|quantity|quantities|qto)/.test(text)) { d({t:A.MEASURE_MODE,v:'element'}); return 'Click an element to read Qto_* quantities.'; }
+    if (/(?:clearance|min(?:imum)?\s+distance|gap)\s+(?:between|of)/.test(text)) { d({t:A.MEASURE_MODE,v:'clearance'}); window._ccClearancePickA=null; return 'Pick element A then element B for clearance.'; }
+    var _toM = text.match(/^takeoff\s+(.+)$/) || text.match(/^count\s+(?:all\s+)?(.+?)$/);
+    if (_toM && window._ccComputeTakeoff) { window._ccComputeTakeoff(_toM[1].trim()); var rr = window._ccLastTakeoff; if (rr) return 'Takeoff '+rr.filter+': '+rr.count+' element'+(rr.count===1?'':'s')+'.'; }
     if (/(?:stop|exit|cancel|end)\s+measur/.test(text)) { d({t:A.MEASURE_MODE,v:null}); return 'Measurement off.'; }
     if (/(?:clear|delete|remove)\s+(?:all\s+)?measurements?/.test(text)) { d({t:A.CLEAR_MEASUREMENTS}); return 'Measurements cleared.'; }
 
@@ -20340,6 +21149,20 @@ function startApp() {
       [['measure','length','distance'],function(){d({t:A.MEASURE_MODE,v:'length'});return 'Measure length.';}, 1],
       [['measure','angle'],       function(){d({t:A.MEASURE_MODE,v:'angle'});return 'Measure angle.';}, 2],
       [['measure','area'],        function(){d({t:A.MEASURE_MODE,v:'area'});return 'Measure area.';}, 2],
+      [['measure','element','quantity','quantities'],function(){d({t:A.MEASURE_MODE,v:'element'});return 'Pick an element to read its quantities.';}, 2],
+      [['measure','clearance','minimum','distance','between'],function(){d({t:A.MEASURE_MODE,v:'clearance'});window._ccClearancePickA=null;return 'Pick element A then element B for clearance.';}, 2],
+      [['takeoff','sum','total','count'],function(arg){
+        var t = (arg||'').trim();
+        if (!t) return 'Tell me what to count, e.g. "takeoff IfcWall".';
+        if (window._ccComputeTakeoff) { window._ccComputeTakeoff(t); var r = window._ccLastTakeoff; if(r) return 'Takeoff '+t+': '+r.count+' element'+(r.count===1?'':'s')+'.'; }
+        return 'Takeoff started.';
+      }, 2],
+      [['units','imperial','metric','feet','meter','meters'],function(arg){
+        var t = (arg||'').toLowerCase();
+        var v = t.indexOf('imperial')>=0||t.indexOf('feet')>=0||t.indexOf('inch')>=0?'imperial-fractional':t.indexOf('decimal')>=0?'imperial-decimal':t.indexOf('metric')>=0||t.indexOf('mm')>=0||t.indexOf('meter')>=0?'metric':'auto';
+        d({t:A.UPD_PREFS,u:{measureUnits:v}});
+        return 'Measurement units set to '+v+'.';
+      }, 2],
       [['stop','cancel','measure'],function(){d({t:A.MEASURE_MODE,v:null});return 'Measurement off.';}, 2],
       [['clear','measurement'],   function(){d({t:A.CLEAR_MEASUREMENTS});return 'Measurements cleared.';}, 2],
       [['save','viewpoint','capture'],function(){if(_captureViewpoint){_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));return 'Viewpoint saved.';}return 'No view.';}, 2],
@@ -22359,6 +23182,133 @@ function startApp() {
         }}>${drawerEl ? 'Details ›' : 'Ask AI ›'}</button>`;
     }
 
+    // ── Measurements tab content — full management surface (T2.4) ──
+    // Only mounted in Coordinate/Review workspaces. Lists every measurement
+    // grouped by type, supports rename · hide · fly-to · delete · CSV export.
+    function renderMeasurements() {
+      var ms = s.measurements || [];
+      var groups = {length:[], angle:[], area:[], element:[], clearance:[]};
+      ms.forEach(function(m){ (groups[m.type]||(groups[m.type]=[])).push(m); });
+      var groupTitles = {length:'Distances', angle:'Angles', area:'Areas', element:'Element quantities', clearance:'Clearances'};
+      var unitLabel = (function(){
+        var mode = (window._ccLatestState&&window._ccLatestState.prefs&&window._ccLatestState.prefs.measureUnits)||'auto';
+        if (mode === 'auto') {
+          var sys = (typeof _ccDetectIfcUnitSystem==='function') ? _ccDetectIfcUnitSystem(s.models) : 'metric';
+          return 'Auto · ' + (sys==='imperial'?'Imperial':'Metric');
+        }
+        return mode === 'metric' ? 'Metric'
+             : mode === 'imperial-decimal' ? 'Imperial (ft.dec)'
+             : mode === 'imperial-fractional' ? 'Imperial (ft\' in")'
+             : mode;
+      })();
+      function exportCsv(){
+        var rows = [['name','type','value','unit','points','elementId','globalId','ifcType','createdAt']];
+        ms.forEach(function(m){
+          var unit = m.type==='angle'?'rad':(m.type==='area'?'m²':(m.qtoKey&&m.qtoKey.indexOf('Volume')>=0?'m³':'m'));
+          rows.push([
+            (m.name||m.label||'').replace(/[",\n]/g,' '),
+            m.type,
+            m.value,
+            unit,
+            JSON.stringify(m.points||[]),
+            m.elementId||'',
+            m.globalId||'',
+            m.ifcType||'',
+            new Date(m.createdAt||Date.now()).toISOString()
+          ]);
+        });
+        var csv = rows.map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+        var blob = new Blob([csv], {type:'text/csv'});
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'measurements-' + new Date().toISOString().slice(0,10) + '.csv';
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+      }
+      return html`<div style=${{padding:'.6rem .8rem',overflowY:'auto',display:'flex',flexDirection:'column',gap:'.5rem'}}>
+        <!-- Header: count + units + actions -->
+        <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
+          <span style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.06em',color:'var(--text-muted)'}}>${ms.length} measurement${ms.length===1?'':'s'}</span>
+          <div style=${{flex:1}}></div>
+          <button onClick=${function(){if(window._ccOpenMeasureSettings)window._ccOpenMeasureSettings(true);else d({t:A.SETTINGS,v:true});}}
+            title="Units & precision" style=${{background:'none',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',padding:'.15rem .45rem',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',cursor:'pointer',fontFamily:'var(--font-mono)'}}>
+            ${unitLabel} ⚙
+          </button>
+        </div>
+        <!-- Active mode hint -->
+        ${s.measureMode && html`<div style=${{padding:'.3rem .5rem',background:'var(--accent-bg)',border:'1px solid var(--accent)',borderRadius:'var(--radius-xs)',fontSize:'var(--text-xs)',color:'var(--accent)'}}>
+          ${s.measureMode==='length'?'Click 2 points · Shift to lock axis':s.measureMode==='angle'?'Click 3 points: start · vertex · end':s.measureMode==='area'?'Click points · Enter or click first point to close':s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A then element B':'Measuring'}
+        </div>`}
+        <!-- Quick actions -->
+        <div style=${{display:'flex',gap:'.3rem',flexWrap:'wrap'}}>
+          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='length'?null:'length'});}}
+            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='length'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='length'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Distance</button>
+          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='angle'?null:'angle'});}}
+            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='angle'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='angle'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Angle</button>
+          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='area'?null:'area'});}}
+            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='area'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='area'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Area</button>
+          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='element'?null:'element'});}}
+            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='element'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='element'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Element</button>
+          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='clearance'?null:'clearance'});window._ccClearancePickA=null;}}
+            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='clearance'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='clearance'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Clearance</button>
+        </div>
+        <!-- Takeoff — Review workspace only -->
+        ${s.workspace==='review' && html`<div style=${{padding:'.5rem .55rem',background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-xs)'}}>
+          <div style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.06em',color:'var(--text-muted)',marginBottom:'.25rem'}}>Takeoff (filter by IFC type)</div>
+          <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
+            <input id="cc-takeoff-input" placeholder="IfcWall" list="cc-ifctypes" style=${{flex:1,padding:'.2rem .4rem',background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',fontSize:'var(--text-xs)',fontFamily:'var(--font-body)'}}/>
+            <button onClick=${function(){
+              var inp = document.getElementById('cc-takeoff-input');
+              var t = (inp && inp.value || '').trim();
+              if (!t || !window._ccComputeTakeoff) return;
+              window._ccComputeTakeoff(t);
+            }} style=${{...S_BTN,padding:'.2rem .55rem',fontSize:'var(--text-xs)',background:'var(--accent)',color:'#fff',border:'none',borderRadius:'var(--radius-xs)'}}>Run</button>
+          </div>
+          ${window._ccLastTakeoff && html`<div style=${{marginTop:'.4rem',fontSize:'var(--text-xs)',fontFamily:'var(--font-mono)',color:'var(--text-secondary)'}}>
+            <div>Filter: ${window._ccLastTakeoff.filter}</div>
+            <div>Count: ${window._ccLastTakeoff.count}</div>
+            ${window._ccLastTakeoff.totalLength!=null && html`<div>Total length: ${_ccFmtLength(window._ccLastTakeoff.totalLength,s)}</div>`}
+            ${window._ccLastTakeoff.totalArea!=null && html`<div>Total area: ${_ccFmtArea(window._ccLastTakeoff.totalArea,s)}</div>`}
+            ${window._ccLastTakeoff.totalVolume!=null && html`<div>Total volume: ${_ccFmtVolume(window._ccLastTakeoff.totalVolume,s)}</div>`}
+            <button onClick=${function(){window._ccExportTakeoffCsv&&window._ccExportTakeoffCsv();}} style=${{marginTop:'.3rem',background:'none',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',padding:'.15rem .45rem',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',cursor:'pointer'}}>Export CSV</button>
+          </div>`}
+        </div>`}
+        ${ms.length===0 && html`<div style=${{padding:'1rem',textAlign:'center',color:'var(--text-muted)',fontSize:'var(--text-xs)'}}>No measurements yet. Pick a mode above and click in the model.</div>`}
+        ${['length','angle','area','element','clearance'].map(function(g){
+          var rows = groups[g] || [];
+          if (!rows.length) return null;
+          return html`<div key=${g} style=${{display:'flex',flexDirection:'column',gap:'.2rem'}}>
+            <div style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.06em',color:'var(--text-muted)',padding:'.2rem 0 .15rem'}}>${groupTitles[g]||g} <span style=${{color:'var(--text-faint)'}}>· ${rows.length}</span></div>
+            ${rows.map(function(m){
+              var labelTxt = (m.name && m.name.trim()) ? m.name : (window._ccRelabelMeasurement ? window._ccRelabelMeasurement(m,s) : m.label);
+              var valTxt = window._ccRelabelMeasurement ? window._ccRelabelMeasurement(m,s) : m.label;
+              return html`<div key=${m.id} style=${{display:'flex',gap:'.4rem',alignItems:'center',padding:'.3rem .35rem',background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-xs)',opacity:m.hidden?0.5:1}}>
+                ${m.snapshot && html`<img src=${m.snapshot} style=${{width:36,height:23,objectFit:'cover',borderRadius:3,border:'1px solid var(--border)',flex:'0 0 auto'}}/>`}
+                <div style=${{flex:1,minWidth:0,cursor:'pointer'}}
+                  onClick=${function(){if(window._ccFlyToMeasurement)window._ccFlyToMeasurement(m.id);}}
+                  onDblClick=${function(){var nv=prompt('Rename', m.name||'');if(nv!=null)d({t:A.UPD_MEASUREMENT,id:m.id,u:{name:nv}});}}
+                  title="Click to fly · double-click to rename">
+                  <div style=${{fontSize:'var(--text-xs)',color:'var(--text-primary)',fontFamily:'var(--font-body)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${labelTxt}</div>
+                  ${(m.name && m.name.trim()) && html`<div style=${{fontSize:'var(--text-2xs)',color:'var(--text-faint)',fontFamily:'var(--font-mono)'}}>${valTxt}</div>`}
+                </div>
+                ${m.type==='clearance' && html`<button onClick=${function(){if(window._ccPromoteClearanceToRule)window._ccPromoteClearanceToRule(m.id);}}
+                  title="Promote to clash rule" style=${{...S_BTN,padding:'.1rem .3rem',fontSize:'var(--text-2xs)',background:'none',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>→ rule</button>`}
+                <button onClick=${function(){d({t:A.UPD_MEASUREMENT,id:m.id,u:{hidden:!m.hidden}});}}
+                  title=${m.hidden?'Show':'Hide'} style=${{...S_BTN,padding:'.1rem .25rem',fontSize:'var(--text-xs)',background:'none',color:m.hidden?'var(--text-faint)':'var(--text-secondary)',border:'none'}}>${m.hidden?'⌐':'◉'}</button>
+                <button onClick=${function(){d({t:A.DEL_MEASUREMENT,id:m.id});}}
+                  title="Delete" style=${{...S_BTN,padding:'.1rem .25rem',fontSize:'var(--text-xs)',background:'none',color:'var(--text-faint)',border:'none'}}>✕</button>
+              </div>`;
+            })}
+          </div>`;
+        })}
+        ${ms.length>0 && html`<div style=${{display:'flex',gap:'.3rem',marginTop:'.4rem',justifyContent:'flex-end'}}>
+          <button onClick=${exportCsv} style=${{...S_BTN,padding:'.25rem .6rem',fontSize:'var(--text-xs)',background:'var(--bg-tertiary)',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Export CSV</button>
+          <button onClick=${function(){if(confirm('Clear all measurements?'))d({t:A.CLEAR_MEASUREMENTS});}}
+            style=${{...S_BTN,padding:'.25rem .6rem',fontSize:'var(--text-xs)',background:'var(--bg-tertiary)',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Clear all</button>
+        </div>`}
+      </div>`;
+    }
+
     // ── Details tab content — data depth scales with workspace ──
     function renderDetails() {
       var el = drawerEl;
@@ -22674,10 +23624,10 @@ function startApp() {
         background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='var(--accent-bg-deep)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
       <!-- Tab bar + collapse -->
       <div style=${{display:'flex',alignItems:'center',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,height:40,gap:0,paddingLeft:12}}>
-        ${['details','ai'].map(function(tab){
-          var labels={details:'Details',ai:'Ask AI'};
+        ${(s.workspace==='present'?['details','ai']:['details','measure','ai']).map(function(tab){
+          var labels={details:'Details',measure:'Measure',ai:'Ask AI'};
           var isActive=drawerTab===tab;
-          var hasDot=tab==='details'&&drawerEl;
+          var hasDot = (tab==='details' && drawerEl) || (tab==='measure' && (s.measureMode || (s.measurements&&s.measurements.length>0)));
           return html`<button key=${tab}
             onClick=${function(){setDrawerTab(tab);}}
             style=${{
@@ -22689,6 +23639,7 @@ function startApp() {
             }}>
             ${hasDot&&html`<span style=${{width:6,height:6,borderRadius:'50%',background:'var(--accent)',display:'inline-block'}}></span>`}
             ${labels[tab]}
+            ${tab==='measure' && s.measurements && s.measurements.length>0 && html`<span style=${{fontFamily:'var(--font-mono)',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>${s.measurements.length}</span>`}
           </button>`;
         })}
         <div style=${{flex:1}}></div>
@@ -22699,7 +23650,10 @@ function startApp() {
             borderRadius:6, transition:'color .12s'
           }}>×</button>
       </div>
-      ${drawerTab==='details' ? renderDetails() : drawerTab==='models' ? html`<${ModelSidebar} s=${s} d=${d} />` : html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
+      ${drawerTab==='details' ? renderDetails()
+        : drawerTab==='measure' ? renderMeasurements()
+        : drawerTab==='models' ? html`<${ModelSidebar} s=${s} d=${d} />`
+        : html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
     </div>`;
   }
 
@@ -23440,6 +24394,7 @@ function startApp() {
     var styleSt = useState(false), styleOpen=styleSt[0], setStyleOpen=styleSt[1];
     var styleRef = useRef(null);
     var pickSt  = useState(false), pickOn = pickSt[0], setPickOn = pickSt[1];
+    var measureSt = useState(false), measurePopOpen=measureSt[0], setMeasurePopOpen=measureSt[1];
     var ttState = useState(null), ttTip = ttState[0], setTtTip = ttState[1];
     var ttPos = useRef({x:0,y:0});
 
@@ -23519,8 +24474,20 @@ function startApp() {
       // version looked like a generic "border" icon.
       slicebox:'<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4 8-4"/><path d="M12 12v9"/><path stroke-dasharray="2 2" d="M9 10l3 1.5 3-1.5"/><path stroke-dasharray="2 2" d="M9 10v6l3 1.5 3-1.5v-6"/>',
       clear:  '<path d="M5 5l14 14"/><path d="M19 5L5 19"/>',
-      ruler:  '<path d="M3 12h18"/><path d="M5 12V9"/><path d="M9 12v-4"/><path d="M13 12V8"/><path d="M17 12v-4"/><path d="M21 12V9"/>',
-      angle:  '<path d="M5 19L19 19"/><path d="M5 19L5 5"/><path d="M5 8a8 8 0 0 1 11 11"/>',
+      // Measure: architectural dimension line with end-caps and arrow ticks.
+      // Universal drafting glyph (AutoCAD/Revit/Bluebeam) — reads as "this is
+      // the *length between two things*", not just "a stick with markings"
+      // like the previous ruler-with-ticks. Tilted 22° so it doesn't read as
+      // a section line.
+      ruler:  '<path d="M4 17l16-12"/><path d="M2.5 18.5l3-3"/><path d="M18.5 5.5l3-3"/><path d="M7 13.5l2.5 1.8"/><path d="M14.5 9.7L17 7.9"/>',
+      // Angle: vector triangle with arc — slightly thicker arc for clarity
+      angle:  '<path d="M5 19L19 19"/><path d="M5 19L5 5"/><path d="M5 9a10 10 0 0 1 10 10"/>',
+      // Area: square outline with diagonal hatch corner — reads as a polygon
+      area:   '<path d="M4 4h16v16H4z"/><path d="M4 4l8 8"/><path d="M12 4l8 8"/>',
+      // Element pick: cube with quantity tag (Q for Qto)
+      cubeq:  '<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4 8-4"/><path d="M12 12v9"/><circle cx="17" cy="6" r="2.6" fill="var(--accent)" stroke="none"/>',
+      // Clearance: two boxes with arrow gap between
+      clear2: '<rect x="3" y="7" width="6" height="10" rx="1"/><rect x="15" y="7" width="6" height="10" rx="1"/><path d="M10 12h4"/><path d="M11 11l-1 1 1 1"/><path d="M13 11l1 1-1 1"/>',
       orbit:  '<circle cx="12" cy="12" r="9"/><path d="M3 12a9 4.5 0 0 0 18 0"/>',
       walk:   '<circle cx="12" cy="4.5" r="1.5"/><path d="M9 11l3-2 3 2"/><path d="M10 21l2-7 2 4"/><path d="M14 18l3 3"/>',
       plan:   '<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 10h16"/><path d="M10 4v16"/>',
@@ -23627,16 +24594,71 @@ function startApp() {
         ${btn({k:'sclear', title:'Clear Section (Esc)',  label:'Clear Section', icon:I.clear,
                 onClick:function(){ window._ccSectionPickPending=false; setPickOn(false); d({t:A.SECTION,axis:null}); d({t:A.SECTION_CUSTOM,v:null}); d({t:A.SECTION_BOX,v:null}); }})}
         ${div()}
-        <!-- MEASURE -->
-        ${btn({k:'measure', active:activeMode==='measure'&&s.measureMode!=='angle', title:'Distance (M)', label:'Distance', icon:I.ruler,
-                onClick:function(){ if(activeMode==='measure'&&s.measureMode!=='angle') clearAllModes(); else { clearAllModes(); d({t:A.MEASURE_MODE,v:'length'}); } }})}
-        ${btn({k:'angle',   active:s.measureMode==='angle', title:'Angle [A]', label:'Angle [A]', icon:I.angle,
-                onClick:function(){ if(s.measureMode==='angle') clearAllModes(); else { clearAllModes(); d({t:A.MEASURE_MODE,v:'angle'}); } }})}
-        ${btn({k:'area',    active:s.measureMode==='area',  title:'Area measurement', label:'Area',
-                icon:'<path d="M4 4h16v16H4z"/><path d="M4 4l8 8 8-8"/>',
-                onClick:function(){ if(s.measureMode==='area') clearAllModes(); else { clearAllModes(); d({t:A.MEASURE_MODE,v:'area'}); } }})}
-        ${btn({k:'mclear', title:'Clear measurements [Shift+M]', label:'Clear measurements [Shift+M]', icon:I.clear,
-                onClick:function(){ d({t:A.CLEAR_MEASUREMENTS}); }})}
+        <!-- MEASURE — one button + caret popover (Trimble / FreeCAD pattern) -->
+        ${(function(){
+          var modeLabel = s.measureMode==='length'?'Distance':s.measureMode==='angle'?'Angle':s.measureMode==='area'?'Area':s.measureMode==='element'?'Element':s.measureMode==='clearance'?'Clearance':'Measure';
+          var modeIcon = s.measureMode==='angle'?I.angle:s.measureMode==='area'?I.area:s.measureMode==='element'?I.cubeq:s.measureMode==='clearance'?I.clear2:I.ruler;
+          return html`<div style=${{position:'relative',display:'flex',alignItems:'center',gap:0}}>
+            ${btn({k:'measure', active:activeMode==='measure', title:'Measure (M) · click for distance, caret for sub-modes', label:modeLabel, icon:modeIcon,
+                    onClick:function(){
+                      if (activeMode==='measure') { clearAllModes(); setMeasurePopOpen(false); }
+                      else { clearAllModes(); d({t:A.MEASURE_MODE,v:'length'}); }
+                    }})}
+            <button title="Measurement modes" aria-label="Measurement modes"
+              onClick=${function(){ setMeasurePopOpen(function(v){return !v;}); }}
+              style=${{
+                background:measurePopOpen?'var(--accent-bg)':'transparent',
+                border:'none',padding:'0 .25rem',height:'1.6rem',color:measurePopOpen?'var(--accent)':'var(--text-muted)',
+                cursor:'pointer',display:'inline-flex',alignItems:'center',marginLeft:'-.1rem',
+                borderRadius:'var(--radius-xs)'
+              }}>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 3 3-3"/></svg>
+            </button>
+            ${measurePopOpen && html`<div onClick=${function(e){e.stopPropagation();}} style=${{position:'absolute',top:'calc(100% + 6px)',left:'50%',transform:'translateX(-50%)',zIndex:40,
+              background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',
+              boxShadow:'var(--shadow-md)',padding:'.3rem',minWidth:230,fontSize:'var(--text-xs)'}}>
+              <div onClick=${function(){d({t:A.MEASURE_MODE,v:'length'});clearAllModes();d({t:A.MEASURE_MODE,v:'length'});setMeasurePopOpen(false);}}
+                style=${{display:'flex',alignItems:'center',gap:'.55rem',padding:'.35rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',color:s.measureMode==='length'?'var(--accent)':'var(--text-primary)',background:s.measureMode==='length'?'var(--accent-bg)':'transparent'}}
+                onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+                onMouseLeave=${function(e){e.currentTarget.style.background=s.measureMode==='length'?'var(--accent-bg)':'transparent';}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:I.ruler}}></svg>
+                <span style=${{flex:1}}>Distance</span><span style=${{fontFamily:'var(--font-mono)',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>M / L</span></div>
+              <div onClick=${function(){clearAllModes();d({t:A.MEASURE_MODE,v:'angle'});setMeasurePopOpen(false);}}
+                style=${{display:'flex',alignItems:'center',gap:'.55rem',padding:'.35rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',color:s.measureMode==='angle'?'var(--accent)':'var(--text-primary)',background:s.measureMode==='angle'?'var(--accent-bg)':'transparent'}}
+                onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+                onMouseLeave=${function(e){e.currentTarget.style.background=s.measureMode==='angle'?'var(--accent-bg)':'transparent';}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:I.angle}}></svg>
+                <span style=${{flex:1}}>Angle</span><span style=${{fontFamily:'var(--font-mono)',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>A</span></div>
+              <div onClick=${function(){clearAllModes();d({t:A.MEASURE_MODE,v:'area'});setMeasurePopOpen(false);}}
+                style=${{display:'flex',alignItems:'center',gap:'.55rem',padding:'.35rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',color:s.measureMode==='area'?'var(--accent)':'var(--text-primary)',background:s.measureMode==='area'?'var(--accent-bg)':'transparent'}}
+                onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+                onMouseLeave=${function(e){e.currentTarget.style.background=s.measureMode==='area'?'var(--accent-bg)':'transparent';}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:I.area}}></svg>
+                <span style=${{flex:1}}>Area</span><span style=${{fontFamily:'var(--font-mono)',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>R</span></div>
+              ${(s.workspace==='coordinate'||s.workspace==='review') && html`<div style=${{height:1,background:'var(--border-subtle)',margin:'.25rem .15rem'}}></div>`}
+              ${(s.workspace==='coordinate'||s.workspace==='review') && html`<div onClick=${function(){clearAllModes();d({t:A.MEASURE_MODE,v:'element'});setMeasurePopOpen(false);}}
+                style=${{display:'flex',alignItems:'center',gap:'.55rem',padding:'.35rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',color:s.measureMode==='element'?'var(--accent)':'var(--text-primary)',background:s.measureMode==='element'?'var(--accent-bg)':'transparent'}}
+                onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+                onMouseLeave=${function(e){e.currentTarget.style.background=s.measureMode==='element'?'var(--accent-bg)':'transparent';}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:I.cubeq}}></svg>
+                <span style=${{flex:1}}>Element <span style=${{color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>· read Qto_*</span></span></div>`}
+              ${(s.workspace==='coordinate'||s.workspace==='review') && html`<div onClick=${function(){clearAllModes();d({t:A.MEASURE_MODE,v:'clearance'});setMeasurePopOpen(false);window._ccClearancePickA=null;}}
+                style=${{display:'flex',alignItems:'center',gap:'.55rem',padding:'.35rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',color:s.measureMode==='clearance'?'var(--accent)':'var(--text-primary)',background:s.measureMode==='clearance'?'var(--accent-bg)':'transparent'}}
+                onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+                onMouseLeave=${function(e){e.currentTarget.style.background=s.measureMode==='clearance'?'var(--accent-bg)':'transparent';}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:I.clear2}}></svg>
+                <span style=${{flex:1}}>Clearance <span style=${{color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>· min between two elements</span></span></div>`}
+              <div style=${{height:1,background:'var(--border-subtle)',margin:'.25rem .15rem'}}></div>
+              <div onClick=${function(){d({t:A.CLEAR_MEASUREMENTS});setMeasurePopOpen(false);}}
+                style=${{display:'flex',alignItems:'center',gap:'.55rem',padding:'.35rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',color:'var(--text-secondary)'}}
+                onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+                onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:I.clear}}></svg>
+                <span style=${{flex:1}}>Clear all</span><span style=${{fontFamily:'var(--font-mono)',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>Shift+M</span></div>
+            </div>`}
+            ${measurePopOpen && html`<div onClick=${function(){setMeasurePopOpen(false);}} style=${{position:'fixed',inset:0,zIndex:39,background:'transparent'}}></div>`}
+          </div>`;
+        })()}
         ${div()}
         <!-- CAMERA -->
         ${btn({k:'orbit', active:activeMode==='orbit', title:'Orbit (O)', label:'Orbit', icon:I.orbit,
@@ -24583,9 +25605,19 @@ function startApp() {
         if(e.key==='Escape'){
           // Esc always cancels the most recently activated mode, priority order:
           if(s.presenting){ d({t:A.PRESENT,v:false}); return; }
+          if(window._ccElementMeasureMenu){ window._ccElementMeasureMenu=null; if(window._ccHoverCoordTick)window._ccHoverCoordTick(); return; }
           if(window._ccSectionPickPending){ window._ccSectionPickPending=false; window.dispatchEvent(new CustomEvent('cc-section-pick-end')); return; }
           if(s.walkMode){ if(window._ccWalkExit)window._ccWalkExit(); d({t:A.WALK_MODE,v:false}); return; }
-          if(s.measureMode){ d({t:A.MEASURE_MODE,v:false}); return; }
+          if(s.measureMode){
+            // First Esc inside measure mode: clear in-progress vertices.
+            // Second Esc (no in-progress): exit measure mode entirely.
+            if (window._ccMeasurePtsRef && window._ccMeasurePtsRef.current && window._ccMeasurePtsRef.current.length > 0) {
+              if (window._ccCancelInProgressMeasurement) window._ccCancelInProgressMeasurement();
+              return;
+            }
+            window._ccClearancePickA = null;
+            d({t:A.MEASURE_MODE,v:false}); return;
+          }
           if(s.commentMode){ d({t:A.COMMENT_MODE,v:false}); return; }
           if(s.floorPlan){ d({t:A.FLOOR_PLAN,v:null}); return; }
           if(s.showShare){ d({t:A.SHARE,v:false}); return; }
@@ -24726,6 +25758,14 @@ function startApp() {
           if(e.key==='l'){d({t:A.MEASURE_MODE,v:'length'});return;}
           if(e.key==='a'){d({t:A.MEASURE_MODE,v:'angle'});return;}
           if(e.key==='r'){d({t:A.MEASURE_MODE,v:'area'});return;}
+          if(e.key==='Enter' && s.measureMode==='area'){ if(window._ccCloseArea)window._ccCloseArea(); return; }
+          if((e.key==='Backspace'||e.key==='Delete') && window._ccMeasurePtsRef && window._ccMeasurePtsRef.current && window._ccMeasurePtsRef.current.length > 0){
+            if(window._ccPopLastMeasureVertex) window._ccPopLastMeasureVertex();
+            return;
+          }
+        }
+        if(ctrl && (e.key==='z'||e.key==='Z') && !e.shiftKey){
+          if(window._ccUndoMeasurement && window._ccUndoMeasurement()) { e.preventDefault(); return; }
         }
         if(e.key==='/'&&!ctrl){ e.preventDefault(); if(window._ccNLOpen) window._ccNLOpen(); return; }
         // F flips the active section's kept side. With no active section it
@@ -24761,6 +25801,165 @@ function startApp() {
       window.addEventListener('keydown', gk);
       return function(){window.removeEventListener('keydown', gk);};
     },[s.showSettings, s.showModal, s.showRevitBridge, s.measureMode, s.sectionAxis, s.sectionCustom, s.sectionBox, s.walkMode, s.commentMode, s.showShare, s.presenting, s.prefs.showGrid, s.prefs.renderStyle, s.viewpoints, s.measurements, s.activeId, s.floorPlan, s.clashes, s.issues]);
+
+    // ── Modifier-key tracking for measure axis-lock (Shift) and Alt-hover instant
+    //    distance (T2.3). These flags are read by the click handler and cursor
+    //    overlay; we keep them on window so the Three.js side can read without
+    //    re-rendering React on every keypress.
+    useEffect(function(){
+      function onMod(e){
+        var s1 = !!e.shiftKey, a1 = !!e.altKey;
+        var changed = (window._ccShiftHeld !== s1) || (window._ccAltHeld !== a1);
+        window._ccShiftHeld = s1;
+        window._ccAltHeld   = a1;
+        if (a1 && window._ccSelectedEl && window._ccSelectedEl.box && !window._ccSelectedEl.box.isEmpty()){
+          var c = window._ccSelectedEl.box.getCenter(new THREE.Vector3());
+          window._ccAltHoverFrom = {x:c.x, y:c.y, z:c.z};
+        } else if (!a1) {
+          window._ccAltHoverFrom = null;
+        }
+        if (changed) {
+          if (window._ccMeasurePreviewTick) window._ccMeasurePreviewTick();
+          if (window._ccHoverCoordTick) window._ccHoverCoordTick();
+        }
+      }
+      window.addEventListener('keydown', onMod, true);
+      window.addEventListener('keyup',   onMod, true);
+      window.addEventListener('blur', function(){ window._ccShiftHeld=false; window._ccAltHeld=false; window._ccAltHoverFrom=null; });
+      return function(){
+        window.removeEventListener('keydown', onMod, true);
+        window.removeEventListener('keyup', onMod, true);
+      };
+    }, []);
+
+    // ── In-progress-cancel, last-vertex pop, area-close, undo helpers ──
+    // Wired to keyboard handlers. The Viewer effect owns measurePtsRef and
+    // measureObjsRef; these helpers reach into those via window._ccMeasurePtsRef
+    // (exposed on mount) and dispatch reducer actions for placed measurements.
+    useEffect(function(){
+      var undoStack = []; // recently deleted measurements (max 20)
+      window._ccCancelInProgressMeasurement = function(){
+        if (window._ccClearMeasurePreview) window._ccClearMeasurePreview();
+        if (!window._ccMeasurePtsRef) return;
+        window._ccMeasurePtsRef.current = [];
+        // Also remove the placed endpoint dots that haven't yet committed.
+        if (window._ccDropInProgressDots) window._ccDropInProgressDots();
+      };
+      window._ccPopLastMeasureVertex = function(){
+        if (!window._ccMeasurePtsRef || !window._ccMeasurePtsRef.current) return;
+        if (window._ccDropInProgressDots) window._ccDropInProgressDots(1);
+        window._ccMeasurePtsRef.current.pop();
+        if (window._ccMeasurePreviewTick) window._ccMeasurePreviewTick();
+      };
+      window._ccCloseArea = function(){
+        if (!window._ccMeasurePtsRef || !window._ccMeasurePtsRef.current) return;
+        if (s.measureMode !== 'area') return;
+        var pts = window._ccMeasurePtsRef.current;
+        if (pts.length < 3) return;
+        // Synthesize a "click on the first point" so the click handler closes the polygon.
+        if (window._ccForceCloseArea) window._ccForceCloseArea();
+      };
+      window._ccUndoMeasurement = function(){
+        if (s.measurements.length > 0) {
+          var last = s.measurements[s.measurements.length-1];
+          undoStack.push(last);
+          if (undoStack.length > 20) undoStack.shift();
+          d({t:A.DEL_MEASUREMENT, id:last.id});
+          return true;
+        }
+        if (undoStack.length > 0) {
+          var m = undoStack.pop();
+          d({t:A.ADD_MEASUREMENT, v:m});
+          return true;
+        }
+        return false;
+      };
+      // Promote-to-rule (used by the clearance row context menu)
+      window._ccPromoteClearanceToRule = function(measurementId){
+        var m = (s.measurements||[]).find(function(x){return x.id===measurementId;});
+        if (!m || m.type !== 'clearance') return;
+        var newRules = Object.assign({}, s.rules, {
+          minGap: Math.round((m.value||0) * 1000), // metres -> mm
+          excludeTypePairs: (s.rules.excludeTypePairs||[]).slice()
+        });
+        d({t:A.UPD_RULES, v:newRules});
+        d({t:A.TAB, v:'rules'});
+        if (window._ccToast) window._ccToast('Clearance rule drafted from measurement.');
+      };
+      // Takeoff aggregation by IFC type filter (T3.4). Walks all models and
+      // sums Qto_*.NetVolume / NetArea / Length across matching elements.
+      // Stores result on window._ccLastTakeoff so the panel can render it.
+      window._ccComputeTakeoff = function(filter){
+        if (!filter) return;
+        var st = window._ccLatestState; if(!st) return;
+        var f = String(filter).trim().toLowerCase();
+        var count = 0, totalL = 0, totalA = 0, totalV = 0;
+        var rows = [];
+        (st.models||[]).forEach(function(m){
+          (m.elements||[]).forEach(function(el){
+            var ifc = (el.ifcType || (el.props&&el.props.ifcType) || '').toLowerCase();
+            if (ifc.indexOf(f) < 0) return;
+            count++;
+            var psets = (el.props && (el.props.psets || el.props.quantities)) || {};
+            var qto = null;
+            for (var k in psets) { if (psets.hasOwnProperty(k) && k.indexOf('Qto_')===0) { qto = psets[k]; break; } }
+            if (!qto) return;
+            function num(key, scale){
+              var v = qto[key];
+              if (v == null) return 0;
+              var n = (typeof v === 'object' && v.value != null) ? Number(v.value) : Number(v);
+              if (!isFinite(n)) return 0;
+              return n * (scale||1);
+            }
+            // Heuristic conversion to metres-based: same as element-measure menu
+            function toM(n){ if (n>1000) return n/1000; if (n>10) return n/100; return n; }
+            function toM2(n){ if (n>10000) return n/1e6; if (n>100) return n/1e4; return n; }
+            function toM3(n){ if (n>1e6) return n/1e9; if (n>1000) return n/1e6; return n; }
+            var L = toM(num('Length')), A = toM2(num('NetSideArea')||num('GrossSideArea')||num('NetArea')||num('GrossArea')), V = toM3(num('NetVolume')||num('GrossVolume'));
+            totalL += L; totalA += A; totalV += V;
+            rows.push({modelId:m.id, expressId:el.expressId, ifcType:el.ifcType, name:el.name||'', length:L, area:A, volume:V});
+          });
+        });
+        window._ccLastTakeoff = {
+          filter: filter, count: count,
+          totalLength: count?totalL:null,
+          totalArea:   count?totalA:null,
+          totalVolume: count?totalV:null,
+          rows: rows
+        };
+        if (window._ccHoverCoordTick) window._ccHoverCoordTick();
+      };
+      window._ccExportTakeoffCsv = function(){
+        var t = window._ccLastTakeoff; if(!t) return;
+        var rows = [['filter','expressId','ifcType','name','length_m','area_m2','volume_m3']];
+        (t.rows||[]).forEach(function(r){
+          rows.push([t.filter, r.expressId, r.ifcType||'', (r.name||'').replace(/[",\n]/g,' '), r.length||'', r.area||'', r.volume||'']);
+        });
+        rows.push(['','','','TOTAL', t.totalLength||'', t.totalArea||'', t.totalVolume||'']);
+        var csv = rows.map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+        var blob = new Blob([csv], {type:'text/csv'});
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'takeoff-' + (t.filter||'all') + '-' + new Date().toISOString().slice(0,10) + '.csv';
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+      };
+      // Calibration tool (T3.3). Pick two points whose real distance is known;
+      // compute a multiplier and store it in prefs. Display formatters scale by it.
+      window._ccStartCalibration = function(){
+        d({t:A.MEASURE_MODE, v:'length'});
+        if (window._ccToast) window._ccToast('Pick two points whose real distance you know.');
+        // Capture next length measurement and prompt for actual value
+        window._ccCalibrationPending = true;
+      };
+      return function(){
+        window._ccCancelInProgressMeasurement = null;
+        window._ccPopLastMeasureVertex = null;
+        window._ccCloseArea = null;
+        window._ccUndoMeasurement = null;
+        window._ccPromoteClearanceToRule = null;
+      };
+    }, [s.measureMode, s.measurements, s.rules]);
 
     // ── Persistent file picker (always mounted so _ccOpenIFC works from any tab) ──
     var _gFileRef = useRef(null);
