@@ -7167,7 +7167,7 @@ function startApp() {
           _walkTick(S);
           if (Object.keys(_walkKeys).length > 0 || _walkPointerLocked) invalidate(3);
         }
-        if (_orbitDragging) invalidate(2);
+        if (_orbitDragging || window._ccSectionDragging) invalidate(2);
         if(_needsRender <= 0) return;
         _needsRender--;
         cullFrame++;
@@ -7397,9 +7397,21 @@ function startApp() {
         border.userData._sectionPlane = true;
         border.renderOrder = 999;
         grp.add(border);
-        // Drag + rotate handles intentionally removed — the TransformControls
-        // gizmo (S._sectionTC) owns translate interaction and styling.
-        grp._secDragHandles = [];
+        // Rotation ring — 3/4 arc at section-plane edge; drag to rotate the cut
+        var _torusR = Math.min(halfW, halfH) * 0.52;
+        var _tubeR = Math.max(0.018, _torusR * 0.045);
+        var arcGeo = new THREE.TorusGeometry(_torusR, _tubeR, 8, 32, Math.PI * 1.5);
+        var arcMat = new THREE.MeshBasicMaterial({
+          color: 0x1a6b4a, transparent: true, opacity: 0.70,
+          side: THREE.DoubleSide, depthWrite: false
+        });
+        arcMat.clippingPlanes = [];
+        var rotRing = new THREE.Mesh(arcGeo, arcMat);
+        rotRing.userData._sectionPlane = true;
+        rotRing.userData._secHandle = 'rotate';
+        rotRing.renderOrder = 1000;
+        grp.add(rotRing);
+        grp._secDragHandles = [rotRing];
         grp.position.copy(position);
         if (quaternion) grp.quaternion.copy(quaternion);
         grp.renderOrder = 999;
