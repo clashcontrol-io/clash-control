@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.6.4 (2026-05-04)
+- Fix section box clipping, handle size -50%, rotation gizmo live update
+
 ## v5.6.3 (2026-05-04)
 - Fix section box not clipping + shrink handles
 
