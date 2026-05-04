@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.6.7 (2026-05-04)
+- Fix glass transparency in rendered mode
+
 ## v5.6.6 (2026-05-04)
 - Replace stencil section hatch with polygon-based cap mesh
 
