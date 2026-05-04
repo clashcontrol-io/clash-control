@@ -8425,7 +8425,23 @@ function startApp() {
     var cmpSt = useState({open:false, modelA:null, modelB:null, blend:50}), compare = cmpSt[0], setCompare = cmpSt[1];
     useEffect(function(){
       window._ccToggleCompare = function(){
-        setCompare(function(c){return Object.assign({},c,{open:!c.open});});
+        setCompare(function(c){
+          if(c.open) return Object.assign({},c,{open:false});
+          // Auto-detect version pair on open
+          var models = (window._ccState&&window._ccState.models)||[];
+          var autoA=null, autoB=null;
+          if(models.length>=2){
+            // Sort by version-like suffix in name (v1/v2, _1/_2, etc.) then by _version field
+            var sorted=models.slice().sort(function(a,b){
+              var vA=parseInt((a.name.match(/[vV_](\d+)(?:[.\s_]|$)/)||[,0])[1])||a._version||1;
+              var vB=parseInt((b.name.match(/[vV_](\d+)(?:[.\s_]|$)/)||[,0])[1])||b._version||1;
+              return vA-vB;
+            });
+            autoA=sorted[0].id; autoB=sorted[sorted.length-1].id;
+            if(autoA===autoB) autoB=sorted.length>1?sorted[1].id:null;
+          }
+          return Object.assign({},c,{open:true,modelA:autoA||c.modelA,modelB:autoB||c.modelB});
+        });
       };
       return function(){ window._ccToggleCompare = null; };
     }, []);
@@ -8512,33 +8528,32 @@ function startApp() {
       </svg>
       ${compare.open && html`<div style=${{position:'absolute',bottom:'.75rem',left:'50%',transform:'translateX(-50%)',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',padding:'.5rem .65rem',display:'flex',flexDirection:'column',gap:'.4rem',minWidth:380}}>
         <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
-          <span style=${{fontSize:'0.65rem',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',flex:1}}>Compare versions</span>
+          <span style=${{fontSize:'0.65rem',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',flex:1}}>Version Compare</span>
           <button onClick=${function(){setCompare(Object.assign({},compare,{open:false}));}}
             style=${{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:'1rem',padding:'0 .2rem',lineHeight:1}}>×</button>
         </div>
         <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
-          <span style=${{fontSize:'.69rem',color:'var(--text-faint)',width:14}}>A</span>
+          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',width:36,whiteSpace:'nowrap'}}>Old</span>
           <select value=${compare.modelA||''} onChange=${function(e){setCompare(Object.assign({},compare,{modelA:e.target.value||null}));}}
             style=${{flex:1,fontSize:'0.72rem',padding:'.2rem .3rem',background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:4}}>
-            <option value="">Select model A…</option>
-            ${(s.models||[]).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+            <option value="">Old version…</option>
+            ${(s.models||[]).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}${m._version>1?' (v'+m._version+')':''}</option>`})}
           </select>
         </div>
         <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
-          <span style=${{fontSize:'.69rem',color:'var(--text-faint)',width:14}}>B</span>
+          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',width:36,whiteSpace:'nowrap'}}>New</span>
           <select value=${compare.modelB||''} onChange=${function(e){setCompare(Object.assign({},compare,{modelB:e.target.value||null}));}}
             style=${{flex:1,fontSize:'0.72rem',padding:'.2rem .3rem',background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:4}}>
-            <option value="">Select model B…</option>
-            ${(s.models||[]).filter(function(m){return m.id!==compare.modelA;}).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}</option>`})}
+            <option value="">New version…</option>
+            ${(s.models||[]).filter(function(m){return m.id!==compare.modelA;}).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}${m._version>1?' (v'+m._version+')':''}</option>`})}
           </select>
         </div>
         ${compare.modelA && compare.modelB && html`<div style=${{display:'flex',gap:'.4rem',alignItems:'center'}}>
-          <span style=${{fontSize:'.65rem',color:'var(--text-muted)',width:32}}>A</span>
+          <span style=${{fontSize:'.65rem',color:'var(--text-muted)',width:36,whiteSpace:'nowrap'}}>Old</span>
           <input type="range" min="0" max="100" step="1" value=${compare.blend}
             onInput=${function(e){setCompare(Object.assign({},compare,{blend:+e.target.value}));}}
             style=${{flex:1}} />
-          <span style=${{fontSize:'.65rem',color:'var(--text-muted)',width:32,textAlign:'right'}}>B</span>
-          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',fontFamily:'var(--font-mono)',minWidth:30,textAlign:'right'}}>${compare.blend}%</span>
+          <span style=${{fontSize:'.65rem',color:'var(--text-muted)',width:36,whiteSpace:'nowrap',textAlign:'right'}}>New</span>
         </div>`}
       </div>`}
       ${(markupTool3D || (markups3D && markups3D.length>0)) && html`<div style=${{position:'absolute',top:'.5rem',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'.25rem',padding:'.3rem',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',alignItems:'center'}}>
@@ -10792,9 +10807,9 @@ function startApp() {
             <span style=${{fontSize:'0.69rem',fontWeight:600,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.03em'}}>Version Diff (v${(m._version-1)||1} → v${m._version})</span>
           </div>
           <div style=${{display:'flex',gap:'.25rem',flexWrap:'wrap',marginBottom:'.3rem'}}>
-            ${m._versionDiff.summary.added>0 && html`<span style=${{fontSize:'0.63rem',padding:'1px 5px',borderRadius:99,background:'#052e16',color:'#4ade80',fontWeight:600}}>+${m._versionDiff.summary.added} added</span>`}
-            ${m._versionDiff.summary.removed>0 && html`<span style=${{fontSize:'0.63rem',padding:'1px 5px',borderRadius:99,background:'#7f1d1d',color:'#fca5a5',fontWeight:600}}>-${m._versionDiff.summary.removed} removed</span>`}
-            ${m._versionDiff.summary.modified>0 && html`<span style=${{fontSize:'0.63rem',padding:'1px 5px',borderRadius:99,background:'#78350f',color:'#fcd34d',fontWeight:600}}>~${m._versionDiff.summary.modified} modified</span>`}
+            ${m._versionDiff.summary.added>0 && html`<span style=${{fontSize:'0.63rem',padding:'1px 5px',borderRadius:99,background:'var(--color-success-bg)',color:'var(--color-success-fg)',fontWeight:600}}>+${m._versionDiff.summary.added} added</span>`}
+            ${m._versionDiff.summary.removed>0 && html`<span style=${{fontSize:'0.63rem',padding:'1px 5px',borderRadius:99,background:'var(--color-danger-bg)',color:'var(--color-danger-fg)',fontWeight:600}}>-${m._versionDiff.summary.removed} removed</span>`}
+            ${m._versionDiff.summary.modified>0 && html`<span style=${{fontSize:'0.63rem',padding:'1px 5px',borderRadius:99,background:'var(--color-warning-bg)',color:'var(--color-warning-fg)',fontWeight:600}}>~${m._versionDiff.summary.modified} modified</span>`}
             ${m._versionDiff.summary.unchanged>0 && html`<span style=${{fontSize:'0.63rem',padding:'1px 5px',borderRadius:99,background:'var(--tag-bg)',color:'var(--text-faint)'}}>${m._versionDiff.summary.unchanged} unchanged</span>`}
           </div>
           <div style=${{display:'flex',gap:'.2rem'}}>
@@ -10804,9 +10819,9 @@ function startApp() {
               style=${{...S_BTN,flex:1,fontSize:'0.63rem',padding:'.15rem .3rem',background:'var(--bg-primary)',color:'var(--text-muted)'}}>Clear Diff</button>
           </div>
           <div style=${{display:'flex',gap:'.3rem',marginTop:'.25rem',fontSize:'0.57rem',color:'var(--text-faint)',alignItems:'center'}}>
-            <span style=${{width:8,height:8,borderRadius:'50%',background:'#22c55e'}}></span> Added
-            <span style=${{width:8,height:8,borderRadius:'50%',background:'#eab308',marginLeft:'.2rem'}}></span> Modified
-            <span style=${{width:8,height:8,borderRadius:'50%',background:'#334155',marginLeft:'.2rem'}}></span> Unchanged
+            <span style=${{width:8,height:8,borderRadius:'50%',background:'var(--color-success)'}}></span> Added
+            <span style=${{width:8,height:8,borderRadius:'50%',background:'var(--color-warning)',marginLeft:'.2rem'}}></span> Modified
+            <span style=${{width:8,height:8,borderRadius:'50%',background:'var(--border)',marginLeft:'.2rem'}}></span> Unchanged
           </div>
         </div>`}
         ${m.storeys&&m.storeys.length>0 && html`<div style=${{fontSize:'0.63rem',color:'var(--text-faint)',borderTop:'1px solid var(--border)',paddingTop:'.25rem',marginTop:'.1rem'}}>
