@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.6.10 (2026-05-04)
+- Fix section plane drag and rotation
+
 ## v5.6.9 (2026-05-04)
 - Drop custom section plane arrow/torus, recolour TransformControls green
 
