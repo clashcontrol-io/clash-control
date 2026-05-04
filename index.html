@@ -4758,7 +4758,6 @@ function startApp() {
     var target = new THREE.Vector3();
     var sph = { r:60, phi:Math.PI/4, theta:Math.PI/4 };
     var dragging=false, panning=false, lx=0, ly=0;
-    var _velTheta=0, _velPhi=0;
     var _tmpVec = new THREE.Vector3();
     var _tmpDir = new THREE.Vector3();
     var _tmpRight = new THREE.Vector3();
@@ -4784,8 +4783,6 @@ function startApp() {
 
     el.addEventListener('mousedown', function(e) {
       if(_sboxDragging || _walkActive) return; // don't orbit while dragging section box handles or in walk mode
-      if (orbit) orbit._coasting = false; // cancel any ongoing coast so new drag feels instant
-      _velTheta = 0; _velPhi = 0;
       if (e.button===0) { dragging=true; _orbitDragging=true; var _s3d=window._ccState3d; if(_s3d&&_s3d._sectionCutLines) _s3d._sectionCutLines.visible=false; }
       if (e.button===1) { panning=true; _orbitDragging=true; e.preventDefault(); el.style.cursor='move'; var _s3d2=window._ccState3d; if(_s3d2&&_s3d2._sectionCutLines) _s3d2._sectionCutLines.visible=false; }
       if (e.button===2) return; // reserved for context menu
@@ -4794,7 +4791,7 @@ function startApp() {
     _wlAdd('mousemove', function(e) {
       if(!dragging&&!panning) return;
       var dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
-      if(dragging){ var _dth=-dx*0.007,_dph=-dy*0.007; sph.theta+=_dth; sph.phi+=_dph; _velTheta=_dth; _velPhi=_dph; orbit.apply(); invalidate(); }
+      if(dragging){ sph.theta-=dx*0.007; sph.phi-=dy*0.007; orbit.apply(); invalidate(); }
       if(panning){
         var sp=sph.r*0.0008;
         orbit.camera.getWorldDirection(_tmpDir);
@@ -4808,13 +4805,10 @@ function startApp() {
       }
     });
     _wlAdd('mouseup', function(){
-      var wasOrbit=dragging, wasActive=dragging||panning;
+      var wasActive=dragging||panning;
       dragging=false;if(panning){panning=false;el.style.cursor='';}
       _orbitDragging=false;
       if(wasActive){var _s3d=window._ccState3d;if(_s3d&&_s3d._sectionCutLines){_s3d._sectionCutLines.visible=true;invalidate();}}
-      if(wasOrbit && orbit && (Math.abs(_velTheta)>0.001||Math.abs(_velPhi)>0.001)){
-        orbit._coasting=true; orbit._velTheta=_velTheta; orbit._velPhi=_velPhi;
-      }
     });
     el.addEventListener('wheel', function(e){
       if (_walkActive) return; // Don't orbit-zoom in walk mode — wheel handled by walk speed adjuster
@@ -4906,7 +4900,7 @@ function startApp() {
         touchState.type='rotate'; touchState.lx=e.touches[0].clientX; touchState.ly=e.touches[0].clientY;
       }
     });
-    var orbit = {target:target, sync:sync, apply:apply, sph:sph, camera:camera, _velTheta:0, _velPhi:0, _coasting:false};
+    var orbit = {target:target, sync:sync, apply:apply, sph:sph, camera:camera};
     orbit.apply = function() {
       camera = orbit.camera; // keep local camera in sync
       sph.phi = Math.max(0.05, Math.min(Math.PI-0.05, sph.phi));
@@ -7175,20 +7169,10 @@ function startApp() {
           if (Object.keys(_walkKeys).length > 0 || _walkPointerLocked) invalidate(3);
         }
         if (_orbitDragging || window._ccSectionDragging) invalidate(2);
-        // Orbit coast: smooth deceleration after mouse release
-        if (S.orbit && S.orbit._coasting) {
-          S.orbit.sph.theta += S.orbit._velTheta;
-          S.orbit.sph.phi   += S.orbit._velPhi;
-          S.orbit._velTheta *= 0.88;
-          S.orbit._velPhi   *= 0.88;
-          S.orbit.apply();
-          if (Math.abs(S.orbit._velTheta) < 0.0003 && Math.abs(S.orbit._velPhi) < 0.0003) S.orbit._coasting = false;
-          invalidate(2);
-        }
         if(_needsRender <= 0) return;
         _needsRender--;
         // Half-resolution while moving: ~4× fewer pixels → smoother orbit/drag
-        var _isDragFrame = _orbitDragging || window._ccSectionDragging || (S.orbit && S.orbit._coasting);
+        var _isDragFrame = _orbitDragging || window._ccSectionDragging;
         if (_isDragFrame !== S._lastDragFrame) {
           renderer.setPixelRatio(_isDragFrame ? Math.max(0.75, _baseDpr * 0.5) : _baseDpr);
           renderer.setSize(el.clientWidth, el.clientHeight, false);
