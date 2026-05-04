@@ -7279,7 +7279,7 @@ function startApp() {
         var diag=box2.getSize(new THREE.Vector3()).length();
         var offset=(s.sectionPos-0.5)*diag;
         var shiftedPt=pt.clone().addScaledVector(normal,offset);
-        var plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normal.negate(),shiftedPt);
+        var plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normal.clone().negate(),shiftedPt);
         planes.push(plane);
         var halfDim = diag * 0.22;
         var vis2 = _makeSectionVis(halfDim, halfDim, shiftedPt, null);
@@ -7288,6 +7288,12 @@ function startApp() {
         S._sectionPlaneVis = vis2;
       }
       S.renderer.clippingPlanes=planes;
+      // Three.js only switches material shaders to clipping-aware ones when
+      // localClippingEnabled is true at the moment a frame renders. The
+      // render loop also toggles this, but doing it synchronously here
+      // guarantees the very next render picks up the new planes — no
+      // dropped first frame, no stale "no clipping" program in cache.
+      S.renderer.localClippingEnabled = planes.length > 0;
       // Debounced section cut highlight lines
       clearTimeout(S._sectionCutLinesTimer);
       if(s.sectionAxis && S.mg.children.length>0){
@@ -7445,6 +7451,7 @@ function startApp() {
       if(!s.sectionBox||!s.sectionBox.enabled) {
         if(S._sectionBoxActive) {
           S.renderer.clippingPlanes=[];
+          S.renderer.localClippingEnabled=false;
           S._sectionBoxActive=false;
         }
         cleanupSbox();
@@ -7469,6 +7476,7 @@ function startApp() {
         new THREE.Plane().setFromNormalAndCoplanarPoint(axZ.clone().negate(), ctr.clone().addScaledVector(axZ,hz))
       ];
       S.renderer.clippingPlanes=planes;
+      S.renderer.localClippingEnabled=planes.length>0;
       S._sectionBoxActive=true;
       window._ccCurrentSbox=sb; // expose for drag handlers
       cleanupSbox();
@@ -7628,6 +7636,7 @@ function startApp() {
         new THREE.Plane(new THREE.Vector3(0,-1,0), cutAt)
       ];
       S.renderer.clippingPlanes = planes;
+      S.renderer.localClippingEnabled = true;
       // Visual cut plane indicator (subtle translucent plane at cut level)
       if(S._cutPlaneHelper){S.scene.remove(S._cutPlaneHelper);S._cutPlaneHelper=null;}
       var box = _elemsBBox();
@@ -7660,6 +7669,7 @@ function startApp() {
       if(!s.sectionAxis && !s.sectionCustom && (!s.sectionBox||!s.sectionBox.enabled) && !s.floorPlan){
         if(S.renderer.clippingPlanes.length>0){
           S.renderer.clippingPlanes=[];
+          S.renderer.localClippingEnabled=false;
           invalidate();
         }
       }
@@ -15520,8 +15530,10 @@ function startApp() {
         ['R',           'Reset camera'],
         ['O',           'Orbit mode'],
         ['W  W',        'Walk mode (press twice)'],
-        ['B  B',        'Section box (press twice)'],
+        ['B',           'Section box (around selection or full model)'],
         ['X',           'Section — X axis'],
+        ['Y',           'Section — Y axis'],
+        ['Z',           'Section — Z axis (horizontal floor cut)'],
         ['M',           'Distance measurement'],
         ['Shift+M',     'Clear measurements'],
         ['A',           'Angle measurement (in measure mode)'],
@@ -23066,10 +23078,15 @@ function startApp() {
     var I = {
       fit:    '<path d="M3 8V3h5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="M21 16v5h-5"/>',
       reset:  '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/>',
-      // Make Section: a knife/scalpel cutting through a plane (clearly "cut")
-      slice:  '<path d="M3 16l12-12"/><path d="M11 8l5 5"/><path d="M5 16h6"/><path d="M5 16v3"/>',
-      // Section Box: outer cube + inner dashed cube (crop region)
-      slicebox:'<rect x="3" y="3" width="18" height="18" rx="1"/><path stroke-dasharray="2 2" d="M7 7h10v10h-10z"/>',
+      // Make Section: solid object with a diagonal slice + hatched cut face —
+      // reads as "cut interior shown" in one glance, the convention used by
+      // Onshape / Fusion / SketchUp. The earlier knife glyph was four
+      // disjoint strokes that read as an X with an L next to it.
+      slice:  '<path d="M4 7l8-3 8 3v10l-8 3-8-3z"/><path d="M4 7l8 3 8-3"/><path d="M12 10v10"/><path d="M14 13l4-1.5"/><path d="M14 16l4-1.5"/>',
+      // Section Box: 3D-perspective box with a smaller offset face — reads
+      // as a region inside a model. The earlier nested-rect / dashed-rect
+      // version looked like a generic "border" icon.
+      slicebox:'<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4 8-4"/><path d="M12 12v9"/><path stroke-dasharray="2 2" d="M9 10l3 1.5 3-1.5"/><path stroke-dasharray="2 2" d="M9 10v6l3 1.5 3-1.5v-6"/>',
       clear:  '<path d="M5 5l14 14"/><path d="M19 5L5 19"/>',
       ruler:  '<path d="M3 12h18"/><path d="M5 12V9"/><path d="M9 12v-4"/><path d="M13 12V8"/><path d="M17 12v-4"/><path d="M21 12V9"/>',
       angle:  '<path d="M5 19L19 19"/><path d="M5 19L5 5"/><path d="M5 8a8 8 0 0 1 11 11"/>',
@@ -24175,7 +24192,10 @@ function startApp() {
             return;
           }
           if(chord==='sc'){
-            var next=s.sectionAxis===null?'x':s.sectionAxis==='x'?'y':s.sectionAxis==='y'?'z':null;
+            // Cycle in user-visible order: none → X → Y → Z → none.
+            // Internal Y/Z are swapped from the labels (see line 22584), so
+            // the cycle here is null → 'x' → 'z' → 'y' → null.
+            var next=s.sectionAxis===null?'x':s.sectionAxis==='x'?'z':s.sectionAxis==='z'?'y':null;
             d({t:A.SECTION,axis:next}); return;
           }
           if(chord==='zf'){ if(_resetView)_resetView(); if(s.floorPlan)d({t:A.FLOOR_PLAN,v:null}); return; }
@@ -24227,6 +24247,9 @@ function startApp() {
               else if(_getSectionBoxFromScene){var bx=_getSectionBoxFromScene();if(bx&&window._ccDispatch)window._ccDispatch({t:A.SECTION_BOX,v:{enabled:true,min:[bx.min.x,bx.min.y,bx.min.z],max:[bx.max.x,bx.max.y,bx.max.z]}});}
             }
             if(sk==='w'){ d({t:A.WALK_MODE,v:!s.walkMode}); }
+            // Z held without a follow-up key → toggle vertical floor cut
+            // (displayed as "Z axis"; internal three.js axis is Y).
+            if(sk==='z'){ d({t:A.SECTION,axis:s.sectionAxis==='y'?null:'y'}); }
           }, 500);
           return;
         }
@@ -24258,8 +24281,13 @@ function startApp() {
           else if(window._ccUnisolate) window._ccUnisolate();
           return;
         }
+        // X / Y / Z hotkeys follow the *displayed* axis labels (Z = vertical
+        // floor cut), not Three.js's internal Y-up axes. The UI re-labels
+        // internal Y as "Z" and internal Z as "Y" because architects expect
+        // Z-up — keep keys aligned with labels (see lines 8376 + 22584).
+        // Z is a chord-starter (zf, za) so it lives in the chord timeout.
         if(e.key==='x'&&!ctrl){ d({t:A.SECTION,axis:s.sectionAxis==='x'?null:'x'}); return; }
-        if(e.key==='y'&&!ctrl){ d({t:A.SECTION,axis:s.sectionAxis==='y'?null:'y'}); return; }
+        if(e.key==='y'&&!ctrl){ d({t:A.SECTION,axis:s.sectionAxis==='z'?null:'z'}); return; }
         if(e.key==='g'&&!ctrl){ d({t:A.UPD_PREFS,u:{showGrid:!(s.prefs.showGrid!==false)}}); return; }
         if(e.key==='Delete'&&!s.activeId){
           if(s.measurements.length>0){d({t:A.DEL_MEASUREMENT,id:s.measurements[s.measurements.length-1].id});return;}
