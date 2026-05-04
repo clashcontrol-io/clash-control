@@ -7364,9 +7364,14 @@ function startApp() {
         border.userData._sectionPlane = true;
         border.renderOrder = 999;
         grp.add(border);
-        var stemLen = Math.min(halfW, halfH) * 0.09;
-        var tipLen = stemLen * 0.35;
-        var tipW = tipLen * 0.7;
+        var _arrBox = _elemsBBox();
+        var _arrSz = _arrBox.isEmpty() ? new THREE.Vector3(10,10,10) : _arrBox.getSize(new THREE.Vector3());
+        var _arrMax = Math.max(_arrSz.x, _arrSz.y, _arrSz.z) || 10;
+        // Match section box face-arrow sizing so plane and box handles read at the same scale
+        var arrowSize = Math.max(0.08, Math.min(_arrMax * 0.0173, 0.69));
+        var stemLen = arrowSize * 1.5;
+        var tipLen = arrowSize * 1.6;
+        var tipW = arrowSize * 0.55;
         var arrowMat = new THREE.MeshBasicMaterial({color:0x1a6b4a, transparent:true, opacity:0.95, depthTest:false});
         arrowMat.clippingPlanes = [];
         var stemGeo = new THREE.CylinderGeometry(tipW*0.18, tipW*0.18, stemLen*2, 10);
