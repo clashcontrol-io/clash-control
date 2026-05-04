@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.6.12 (2026-05-04)
+- Fix section box face drag, clipped-element clicks, and glass detection
+
 ## v5.6.11 (2026-05-04)
 - Three viewer performance improvements + glass name detection
 
