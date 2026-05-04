@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.6.6 (2026-05-04)
+- Replace stencil section hatch with polygon-based cap mesh
+
 ## v5.6.5 (2026-05-04)
 - Fix section box clip/wireframe rotating in opposite directions, +15% handles
 
