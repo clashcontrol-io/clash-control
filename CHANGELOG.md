@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.12 (2026-05-05)
+- feat(measure): smart polygon ordering for area tool
+
 ## v5.7.11 (2026-05-05)
 - Fix model replacement: stale ghost, stale meshList, ortho near-clip, stale state closure
 
