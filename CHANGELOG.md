@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.13 (2026-05-05)
+- feat(measure): edge-vertex insert, Z-axis labels, and geo disposal
+
 ## v5.7.12 (2026-05-05)
 - feat(measure): smart polygon ordering for area tool
 
