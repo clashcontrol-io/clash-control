@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.0 (2026-05-05)
+- Drag-to-edit endpoints + PointerLens magnifier render
+
 ## v5.6.13 (2026-05-04)
 - Section box rotation + force-opaque framing elements
 
