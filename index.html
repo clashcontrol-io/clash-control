@@ -6400,6 +6400,10 @@ function startApp() {
         var id = uid();
         d({t:A.ADD_MEASUREMENT, v:{id:id, type:'area', value:area, label:_ccFmtArea(area, window._ccLatestState), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
         if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(id);
+        if (window._ccRegisterMeasurementGeo && !window._ccChainedArea) {
+          window._ccRegisterMeasurementGeo(id, 'area', pts.length, 1);
+        }
+        window._ccChainedArea = false;
         measurePtsRef.current = [];
         _clearPreview();
         invalidate();
@@ -7389,8 +7393,17 @@ function startApp() {
             d({t:A.ADD_MEASUREMENT, v:{id:_id, type:'length', value:dist, label:label, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
             if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_id);
             if (window._ccRegisterMeasurementGeo) window._ccRegisterMeasurementGeo(_id, 'length', 2, 1);
-            measurePtsRef.current = [];
+            // Chain into area mode: keep the 2 placed points as the first edge of a
+            // polygon. The user can keep clicking to trace more vertices and close to
+            // get an area, or press Esc to cancel the chain and return to a clean state.
+            // _ccChainedArea flag tells the area commit to skip _registerMeasurementGeo
+            // (the committed length line sits between the old dots and new dots in the
+            // array, which breaks the slice arithmetic for drag-edit — acceptable tradeoff).
             _clearPreview();
+            measureModeRef.current = 'area';
+            window._ccChainedArea = true;
+            d({t:A.MEASURE_MODE, v:'area'});
+            if (window._ccToast) window._ccToast('Keep clicking to trace an area · Esc to cancel');
             // Calibration finalisation: if a calibration is pending, prompt for
             // real distance and store a multiplier in prefs.
             if (window._ccCalibrationPending) {
@@ -7448,7 +7461,12 @@ function startApp() {
               var _idR = uid();
               d({t:A.ADD_MEASUREMENT, v:{id:_idR, type:'area', value:area2, label:_ccFmtArea(area2,_state), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
               if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_idR);
-              if (window._ccRegisterMeasurementGeo) window._ccRegisterMeasurementGeo(_idR, 'area', pts.length, 1);
+              // Skip registration when chained from a length: the committed length Line
+              // sits inside measureObjsRef between the old dots and new ones, so the
+              // slice arithmetic in _registerMeasurementGeo would be wrong. Area drag-edit
+              // is not available for chained areas (acceptable tradeoff).
+              if (window._ccRegisterMeasurementGeo && !window._ccChainedArea) window._ccRegisterMeasurementGeo(_idR, 'area', pts.length, 1);
+              window._ccChainedArea = false;
               measurePtsRef.current = [];
               _clearPreview();
             }
@@ -9673,7 +9691,7 @@ function startApp() {
       ${s.walkMode && html`<${WalkModeHUD} d=${d} />`}
       <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end',maxHeight:'calc(100% - 5rem)',overflowY:'auto'}}>
         ${s.measureMode && html`<div style=${{fontSize:'0.69rem',color:'var(--text-primary)',background:'var(--overlay-bg)',border:'1px solid var(--border)',padding:'.25rem .55rem',borderRadius:6,boxShadow:'var(--shadow-sm)',display:'flex',alignItems:'center',gap:'.4rem'}}>
-          <span>${s.measureMode==='length'?'Click 2 points · Shift to lock axis · Esc to cancel':s.measureMode==='angle'?'Click 3 points: start · vertex · end · Esc to cancel':s.measureMode==='area'?'Click points · click near first point or Enter to close · Esc to cancel':s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A, then element B':'Measuring…'}</span>
+          <span>${s.measureMode==='length'?'Click 2 points · Shift to lock axis · Esc to cancel':s.measureMode==='angle'?'Click 3 points: start · vertex · end · Esc to cancel':s.measureMode==='area'?(window._ccChainedArea?'Length locked · keep clicking to trace an area · Enter or Esc':'Click points · click near first point or Enter to close · Esc to cancel'):s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A, then element B':'Measuring…'}</span>
         </div>`}
         ${s.measureMode && window._ccHoverPoint && (function(){
           var p=window._ccHoverPoint;
@@ -26287,6 +26305,7 @@ function startApp() {
         window._ccMeasurePtsRef.current = [];
         // Also remove the placed endpoint dots that haven't yet committed.
         if (window._ccDropInProgressDots) window._ccDropInProgressDots();
+        window._ccChainedArea = false;
       };
       window._ccPopLastMeasureVertex = function(){
         if (!window._ccMeasurePtsRef || !window._ccMeasurePtsRef.current) return;
