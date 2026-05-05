@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.7 (2026-05-05)
+- fix: raise click/drag threshold during active measurement to 8px
+
 ## v5.7.6 (2026-05-05)
 - fix: area icon, snap race condition, endpoint hint, area seeding
 
