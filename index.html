@@ -4597,7 +4597,7 @@ function startApp() {
   function _walkSetFootsteps(on){ _walkFootsteps=!!on; try{localStorage.setItem('cc_walkFoot',on?'1':'0');}catch(e){} _walkEmitFlags(); }
   function _walkSetSensitivity(v){ _walkSensitivity=Math.max(0.25,Math.min(3,v||1)); try{localStorage.setItem('cc_walkSens',String(_walkSensitivity));}catch(e){} _walkEmitFlags(); }
   function _walkSetInvertY(on){ _walkInvertY=!!on; try{localStorage.setItem('cc_walkInvY',on?'1':'0');}catch(e){} _walkEmitFlags(); }
-  function _walkSetHeight(m){ _walkUserHeight=Math.max(0.4,Math.min(10, parseFloat(m)||1.7)); try{localStorage.setItem('cc_walkHeight',String(_walkUserHeight));}catch(e){} if(_walkActive){ _walkEyeHeight = _walkUserHeight * _walkUnitScale; } _walkEmitFlags(); invalidate(2); }
+  function _walkSetHeight(m){ _walkUserHeight=Math.max(0.4,Math.min(10, parseFloat(m)||1.7)); try{localStorage.setItem('cc_walkHeight',String(_walkUserHeight));}catch(e){} if(_walkActive){ var oldH=_walkEyeHeight; _walkEyeHeight = _walkUserHeight * _walkUnitScale; var _Sh=window._ccState3d; if(_Sh&&_Sh.camera) _Sh.camera.position.y += (_walkEyeHeight - oldH); } _walkEmitFlags(); invalidate(2); }
   window._ccWalkSetBob = _walkSetBob;
   window._ccWalkSetCollision = _walkSetCollision;
   window._ccWalkSetFootsteps = _walkSetFootsteps;
@@ -4749,6 +4749,8 @@ function startApp() {
     _walkEmitFlags();
     _walkKeys = {};
     _walkLastTime = performance.now();
+    // Request pointer lock — succeeds when called from a user-gesture (e.g. Pegman drop)
+    try { if (S.renderer && S.renderer.domElement) S.renderer.domElement.requestPointerLock(); } catch(e) {}
     invalidate(999);
   }
 
@@ -4794,6 +4796,7 @@ function startApp() {
     }
   }
 
+  var _walkGravityFrame = 0; // throttle gravity raycast to every 3rd frame
   function _walkTick(S) {
     if (!_walkActive) return;
     var now = performance.now();
@@ -4918,7 +4921,8 @@ function startApp() {
       invalidate(2);
     }
 
-    if (_walkGravity && my === 0 && S.mg && S.mg.children.length > 0 && !altHeld) {
+    _walkGravityFrame = (_walkGravityFrame + 1) % 3; // run every 3rd frame
+    if (_walkGravity && my === 0 && S.mg && S.mg.children.length > 0 && !altHeld && _walkGravityFrame === 0) {
       var stepUp = 0.5 * _walkUnitScale;     // max step we'll climb (50 cm)
       var castFrom = stepUp;                   // start above the eye-relative ground line
       var maxFall = 4.0 * _walkUnitScale;       // how far we'll snap down
@@ -5537,13 +5541,10 @@ function startApp() {
       });
       renderer.domElement.addEventListener('mousemove', function(e) {
         if (!_walkActive) return;
-        // Mouse look works always in walk mode; pointer-locked feels best
-        // but unlocked still drives look (with a clamp against jitter when
-        // cursor leaves canvas).
+        // Require pointer lock for camera look — prevents unwanted rotation
+        // when cursor is over the canvas but the user hasn't clicked to engage.
+        if (!_walkPointerLocked) return;
         var mx = e.movementX || 0, my = e.movementY || 0;
-        if (!_walkPointerLocked) {
-          if (Math.abs(mx) > 200 || Math.abs(my) > 200) return;
-        }
         var sens = 0.002 * (_walkSensitivity || 1);
         _walkYaw -= mx * sens;
         _walkPitch += my * (_walkInvertY ? sens : -sens);
@@ -16667,7 +16668,7 @@ function startApp() {
     function jumpStorey(st){
       var unit = (typeof window._ccWalkSmartEntry==='function') ? 1 : 1;
       try {
-        var box = (typeof _elemsBBox === 'function') ? _elemsBBox() : null;
+        var box = (typeof window._ccElemsBBox === 'function') ? window._ccElemsBBox() : null;
         var cx = 0, cz = 0;
         if (box && !box.isEmpty()){ cx=(box.min.x+box.max.x)/2; cz=(box.min.z+box.max.z)/2; }
         var Sref = window._ccState3d;
@@ -16723,9 +16724,12 @@ function startApp() {
 
     // First-click pointer-lock affordance — small reticle until locked
     var locked = (typeof document !== 'undefined') && document.pointerLockElement === (window._ccState3d && window._ccState3d.renderer && window._ccState3d.renderer.domElement);
-    var crosshair = html`<div style=${{position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:5}}>
+    var crosshair = html`<div style=${{position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:5, display:'flex', flexDirection:'column', alignItems:'center', gap:'8px'}}>
       ${locked ? html`<div style=${{width:6,height:6,borderRadius:'50%',background:'rgba(255,255,255,.6)',boxShadow:'0 0 0 1px rgba(0,0,0,.4)'}}></div>`
-              : html`<div style=${{width:32,height:32,borderRadius:'50%',border:'1.5px dashed rgba(255,255,255,.7)',boxShadow:'0 0 4px rgba(0,0,0,.5)',animation:'cc-walk-pulse 1.2s ease-in-out infinite'}}></div>`}
+              : html`<${React.Fragment}>
+                  <div style=${{width:36,height:36,borderRadius:'50%',border:'2px dashed rgba(255,255,255,.8)',boxShadow:'0 0 6px rgba(0,0,0,.6)',animation:'cc-walk-pulse 1.2s ease-in-out infinite'}}></div>
+                  <div style=${{background:'rgba(0,0,0,.55)',color:'rgba(255,255,255,.9)',fontSize:'11px',padding:'3px 8px',borderRadius:'4px',whiteSpace:'nowrap',backdropFilter:'blur(4px)',border:'1px solid rgba(255,255,255,.15)'}}>Click to look around</div>
+                </${React.Fragment}>`}
     </div>`;
 
     return html`<${React.Fragment}>
