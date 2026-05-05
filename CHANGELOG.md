@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.3 (2026-05-05)
+- chore: daily memory sync 2026-05-05
+
 ## v5.7.2 (2026-05-05)
 - Resurface IFC dimension & constraint properties in Inspector Details
 
