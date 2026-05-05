@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.9.2 (2026-05-05)
+- Walk mode: call _ccWalkEnter directly from Pegman click
+
 ## v5.9.1 (2026-05-05)
 - Fix Pegman placement, reduce walk-mode render overhead
 
