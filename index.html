@@ -6392,7 +6392,9 @@ function startApp() {
         // every time, making it look like the area context was lost.
         if (mode === 'area' && pts.length >= 2) {
           var polyEdgeMat = new THREE.LineBasicMaterial({color:0xb8533a, linewidth:2, depthTest:false, transparent:true, opacity:0.9});
-          var polyEdgeGeo = new THREE.BufferGeometry().setFromPoints(pts.slice());
+          // Sort placed points into non-crossing order for the preview polygon
+          var _orderedPts = (window._ccOrderPolygon && pts.length >= 3) ? window._ccOrderPolygon(pts) : pts.slice();
+          var polyEdgeGeo = new THREE.BufferGeometry().setFromPoints(_orderedPts);
           var polyEdgeLine = new THREE.Line(polyEdgeGeo, polyEdgeMat);
           polyEdgeLine.renderOrder = 999;
           _previewGroup.add(polyEdgeLine);
@@ -6403,9 +6405,10 @@ function startApp() {
         pline.computeLineDistances && pline.computeLineDistances();
         pline.renderOrder = 1000;
         _previewGroup.add(pline);
-        // For area mode: closing dotted line back to pts[0]
+        // For area mode: closing dotted line back to the first point of the sorted polygon
         if (mode === 'area' && pts.length >= 2) {
-          var cgeo = new THREE.BufferGeometry().setFromPoints([target, pts[0]]);
+          var _closeTarget = (_orderedPts && _orderedPts.length) ? _orderedPts[0] : pts[0];
+          var cgeo = new THREE.BufferGeometry().setFromPoints([target, _closeTarget]);
           var cline = new THREE.Line(cgeo, _previewLineMat);
           cline.computeLineDistances && cline.computeLineDistances();
           cline.renderOrder = 1000;
@@ -6468,22 +6471,23 @@ function startApp() {
         if (!pts || pts.length < 3) return;
         var p0 = pts[0];
         // Manually run the close logic
-        pts.push(p0.clone());
+        // Sort into non-crossing order before rendering and computing area
+        var _fcSorted = (window._ccOrderPolygon && pts.length >= 3) ? window._ccOrderPolygon(pts) : pts.slice();
         var polyMat = new THREE.LineBasicMaterial({color:0x1a6b4a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
-        var polyGeo = new THREE.BufferGeometry().setFromPoints(pts.concat([pts[0]]));
+        var polyGeo = new THREE.BufferGeometry().setFromPoints(_fcSorted.concat([_fcSorted[0]]));
         var polyLine = new THREE.Line(polyGeo, polyMat); polyLine.renderOrder = 998;
         scene.add(polyLine);
         measureObjsRef.current.push(polyLine);
         var nrm = new THREE.Vector3();
-        for (var i=0;i<pts.length;i++){
-          var a=pts[i], b=pts[(i+1)%pts.length];
+        for (var i=0;i<_fcSorted.length;i++){
+          var a=_fcSorted[i], b=_fcSorted[(i+1)%_fcSorted.length];
           nrm.x += (a.y-b.y)*(a.z+b.z);
           nrm.y += (a.z-b.z)*(a.x+b.x);
           nrm.z += (a.x-b.x)*(a.y+b.y);
         }
         var area = nrm.length()/2;
         var id = uid();
-        d({t:A.ADD_MEASUREMENT, v:{id:id, type:'area', value:area, label:_ccFmtArea(area, window._ccLatestState), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+        d({t:A.ADD_MEASUREMENT, v:{id:id, type:'area', value:area, label:_ccFmtArea(area, window._ccLatestState), points:_fcSorted.map(function(p){return [p.x,p.y,p.z]})}});
         if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(id);
         if (window._ccRegisterMeasurementGeo && !window._ccChainedArea) {
           window._ccRegisterMeasurementGeo(id, 'area', pts.length, 1);
@@ -7680,22 +7684,24 @@ function startApp() {
               // The duplicate dot was already added to the scene before this branch — remove it
               var _extraDot = measureObjsRef.current.pop();
               if (_extraDot) { scene.remove(_extraDot); if (_extraDot.geometry) _extraDot.geometry.dispose(); }
+              // Sort into non-crossing order before rendering and computing area
+              var _sortedPts = (window._ccOrderPolygon && pts.length >= 3) ? window._ccOrderPolygon(pts) : pts.slice();
               var polyMat = new THREE.LineBasicMaterial({color:0x1a6b4a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
-              var polyPts = pts.concat([pts[0]]);
+              var polyPts = _sortedPts.concat([_sortedPts[0]]);
               var polyGeo = new THREE.BufferGeometry().setFromPoints(polyPts);
               var polyLine = new THREE.Line(polyGeo, polyMat); polyLine.renderOrder = 998;
               scene.add(polyLine);
               measureObjsRef.current.push(polyLine);
               var normal2 = new THREE.Vector3();
-              for(var ai=0;ai<pts.length;ai++){
-                var cur2=pts[ai], next2=pts[(ai+1)%pts.length];
+              for(var ai=0;ai<_sortedPts.length;ai++){
+                var cur2=_sortedPts[ai], next2=_sortedPts[(ai+1)%_sortedPts.length];
                 normal2.x += (cur2.y-next2.y)*(cur2.z+next2.z);
                 normal2.y += (cur2.z-next2.z)*(cur2.x+next2.x);
                 normal2.z += (cur2.x-next2.x)*(cur2.y+next2.y);
               }
               var area2 = normal2.length()/2;
               var _idR = uid();
-              d({t:A.ADD_MEASUREMENT, v:{id:_idR, type:'area', value:area2, label:_ccFmtArea(area2,_state), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+              d({t:A.ADD_MEASUREMENT, v:{id:_idR, type:'area', value:area2, label:_ccFmtArea(area2,_state), points:_sortedPts.map(function(p){return [p.x,p.y,p.z]})}});
               if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_idR);
               // Skip registration when chained from a length: the committed length Line
               // sits inside measureObjsRef between the old dots and new ones, so the
@@ -18353,6 +18359,47 @@ function startApp() {
   window._ccFmtAngle  = _ccFmtAngle;
   window._ccFmtDeltas = _ccFmtDeltas;
   window._ccRelabelMeasurement = _ccRelabelMeasurement;
+
+  // Sort an array of THREE.Vector3 points into a non-crossing polygon order.
+  // Uses Newell's method to find the best-fit face normal, then projects all
+  // points to that plane and sorts by angle from the centroid. Works for any
+  // click order (CW, CCW, random) on any face orientation.
+  // Returns a NEW array — does not mutate the input.
+  function _ccOrderPolygon(pts) {
+    if (!pts || pts.length < 3) return pts ? pts.slice() : [];
+    // Centroid
+    var cx = 0, cy = 0, cz = 0;
+    for (var i = 0; i < pts.length; i++) { cx += pts[i].x; cy += pts[i].y; cz += pts[i].z; }
+    cx /= pts.length; cy /= pts.length; cz /= pts.length;
+    // Best-fit normal via Newell's method
+    var nx = 0, ny = 0, nz = 0;
+    for (var j = 0; j < pts.length; j++) {
+      var a = pts[j], b = pts[(j + 1) % pts.length];
+      nx += (a.y - b.y) * (a.z + b.z);
+      ny += (a.z - b.z) * (a.x + b.x);
+      nz += (a.x - b.x) * (a.y + b.y);
+    }
+    var nl = Math.sqrt(nx*nx + ny*ny + nz*nz);
+    if (nl < 1e-10) return pts.slice(); // degenerate — can't determine plane
+    nx /= nl; ny /= nl; nz /= nl;
+    // Build local 2D axes perpendicular to the normal
+    var ux, uy, uz;
+    if (Math.abs(nx) <= Math.abs(ny) && Math.abs(nx) <= Math.abs(nz)) { ux=0; uy=-nz; uz=ny; }
+    else if (Math.abs(ny) <= Math.abs(nz)) { ux=-nz; uy=0; uz=nx; }
+    else { ux=-ny; uy=nx; uz=0; }
+    var ul = Math.sqrt(ux*ux + uy*uy + uz*uz);
+    ux /= ul; uy /= ul; uz /= ul;
+    // v = normal × u
+    var vx = ny*uz - nz*uy, vy = nz*ux - nx*uz, vz = nx*uy - ny*ux;
+    // Project each point to 2D (u,v) relative to centroid and sort by angle
+    var indexed = pts.map(function(p, idx) {
+      var dx = p.x - cx, dy = p.y - cy, dz = p.z - cz;
+      return { idx: idx, angle: Math.atan2(dx*vx + dy*vy + dz*vz, dx*ux + dy*uy + dz*uz) };
+    });
+    indexed.sort(function(a, b) { return a.angle - b.angle; });
+    return indexed.map(function(e) { return pts[e.idx]; });
+  }
+  window._ccOrderPolygon = _ccOrderPolygon;
 
   function _ccMakeSheet(storeyName, elevation) {
     var id = (typeof uid === 'function' ? uid() : 'SH' + Date.now().toString(36).toUpperCase());
