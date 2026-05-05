@@ -16491,6 +16491,10 @@ function startApp() {
         elevation: h2.point.y
       };
       setAim(null);
+      // Call _ccWalkEnter directly first to bypass any effect-timing issues —
+      // _walkEnter is idempotent (returns early if already active), so the
+      // subsequent effect call from the dispatch is a safe no-op.
+      try { if (window._ccWalkEnter) window._ccWalkEnter(entry); } catch(_){}
       d({t:A.WALK_MODE, v:true, entry: entry});
     }
     function onKey(e){
@@ -16538,6 +16542,7 @@ function startApp() {
       <button onClick=${function(){
           var S = window._ccState3d;
           var entry = (typeof window._ccWalkSmartEntry==='function') ? window._ccWalkSmartEntry() : null;
+          try { if (window._ccWalkEnter) window._ccWalkEnter(entry || undefined); } catch(_){}
           d({t:A.WALK_MODE, v:true, entry: entry});
         }}
         style=${{position:'absolute', bottom:'1.25rem', left:'50%', transform:'translateX(-50%)',
