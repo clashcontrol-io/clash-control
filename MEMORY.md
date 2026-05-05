@@ -213,6 +213,68 @@ UI_OVERHAUL.md written (7 chapters, 1469 lines). PLAN.md updated.
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-05-05
+**Summary:** 52 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- fe9c48f chore: bump version to 5.7.2
+- d3ca74b Resurface IFC dimension & constraint properties in Inspector Details
+- 16ab0ef chore: bump version to 5.7.1
+- d94cbea Fix measurement tool UX: popover, cursor offset, icon, snap + drag feedback
+- 0677141 chore: bump version to 5.7.0
+- 8c8fbb3 Drag-to-edit endpoints + PointerLens magnifier render
+- 93e09a4 Measure tools deep redesign — snap engine, live preview, Qto_* element measure, clearance, takeoff, units
+- 8034c54 chore: bump version to 5.6.13
+- 8ae0680 Section box rotation + force-opaque framing elements
+- 195e6a1 chore: bump version to 5.6.12
+- b94104e Fix section box face drag, clipped-element clicks, and glass detection
+- 2e12b9c Remove orbit damping (felt sluggish at end of rotation)
+- 8290a75 chore: bump version to 5.6.11
+- fc182c8 Three viewer performance improvements + glass name detection
+- 6ad6f9e Fix metal mullions wrongly rendered as glass
+- e5983da chore: bump version to 5.6.10
+- a903f3e Fix section plane drag and rotation
+- 5c3f3e4 chore: bump version to 5.6.9
+- 9af8eba Drop custom section plane arrow/torus, recolour TransformControls green
+- 00e8916 chore: bump version to 5.6.8
+- c02735e Section handles glow on hover + no modifier needed to drag
+- 037a1f0 Detect glass by IFC type fallback (IfcWindow / IfcCurtainWall / IfcPlate)
+- 9d7c942 Make glass transparent in shaded mode too
+- 5e2237e chore: bump version to 5.6.7
+- 3f2d083 Fix glass transparency in rendered mode
+- c0f478b Fix section plane rotation direction — invert drag sign
+- b28c169 Match section plane arrow size to section box face arrows
+- a10cbe9 chore: bump version to 5.6.6
+- 42707d0 Replace stencil section hatch with polygon-based cap mesh
+- 5152127 Make Compare panel generic A/B instead of version-specific Old/New
+- 68bdbbd chore: bump version to 5.6.5
+- 7b40af0 Fix section box clip/wireframe rotating in opposite directions, +15% handles
+- c9cb710 chore: bump version to 5.6.4
+- 0058a25 Fix section box clipping, handle size -50%, rotation gizmo live update
+- 94a4ec6 chore: bump version to 5.6.3
+- cdd029f Fix section box not clipping + shrink handles
+- ac79945 Persist IFC v2 version metadata to IndexedDB so it survives page refresh
+- 05bc035 chore: bump version to 5.6.2
+- bf87d99 Version Compare: rename A/B to Old/New, auto-detect version pairs, update diff badges to design system
+- 710474b Fix section tools, shadows, hatch, handles, ground plane + remove wireframe
+- e5414ff chore: bump version to 5.6.1
+- 38f2add Fix section hatch camera-angle flicker + section box handle visibility
+- e0d4e5a Section hatch: size cap plane to model bounding box
+- ea8bcf9 chore: bump version to 5.6.0
+- 04a8a73 Section hatch: auto-rebuild on model change, skip thin shells
+- 4612a64 Add architectural section hatch — stencil-cap solid fill on cut faces
+- 02533de chore: bump version to 5.5.1
+- a51592d chore: daily memory sync 2026-05-04
+- 46bc120 fix(section): make the cut actually cut + show a visible plane
+- 991713a chore: bump version to 5.5.0
+- 950e404 feat(section): unified S key, Alt+click, F-flip, drag HUD, viewpoint persistence
+- a811bad fix(section): apply clipping reliably + clearer icons + axis-key alignment
+
+</details>
+
 ### 2026-05-04
 **Summary:** 17 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
