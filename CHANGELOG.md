@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.9 (2026-05-05)
+- Fix glass detection, area preview edges, and add IFC type to Identity panel
+
 ## v5.7.8 (2026-05-05)
 - Hide measurement 3D geometry when m.hidden toggled
 
