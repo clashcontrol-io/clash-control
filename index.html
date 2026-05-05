@@ -6742,6 +6742,50 @@ function startApp() {
         }
       }
 
+      // ── Endpoint hover highlight ──────────────────────────────────
+      // Hovering over a placed endpoint dot scales it 1.5× and switches
+      // the cursor to 'grab' so users see it's draggable. Mirrors the
+      // section-box handle hover affordance.
+      var _hoveredDot = null;
+      var _DOT_SCALE_HOVER = 1.7;
+      function _setDotHover(dot){
+        if (_hoveredDot === dot) return;
+        if (_hoveredDot) {
+          _hoveredDot.scale.setScalar(1);
+          if (_hoveredDot.material && _hoveredDot.userData._origColor != null) {
+            _hoveredDot.material.color.setHex(_hoveredDot.userData._origColor);
+            _hoveredDot.material.needsUpdate = true;
+          }
+        }
+        _hoveredDot = dot || null;
+        if (_hoveredDot) {
+          _hoveredDot.scale.setScalar(_DOT_SCALE_HOVER);
+          if (_hoveredDot.material) {
+            if (_hoveredDot.userData._origColor == null) _hoveredDot.userData._origColor = _hoveredDot.material.color.getHex();
+            _hoveredDot.material.color.setHex(0xffffff);
+            _hoveredDot.material.needsUpdate = true;
+          }
+        }
+        invalidate();
+      }
+
+      renderer.domElement.addEventListener('mousemove', function(e){
+        // Skip while drawing or already dragging — drag handler owns the cursor
+        if (_dragMeas) return;
+        if (measureModeRef.current && measurePtsRef.current && measurePtsRef.current.length > 0) {
+          if (_hoveredDot) _setDotHover(null);
+          return;
+        }
+        var hit = _hitMeasureEndpoint(e.clientX, e.clientY);
+        if (hit && hit.mesh) {
+          _setDotHover(hit.mesh);
+          renderer.domElement.style.cursor = 'grab';
+        } else if (_hoveredDot) {
+          _setDotHover(null);
+          renderer.domElement.style.cursor = '';
+        }
+      });
+
       renderer.domElement.addEventListener('mousedown', function(e){
         if (e.button !== 0) return;
         // Skip when actively drawing (those clicks add vertices)
@@ -6751,6 +6795,8 @@ function startApp() {
         e.preventDefault(); e.stopPropagation();
         if (S.orbit) S.orbit.enabled = false;
         _dragMeas = hit;
+        // Keep the hover scale during drag for clarity
+        _setDotHover(hit.mesh);
         renderer.domElement.style.cursor = 'grabbing';
       }, true);
 
@@ -6793,6 +6839,8 @@ function startApp() {
         if (!_dragMeas) return;
         e.preventDefault(); e.stopPropagation();
         if (S.orbit) S.orbit.enabled = true;
+        // Clear hover state — re-hovering will scale again
+        _setDotHover(null);
         renderer.domElement.style.cursor = '';
         _dragMeas = null;
       }, true);
@@ -7985,6 +8033,25 @@ function startApp() {
           //    into a small circular canvas near the cursor. Costs one extra
           //    render per frame while active; gated by prefs.measureMagnifier.
           if (window._ccRenderMagnifier) try { window._ccRenderMagnifier(); } catch(_e){}
+          // ── Snap-point marker projection ─────────────────────────────
+          //    A 3D-anchored DOM dot that tracks the precise snap location.
+          //    Gives Revit/AutoCAD-style "glyph at the snap point" feedback
+          //    so the user sees exactly where their click will land.
+          (function(){
+            var marker = document.getElementById('cc-snap-marker');
+            if (!marker) return;
+            var snap = window._ccHoverSnap;
+            var st = window._ccLatestState;
+            var active = !!(st && (st.measureMode || window._ccAltHeld)) && !!snap;
+            if (!active) { marker.style.display = 'none'; return; }
+            var rect = renderer.domElement.getBoundingClientRect();
+            var v = new THREE.Vector3(snap.point.x, snap.point.y, snap.point.z).project(S.camera);
+            if (v.z < -1 || v.z > 1) { marker.style.display = 'none'; return; }
+            var sx = (v.x*0.5+0.5) * rect.width  + rect.left;
+            var sy = (-v.y*0.5+0.5) * rect.height + rect.top;
+            marker.style.display = 'block';
+            marker.style.transform = 'translate3d(' + Math.round(sx) + 'px,' + Math.round(sy) + 'px,0)';
+          })();
           // ── Project measurement labels onto screen ──────────────
           if (window._ccMeasurementsRef && window._ccMeasurementsRef.length > 0) {
             // The label overlay is a sibling of `el` (canvas wrapper) inside the Viewer root.
@@ -9543,15 +9610,24 @@ function startApp() {
           var ad = Math.sqrt(ax*ax + ay*ay + az*az);
           chipTxt = (window._ccFmtLength ? window._ccFmtLength(ad, s) : ad.toFixed(2)+' m');
         }
-        return html`<div id="cc-measure-cursor" style=${{position:'absolute',left:(cur.x+12)+'px',top:(cur.y-26)+'px',pointerEvents:'none',zIndex:7,display:'flex',alignItems:'center',gap:'.3rem'}}>
+        var snapTypeLabel = snapType==='vertex'?'Endpoint':snapType==='midpoint'?'Midpoint':snapType==='center'?'Centre':snapType==='edge'?'Edge':snapType==='face'?'Surface':'';
+        return html`<div id="cc-measure-cursor" style=${{position:'fixed',left:(cur.x+14)+'px',top:(cur.y-30)+'px',pointerEvents:'none',zIndex:9998,display:'flex',alignItems:'center',gap:'.3rem'}}>
           <svg width="18" height="18" viewBox="0 0 18 18" style=${{filter:'drop-shadow(0 1px 2px rgba(0,0,0,.35))'}}>${glyph}</svg>
+          ${snapTypeLabel && html`<span style=${{fontSize:'0.65rem',color:'var(--accent)',background:'var(--bg-primary)',border:'1px solid var(--accent)',padding:'.1rem .35rem',borderRadius:3,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',fontWeight:600,letterSpacing:'.02em'}}>${snapTypeLabel}</span>`}
           ${chipTxt && html`<span style=${{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'var(--text-primary)',background:'var(--bg-primary)',border:'1px solid var(--border)',padding:'.1rem .4rem',borderRadius:4,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap'}}>${chipTxt}</span>`}
         </div>`;
       })()}
+      ${/* 3D-anchored snap marker — small DOM dot projected to the snap point's
+            screen position each frame. Gives the user precise feedback about
+            *where* the click will land, AutoCAD/Revit style (tracking the snap
+            point itself, not just the cursor). */ ''}
+      <div id="cc-snap-marker" style=${{position:'fixed',left:0,top:0,width:0,height:0,pointerEvents:'none',zIndex:9997,display:'none'}}>
+        <div style=${{position:'absolute',width:14,height:14,marginLeft:-7,marginTop:-7,borderRadius:'50%',border:'2px solid var(--accent)',background:'var(--bg-primary)',boxShadow:'0 0 0 1px rgba(0,0,0,.15), 0 1px 3px rgba(0,0,0,.25)'}}></div>
+      </div>
       ${/* Element-pick mini-menu shown after Measure → Element click (T2.1) */ ''}
       ${window._ccElementMeasureMenu && (function(){
         var em = window._ccElementMeasureMenu;
-        return html`<div style=${{position:'absolute',left:em.x+'px',top:em.y+'px',zIndex:30,
+        return html`<div style=${{position:'fixed',left:em.x+'px',top:em.y+'px',zIndex:9999,
           background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',
           boxShadow:'var(--shadow-md)',padding:'.35rem .25rem',minWidth:190,fontSize:'var(--text-xs)',pointerEvents:'auto'}}>
           <div style=${{padding:'.15rem .55rem',color:'var(--text-muted)',fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>${em.elementLabel||'Element'}</div>
@@ -23459,19 +23535,10 @@ function startApp() {
         ${s.measureMode && html`<div style=${{padding:'.3rem .5rem',background:'var(--accent-bg)',border:'1px solid var(--accent)',borderRadius:'var(--radius-xs)',fontSize:'var(--text-xs)',color:'var(--accent)'}}>
           ${s.measureMode==='length'?'Click 2 points · Shift to lock axis':s.measureMode==='angle'?'Click 3 points: start · vertex · end':s.measureMode==='area'?'Click points · Enter or click first point to close':s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A then element B':'Measuring'}
         </div>`}
-        <!-- Quick actions -->
-        <div style=${{display:'flex',gap:'.3rem',flexWrap:'wrap'}}>
-          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='length'?null:'length'});}}
-            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='length'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='length'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Distance</button>
-          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='angle'?null:'angle'});}}
-            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='angle'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='angle'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Angle</button>
-          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='area'?null:'area'});}}
-            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='area'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='area'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Area</button>
-          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='element'?null:'element'});}}
-            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='element'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='element'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Element</button>
-          <button onClick=${function(){d({t:A.MEASURE_MODE,v:s.measureMode==='clearance'?null:'clearance'});window._ccClearancePickA=null;}}
-            style=${{...S_BTN,padding:'.25rem .55rem',fontSize:'var(--text-xs)',background:s.measureMode==='clearance'?'var(--accent)':'var(--bg-tertiary)',color:s.measureMode==='clearance'?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)'}}>Clearance</button>
-        </div>
+        <!-- Mode pickers live in the toolbar Measure caret — keep this panel
+             focused on viewing / managing placed measurements. A small helper
+             nudge points users at the toolbar caret if no mode is active. -->
+        ${!s.measureMode && html`<div style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)',padding:'.2rem 0'}}>Pick a mode from the Measure button in the toolbar (or the ▾ caret next to it).</div>`}
         <!-- Takeoff — Review workspace only -->
         ${s.workspace==='review' && html`<div style=${{padding:'.5rem .55rem',background:'var(--bg-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-xs)'}}>
           <div style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.06em',color:'var(--text-muted)',marginBottom:'.25rem'}}>Takeoff (filter by IFC type)</div>
@@ -24615,6 +24682,7 @@ function startApp() {
     var styleRef = useRef(null);
     var pickSt  = useState(false), pickOn = pickSt[0], setPickOn = pickSt[1];
     var measureSt = useState(false), measurePopOpen=measureSt[0], setMeasurePopOpen=measureSt[1];
+    var caretRef = useRef(null);
     var ttState = useState(null), ttTip = ttState[0], setTtTip = ttState[1];
     var ttPos = useRef({x:0,y:0});
 
@@ -24694,12 +24762,11 @@ function startApp() {
       // version looked like a generic "border" icon.
       slicebox:'<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4 8-4"/><path d="M12 12v9"/><path stroke-dasharray="2 2" d="M9 10l3 1.5 3-1.5"/><path stroke-dasharray="2 2" d="M9 10v6l3 1.5 3-1.5v-6"/>',
       clear:  '<path d="M5 5l14 14"/><path d="M19 5L5 19"/>',
-      // Measure: architectural dimension line with end-caps and arrow ticks.
-      // Universal drafting glyph (AutoCAD/Revit/Bluebeam) — reads as "this is
-      // the *length between two things*", not just "a stick with markings"
-      // like the previous ruler-with-ticks. Tilted 22° so it doesn't read as
-      // a section line.
-      ruler:  '<path d="M4 17l16-12"/><path d="M2.5 18.5l3-3"/><path d="M18.5 5.5l3-3"/><path d="M7 13.5l2.5 1.8"/><path d="M14.5 9.7L17 7.9"/>',
+      // Measure: textbook architectural dimension line — horizontal main line
+      // with two vertical witness bars at the ends and small inward arrowheads.
+      // Universal in AutoCAD, Revit, Bluebeam, SketchUp dimension UI — reads
+      // immediately as "the distance between two things".
+      ruler:  '<path d="M4 12h16"/><path d="M4 8v8"/><path d="M20 8v8"/><path d="M7 10l-3 2 3 2"/><path d="M17 10l3 2-3 2"/>',
       // Angle: vector triangle with arc — slightly thicker arc for clarity
       angle:  '<path d="M5 19L19 19"/><path d="M5 19L5 5"/><path d="M5 9a10 10 0 0 1 10 10"/>',
       // Area: square outline with diagonal hatch corner — reads as a polygon
@@ -24824,8 +24891,8 @@ function startApp() {
                       if (activeMode==='measure') { clearAllModes(); setMeasurePopOpen(false); }
                       else { clearAllModes(); d({t:A.MEASURE_MODE,v:'length'}); }
                     }})}
-            <button title="Measurement modes" aria-label="Measurement modes"
-              onClick=${function(){ setMeasurePopOpen(function(v){return !v;}); }}
+            <button ref=${caretRef} title="Measurement modes" aria-label="Measurement modes"
+              onClick=${function(e){ e.stopPropagation(); setMeasurePopOpen(function(v){return !v;}); }}
               style=${{
                 background:measurePopOpen?'var(--accent-bg)':'transparent',
                 border:'none',padding:'0 .25rem',height:'1.6rem',color:measurePopOpen?'var(--accent)':'var(--text-muted)',
@@ -24834,7 +24901,14 @@ function startApp() {
               }}>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 3 3-3"/></svg>
             </button>
-            ${measurePopOpen && html`<div onClick=${function(e){e.stopPropagation();}} style=${{position:'absolute',top:'calc(100% + 6px)',left:'50%',transform:'translateX(-50%)',zIndex:40,
+            ${measurePopOpen && (function(){
+              // Anchor the popover to the caret button via fixed positioning.
+              // The toolbar wrapper has overflow-y:hidden, which would clip a
+              // position:absolute popover. position:fixed escapes the overflow.
+              var rect = caretRef.current ? caretRef.current.getBoundingClientRect() : {bottom:50, left:80, width:14};
+              var anchorX = rect.left + rect.width/2;
+              var anchorY = rect.bottom + 6;
+              return html`<div onClick=${function(e){e.stopPropagation();}} style=${{position:'fixed',top:anchorY+'px',left:anchorX+'px',transform:'translateX(-50%)',zIndex:9999,
               background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',
               boxShadow:'var(--shadow-md)',padding:'.3rem',minWidth:230,fontSize:'var(--text-xs)'}}>
               <div onClick=${function(){d({t:A.MEASURE_MODE,v:'length'});clearAllModes();d({t:A.MEASURE_MODE,v:'length'});setMeasurePopOpen(false);}}
@@ -24875,8 +24949,9 @@ function startApp() {
                 onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" dangerouslySetInnerHTML=${{__html:I.clear}}></svg>
                 <span style=${{flex:1}}>Clear all</span><span style=${{fontFamily:'var(--font-mono)',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>Shift+M</span></div>
-            </div>`}
-            ${measurePopOpen && html`<div onClick=${function(){setMeasurePopOpen(false);}} style=${{position:'fixed',inset:0,zIndex:39,background:'transparent'}}></div>`}
+            </div>`;
+            })()}
+            ${measurePopOpen && html`<div onClick=${function(){setMeasurePopOpen(false);}} style=${{position:'fixed',inset:0,zIndex:9998,background:'transparent'}}></div>`}
           </div>`;
         })()}
         ${div()}
