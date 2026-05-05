@@ -4628,6 +4628,36 @@ function startApp() {
     return _storeyUs * _geoF;
   }
 
+  // Box-cast around a hit point: 4 corner rays at ±halfFootprint that must all
+  // hit a horizontal-ish surface within tolY of the centre — rejects thin
+  // parapets, handrails, and 5 cm rail caps the user couldn't actually stand on.
+  function _walkValidateFootprint(scene, hitPoint, halfFootprint, tolY){
+    if (!scene) return true;
+    var corners = [
+      [ halfFootprint, 0,  halfFootprint],
+      [-halfFootprint, 0,  halfFootprint],
+      [ halfFootprint, 0, -halfFootprint],
+      [-halfFootprint, 0, -halfFootprint]
+    ];
+    for (var i=0; i<corners.length; i++){
+      var ox = hitPoint.x + corners[i][0];
+      var oz = hitPoint.z + corners[i][2];
+      var origin = new THREE.Vector3(ox, hitPoint.y + tolY*2, oz);
+      var rc = new THREE.Raycaster(origin, new THREE.Vector3(0,-1,0), 0, tolY*4);
+      var hits = rc.intersectObjects(scene.children, true);
+      var ok = false;
+      for (var h=0; h<hits.length; h++){
+        var hh = hits[h];
+        if (!hh.object || !hh.object.visible) continue;
+        if (typeof _isGhostMat==='function' && _isGhostMat(hh.object.material)) continue;
+        if (Math.abs(hh.point.y - hitPoint.y) <= tolY){ ok = true; break; }
+      }
+      if (!ok) return false;
+    }
+    return true;
+  }
+  window._ccWalkValidateFootprint = _walkValidateFootprint;
+
   // Smart entry: lowest above-ground IfcBuildingStorey across loaded models, placed
   // at storey centroid facing the longest interior axis. Falls back to bbox.min.y.
   function _walkSmartEntry(S){
@@ -5456,6 +5486,31 @@ function startApp() {
             picked = h; break;
           }
           if (!picked) return;
+          // Reject thin surfaces (parapets, rail caps) — must fit a 30 cm footprint
+          var halfFp = 0.15 * _walkUnitScale;
+          var tolY = 0.05 * _walkUnitScale;
+          if (!_walkValidateFootprint(S.mg, picked.point, halfFp, tolY)){
+            // Try to find a nearby valid surface within 1 m by sampling neighbours
+            var found = null;
+            var R = 1.0 * _walkUnitScale;
+            for (var ang=0; ang<360 && !found; ang+=30){
+              for (var rd=0.3; rd<=R && !found; rd+=0.3){
+                var px = picked.point.x + Math.cos(ang*Math.PI/180)*rd*_walkUnitScale;
+                var pz = picked.point.z + Math.sin(ang*Math.PI/180)*rd*_walkUnitScale;
+                var origin2 = new THREE.Vector3(px, picked.point.y + tolY*4, pz);
+                var rc2 = new THREE.Raycaster(origin2, new THREE.Vector3(0,-1,0), 0, tolY*8);
+                var hits2 = rc2.intersectObjects(S.mg.children, true);
+                for (var h2=0; h2<hits2.length; h2++){
+                  var hh = hits2[h2];
+                  if (!hh.object || !hh.object.visible) continue;
+                  if (typeof _isGhostMat==='function' && _isGhostMat(hh.object.material)) continue;
+                  if (_walkValidateFootprint(S.mg, hh.point, halfFp, tolY)){ found = hh.point.clone(); break; }
+                }
+              }
+            }
+            if (!found){ try { window.dispatchEvent(new CustomEvent('cc-walk-tele-reject',{detail:{}})); } catch(_){} return; }
+            picked = { point: found };
+          }
           // Animate camera position to (hit + eyeHeight) keeping yaw/pitch.
           var startPos = S.camera.position.clone();
           var endPos = picked.point.clone();
@@ -16600,7 +16655,15 @@ function startApp() {
         var nm = new THREE.Matrix3().getNormalMatrix(h.object.matrixWorld);
         n.applyMatrix3(nm).normalize();
         if (n.y < 0.5) continue; // skip walls/ceilings
-        return { point: h.point.clone(), normal: n, screen:{x:e.clientX-r.left, y:e.clientY-r.top}, valid:true };
+        // Footprint validation: 30 cm needs to fit on the surface
+        var thin = false;
+        try {
+          if (typeof window._ccWalkValidateFootprint === 'function'){
+            var unit = (typeof _walkResolveUnitScale==='function') ? _walkResolveUnitScale() : 1;
+            thin = !window._ccWalkValidateFootprint(S.mg, h.point, 0.15*unit, 0.05*unit);
+          }
+        } catch(_){ }
+        return { point: h.point.clone(), normal: n, screen:{x:e.clientX-r.left, y:e.clientY-r.top}, valid: !thin, thin: thin };
       }
       return { screen:{x:e.clientX-(r?r.left:0), y:e.clientY-(r?r.top:0)}, valid:false };
     }
@@ -16644,7 +16707,7 @@ function startApp() {
     },[hit, aim]);
     var reticle = null;
     if (hit && hit.screen){
-      var col = hit.valid ? 'var(--accent, #b8533a)' : '#9aa0a6';
+      var col = hit.valid ? 'var(--accent, #b8533a)' : (hit.thin ? '#d97706' : '#9aa0a6');
       var sx = hit.screen.x, sy = hit.screen.y;
       var yaw = (hit.yaw != null) ? hit.yaw : null;
       reticle = html`<svg width="120" height="120" viewBox="-60 -60 120 120"
@@ -16925,9 +16988,54 @@ function startApp() {
           <input type="checkbox" checked=${!!flags.foot} onChange=${function(e){ if(window._ccWalkSetFootsteps) window._ccWalkSetFootsteps(e.target.checked); }} />
           Footstep audio
         </label>`}
+        ${!isReview && (function(){
+          var ls = (s.prefs && s.prefs.lightSettings) || {};
+          var tv = (typeof ls.time==='number') ? ls.time : 13;
+          var hh = Math.floor(tv); var mm = Math.round((tv-hh)*60);
+          var clock = (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm;
+          return html`<div style=${{height:1,background:'var(--border)',margin:'.15rem 0'}}></div>
+            <div style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.04em',color:'var(--text-muted)'}}>Sun · ${clock}</div>
+            <input type="range" min="6" max="20" step="0.25" value=${tv}
+              onInput=${function(e){
+                var ls2 = Object.assign({sun:1,ambient:1,exposure:1,shadow:1,time:13}, (s.prefs&&s.prefs.lightSettings)||{});
+                ls2.time = parseFloat(e.target.value);
+                d({t:A.UPD_PREFS, u:{lightSettings:ls2}});
+              }}
+              style=${{width:'100%',accentColor:'var(--accent)'}} />`;
+        })()}
         <div style=${{height:1,background:'var(--border)',margin:'.15rem 0'}}></div>
-        <div style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.04em',color:'var(--text-muted)'}}>Bookmarks</div>
-        <button onClick=${bookmarkAdd} style=${{padding:'.25rem .5rem',fontSize:'var(--text-xs)',border:'1px solid var(--border)',background:'var(--bg-secondary)',color:'var(--text-primary)',borderRadius:'var(--radius-xs)',cursor:'pointer',fontFamily:'inherit'}}>+ Bookmark this view (B)</button>
+        <div style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.04em',color:'var(--text-muted)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span>Bookmarks</span>
+          <button onClick=${bookmarkAdd} style=${{padding:'.1rem .35rem',fontSize:'var(--text-2xs)',border:'1px solid var(--border)',background:'var(--bg-secondary)',color:'var(--text-secondary)',borderRadius:'var(--radius-xs)',cursor:'pointer',fontFamily:'inherit'}}>+ B</button>
+        </div>
+        ${(function(){
+          var list = [];
+          try { list = JSON.parse(localStorage.getItem('cc_walkBookmarks')||'[]'); } catch(_){}
+          if (!list.length) return html`<div style=${{fontSize:'var(--text-2xs)',color:'var(--text-faint)',padding:'.2rem 0'}}>No bookmarks yet — press B to save current view.</div>`;
+          return html`<div style=${{maxHeight:120,overflowY:'auto',display:'flex',flexDirection:'column',gap:'.2rem'}}>
+            ${list.slice().reverse().map(function(bm){
+              return html`<div key=${bm.id} style=${{display:'flex',gap:'.3rem',alignItems:'center',fontSize:'var(--text-xs)'}}>
+                <button onClick=${function(){
+                  try {
+                    var Sref = window._ccState3d; if (!Sref || !Sref.camera) return;
+                    Sref.camera.position.set(bm.pos[0], bm.pos[1], bm.pos[2]);
+                    if (typeof window._ccWalkSetYaw==='function') window._ccWalkSetYaw(bm.yaw||0);
+                    if (typeof invalidate==='function') invalidate(3);
+                  } catch(_){}
+                }} style=${{flex:1,textAlign:'left',padding:'.2rem .35rem',border:'1px solid var(--border)',background:'transparent',color:'var(--text-primary)',borderRadius:'var(--radius-xs)',cursor:'pointer',fontFamily:'inherit'}}>${bm.name}</button>
+                <button onClick=${function(){
+                  try {
+                    var lst2 = JSON.parse(localStorage.getItem('cc_walkBookmarks')||'[]').filter(function(x){return x.id!==bm.id;});
+                    localStorage.setItem('cc_walkBookmarks', JSON.stringify(lst2));
+                    setMoreOpen(false); setTimeout(function(){setMoreOpen(true);},0);
+                  } catch(_){}
+                }} title="Delete" style=${{padding:'.15rem .35rem',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',borderRadius:'var(--radius-xs)',cursor:'pointer',fontFamily:'inherit'}}>×</button>
+              </div>`;
+            })}
+          </div>`;
+        })()}
+        ${isPresent && html`<div style=${{height:1,background:'var(--border)',margin:'.15rem 0'}}></div>
+          <${WalkSplineRecorder} d=${d} />`}
       </div>`}
       <div style=${{position:'absolute',bottom:'var(--space-3)',left:'50%',transform:'translateX(-50%)',
         pointerEvents:'auto',zIndex:5,display:'flex',alignItems:'center',gap:'.3rem',
@@ -16978,6 +17086,116 @@ function startApp() {
       ${!isPresent && html`<${WalkClashRadar} s=${s} />`}
       ${!isPresent && html`<${WalkMinimap} s=${s} />`}
       <${WalkTouchJoystick} />
+    </${React.Fragment}>`;
+  }
+
+  // ── Walk Spline Waypoint Recorder (Present) ────────────────────
+  // Drop waypoints (R), play back with eased Catmull-Rom interpolation,
+  // optional .webm export via canvas.captureStream during playback.
+  function WalkSplineRecorder(props){
+    var pathSt = useState([]), path=pathSt[0], setPath=pathSt[1];
+    var playSt = useState(false), playing=playSt[0], setPlaying=playSt[1];
+    var recSt = useState(false), recording=recSt[0], setRecording=recSt[1];
+    var msgSt = useState(null), msg=msgSt[0], setMsg=msgSt[1];
+    function flash(t){ setMsg(t); setTimeout(function(){ setMsg(null); }, 1500); }
+    function addWaypoint(){
+      try {
+        var Sref = window._ccState3d; if (!Sref || !Sref.camera) return;
+        var p = Sref.camera.position;
+        var yaw = (typeof window._ccWalkGetYaw==='function')? window._ccWalkGetYaw() : 0;
+        var next = path.concat([{pos:[p.x,p.y,p.z], yaw:yaw}]);
+        setPath(next);
+        flash('Waypoint '+next.length);
+      } catch(_){}
+    }
+    useEffect(function(){
+      function onKey(e){
+        if (e.key === 'r' || e.key === 'R'){ if (!e.ctrlKey && !e.metaKey) addWaypoint(); }
+      }
+      window.addEventListener('keydown', onKey);
+      return function(){ window.removeEventListener('keydown', onKey); };
+    },[path]);
+    function play(record){
+      if (path.length < 2){ flash('Need ≥ 2 waypoints'); return; }
+      var Sref = window._ccState3d; if (!Sref || !Sref.camera || !Sref.renderer) return;
+      setPlaying(true);
+      var rec = null, chunks = [];
+      if (record){
+        try {
+          var stream = Sref.renderer.domElement.captureStream(60);
+          rec = new MediaRecorder(stream, { mimeType:'video/webm;codecs=vp9' });
+          rec.ondataavailable = function(ev){ if (ev.data && ev.data.size) chunks.push(ev.data); };
+          rec.onstop = function(){
+            var blob = new Blob(chunks, {type:'video/webm'});
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'clashcontrol-spline-'+new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')+'.webm';
+            a.click();
+          };
+          rec.start();
+          setRecording(true);
+        } catch(e){ flash('Recording unsupported'); }
+      }
+      // Catmull-Rom-ish interpolation between waypoints with tangent guards
+      var perSegment = 1500; // ms per segment
+      var totalMs = perSegment * (path.length - 1);
+      var startTime = performance.now();
+      function lerp(a,b,t){ return a + (b-a)*t; }
+      function easeInOut(t){ return t<0.5?2*t*t:(1-Math.pow(-2*t+2,2)/2); }
+      function shortAngle(a,b){
+        var d = b-a; while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI; return a + d;
+      }
+      function catmullPoint(p0,p1,p2,p3,t){
+        var t2=t*t, t3=t2*t;
+        return 0.5*((2*p1) + (-p0+p2)*t + (2*p0-5*p1+4*p2-p3)*t2 + (-p0+3*p1-3*p2+p3)*t3);
+      }
+      function step(){
+        if (!playing && !msg /* allow stop */){}
+        var now = performance.now();
+        var elapsed = now - startTime;
+        if (elapsed >= totalMs){
+          var lp = path[path.length-1];
+          Sref.camera.position.set(lp.pos[0], lp.pos[1], lp.pos[2]);
+          if (typeof window._ccWalkSetYaw==='function') window._ccWalkSetYaw(lp.yaw||0);
+          if (typeof invalidate==='function') invalidate(3);
+          setPlaying(false);
+          if (rec && rec.state==='recording'){ try { rec.stop(); } catch(_){} setRecording(false); }
+          return;
+        }
+        var seg = Math.min(path.length-2, Math.floor(elapsed / perSegment));
+        var localT = (elapsed - seg*perSegment) / perSegment;
+        var et = easeInOut(localT);
+        var p0 = path[Math.max(0, seg-1)];
+        var p1 = path[seg];
+        var p2 = path[seg+1];
+        var p3 = path[Math.min(path.length-1, seg+2)];
+        var x = catmullPoint(p0.pos[0], p1.pos[0], p2.pos[0], p3.pos[0], et);
+        var y = catmullPoint(p0.pos[1], p1.pos[1], p2.pos[1], p3.pos[1], et);
+        var z = catmullPoint(p0.pos[2], p1.pos[2], p2.pos[2], p3.pos[2], et);
+        Sref.camera.position.set(x, y, z);
+        var yawA = p1.yaw||0, yawB = shortAngle(yawA, p2.yaw||0);
+        if (typeof window._ccWalkSetYaw==='function') window._ccWalkSetYaw(lerp(yawA, yawB, et));
+        if (typeof invalidate==='function') invalidate(3);
+        requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+    function clearPath(){ setPath([]); flash('Path cleared'); }
+    return html`<${React.Fragment}>
+      <div style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.04em',color:'var(--text-muted)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span>Cinematic path</span>
+        <span style=${{fontFamily:'var(--font-mono)',color:'var(--text-faint)'}}>${path.length} pts</span>
+      </div>
+      <div style=${{display:'flex',gap:'.3rem'}}>
+        <button onClick=${addWaypoint} style=${{flex:1,padding:'.25rem .4rem',fontSize:'var(--text-xs)',border:'1px solid var(--border)',background:'var(--bg-secondary)',color:'var(--text-primary)',borderRadius:'var(--radius-xs)',cursor:'pointer',fontFamily:'inherit'}}>+ Waypoint (R)</button>
+        <button disabled=${path.length<2 || playing} onClick=${function(){play(false);}}
+          style=${{padding:'.25rem .4rem',fontSize:'var(--text-xs)',border:'1px solid var(--border)',background:playing?'var(--accent-bg)':'var(--bg-secondary)',color:playing?'var(--accent)':'var(--text-primary)',borderRadius:'var(--radius-xs)',cursor:path.length<2?'not-allowed':'pointer',fontFamily:'inherit',opacity:path.length<2?0.5:1}}>▶ Play</button>
+        <button disabled=${path.length<2 || playing} onClick=${function(){play(true);}}
+          title="Play and export .webm" style=${{padding:'.25rem .4rem',fontSize:'var(--text-xs)',border:'1px solid var(--border)',background:recording?'var(--color-danger-bg)':'var(--bg-secondary)',color:recording?'var(--color-danger-fg)':'var(--text-primary)',borderRadius:'var(--radius-xs)',cursor:path.length<2?'not-allowed':'pointer',fontFamily:'inherit',opacity:path.length<2?0.5:1}}>● Rec</button>
+        <button disabled=${!path.length} onClick=${clearPath}
+          style=${{padding:'.25rem .4rem',fontSize:'var(--text-xs)',border:'1px solid var(--border)',background:'transparent',color:'var(--text-muted)',borderRadius:'var(--radius-xs)',cursor:!path.length?'not-allowed':'pointer',fontFamily:'inherit',opacity:!path.length?0.5:1}}>✕</button>
+      </div>
+      ${msg && html`<div style=${{fontSize:'var(--text-2xs)',color:'var(--accent)',padding:'.1rem 0'}}>${msg}</div>`}
     </${React.Fragment}>`;
   }
 
@@ -18550,6 +18768,63 @@ function startApp() {
             Calibrate…
           </button>
         </div>
+
+        <div style=${SEC}>Walk mode</div>
+        ${(function(){
+          var f = (typeof window._ccWalkGetFlags === 'function') ? window._ccWalkGetFlags() : {height:1.7,sensitivity:1,invertY:false,foot:false,bob:false,collision:true};
+          return html`<${React.Fragment}>
+            <div style=${TROW}>
+              <div>
+                <div style=${TLBL}>Eye height</div>
+                <div style=${TSUB}>Default standing height when entering walk mode. Crouch (hold C in walk) drops to 1.05 m temporarily.</div>
+              </div>
+              <select value=${String(f.height||1.7)}
+                onChange=${function(e){ if(window._ccWalkSetHeight) window._ccWalkSetHeight(parseFloat(e.target.value)); }}
+                style=${{background:'var(--bg-tertiary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:6,padding:'.25rem .5rem',fontSize:'0.8rem'}}>
+                <option value="1.1">Child (1.1 m)</option>
+                <option value="1.7">Eye (1.7 m)</option>
+                <option value="5">Drone (5 m)</option>
+              </select>
+            </div>
+            <div style=${TROW}>
+              <div>
+                <div style=${TLBL}>Mouse sensitivity</div>
+                <div style=${TSUB}>Multiplier on look speed. 1.00 is the default; lower = calmer, higher = snappier.</div>
+              </div>
+              <input type="range" min="0.25" max="3" step="0.05" value=${f.sensitivity||1}
+                onInput=${function(e){ if(window._ccWalkSetSensitivity) window._ccWalkSetSensitivity(parseFloat(e.target.value)); }}
+                style=${{width:140, accentColor:'var(--accent)'}} />
+            </div>
+            <div style=${TROW}>
+              <div>
+                <div style=${TLBL}>Invert Y axis</div>
+                <div style=${TSUB}>Pulling the mouse down looks up. Common for flight-sim users.</div>
+              </div>
+              <${Toggle} on=${!!f.invertY} onToggle=${function(){ if(window._ccWalkSetInvertY) window._ccWalkSetInvertY(!f.invertY); }} />
+            </div>
+            <div style=${TROW}>
+              <div>
+                <div style=${TLBL}>Wall collision</div>
+                <div style=${TSUB}>On by default. Off behaves like fly. In walk, hold Alt to pass through walls temporarily.</div>
+              </div>
+              <${Toggle} on=${!!f.collision} onToggle=${function(){ if(window._ccWalkSetCollision) window._ccWalkSetCollision(!f.collision); }} />
+            </div>
+            <div style=${TROW}>
+              <div>
+                <div style=${TLBL}>Head-bob</div>
+                <div style=${TSUB}>Subtle camera bob while moving. Off by default — feels great in Present, distracting in Review.</div>
+              </div>
+              <${Toggle} on=${!!f.bob} onToggle=${function(){ if(window._ccWalkSetBob) window._ccWalkSetBob(!f.bob); }} />
+            </div>
+            <div style=${TROW}>
+              <div>
+                <div style=${TLBL}>Footstep audio</div>
+                <div style=${TSUB}>Tiny click on each footfall. Adds presence in cinematic walkthroughs; off by default.</div>
+              </div>
+              <${Toggle} on=${!!f.foot} onToggle=${function(){ if(window._ccWalkSetFootsteps) window._ccWalkSetFootsteps(!f.foot); }} />
+            </div>
+          </${React.Fragment}>`;
+        })()}
 
         <div style=${SEC}>Privacy</div>
         <div style=${TROW}>
