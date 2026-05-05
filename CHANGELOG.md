@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.10 (2026-05-05)
+- Fix glass detection for IfcWindow curtain wall frames + type-level material inheritance
+
 ## v5.7.9 (2026-05-05)
 - Fix glass detection, area preview edges, and add IFC type to Identity panel
 
