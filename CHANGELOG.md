@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.9.4 (2026-05-05)
+- Fix walk-mode auto-exit on 'w' key + ViewCube ReferenceError
+
 ## v5.9.3 (2026-05-05)
 - Remove [2D Outlines] / [2D Sheet] console.log spam
 
