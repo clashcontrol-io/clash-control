@@ -682,6 +682,7 @@ function startApp() {
     measurePrecision:_ccLoadPref('measurePrecision',2),  // decimals for metric/decimal-imperial; fraction denom is fixed (1/16")
     measureMagnifier:_ccLoadPref('measureMagnifier',false), // PointerLens magnifier on by default? (perf cost)
     measureCalibration:_ccLoadPref('measureCalibration',1), // global multiplier from calibration tool (rare; default 1)
+    homeView:_ccLoadPref('homeView',null), // {pos:[x,y,z],target:[x,y,z]} — saved home camera; null = fit-all
     // Rendered-mode lighting controls (sliders surfaced in the toolbar Style popover)
     lightSettings:_ccLoadPref('lightSettings',{sun:1.0, ambient:1.0, exposure:1.0, shadow:1.0, time:13}),
   };
@@ -1084,7 +1085,7 @@ function startApp() {
       case A.TRAINING_MODE: var tm=a.v!=null?!!a.v:!s.trainingMode;try{localStorage.setItem('cc_trainingMode',tm?'1':'0');}catch(e){}return Object.assign({},s,{trainingMode:tm});
       case A.UPD_PREFS:
         if(a.u&&a.u.defaultTolerances!==undefined){try{localStorage.setItem('cc_defaultTolerances',JSON.stringify(a.u.defaultTolerances));}catch(e){}}
-        if(a.u){var _pk=['autoFlyTo','autoHighlight','showGrid','showAxes','showMarkers','hoverHighlight','outlineSelected','defaultPriority','defaultCategory','defaultStatus','defaultMaxGap','resetFiltersOnRun','renderStyle','unitScaleOverride','lightSettings','measureUnits','measurePrecision','measureMagnifier','measureCalibration'];_pk.forEach(function(k){if(a.u[k]!==undefined){try{localStorage.setItem('cc_'+k,JSON.stringify(a.u[k]));}catch(e){}}});}
+        if(a.u){var _pk=['autoFlyTo','autoHighlight','showGrid','showAxes','showMarkers','hoverHighlight','outlineSelected','defaultPriority','defaultCategory','defaultStatus','defaultMaxGap','resetFiltersOnRun','renderStyle','unitScaleOverride','lightSettings','measureUnits','measurePrecision','measureMagnifier','measureCalibration','homeView'];_pk.forEach(function(k){if(a.u[k]!==undefined){try{localStorage.setItem('cc_'+k,JSON.stringify(a.u[k]));}catch(e){}}});}
         return Object.assign({},s,{prefs:Object.assign({},s.prefs,a.u)});
       case A.MEASURE_MODE: return Object.assign({},s,{measureMode:a.v, walkMode:a.v?false:s.walkMode, sectionAxis:a.v?null:s.sectionAxis, sectionCustom:a.v?null:s.sectionCustom, commentMode:a.v?false:s.commentMode});
       case A.ADD_MEASUREMENT: _gcEvent('measurement', a.v&&a.v.type||'length'); return Object.assign({},s,{measurements:s.measurements.concat([a.v])});
@@ -5405,6 +5406,23 @@ function startApp() {
       };
 
       _resetView = function() {
+        // Clear all viewer overlays — true "back to clean slate"
+        if (_unghostAll) _unghostAll();
+        var _rst = window._ccLatestState || {};
+        if (window._ccDispatch) {
+          if (_rst.sectionAxis || _rst.sectionCustom) window._ccDispatch({t:A.SECTION, axis:null, pos:0.5});
+          if (_rst.sectionBox && _rst.sectionBox.enabled) window._ccDispatch({t:A.SECTION_BOX, v:{enabled:false}});
+          if (_rst.walkMode) window._ccDispatch({t:A.WALK_MODE, v:false});
+          if (_rst.floorPlan) window._ccDispatch({t:A.FLOOR_PLAN, v:null});
+        }
+        // Fly to saved home, or fit all as fallback
+        var home = _rst.prefs && _rst.prefs.homeView;
+        if (home && home.pos && home.target) {
+          _animateFly(new THREE.Vector3(home.target[0],home.target[1],home.target[2]),
+                      new THREE.Vector3(home.pos[0],home.pos[1],home.pos[2]));
+          if (window._ccUpdateShadowFrustum) window._ccUpdateShadowFrustum();
+          return;
+        }
         if(!S.mg||S.mg.children.length===0){
           S.orbit.target.set(0,0,0);
           S.camera.position.set(30,25,30);
@@ -5415,12 +5433,34 @@ function startApp() {
         var box=_elemsBBox();
         var sz=box.getSize(new THREE.Vector3()), ctr=box.getCenter(new THREE.Vector3());
         var d=Math.max(sz.x,sz.y,sz.z)*1.0;
-        var endTarget = ctr;
-        var endPos = new THREE.Vector3(ctr.x+d, ctr.y+d*0.6, ctr.z+d);
-        _animateFly(endTarget, endPos);
+        _animateFly(ctr, new THREE.Vector3(ctr.x+d, ctr.y+d*0.6, ctr.z+d));
         if (window._ccUpdateShadowFrustum) window._ccUpdateShadowFrustum();
       };
       window._ccResetView = _resetView;
+
+      // ── Fit All: context-aware — element selected → fit it; else fit visible geometry ──
+      window._ccFitAll = function() {
+        if (!S.mg || !S.orbit) return;
+        var selEl = window._ccSelectedEl;
+        if (selEl && selEl.expressId != null && _fitToElement) {
+          _fitToElement(selEl.expressId, null, selEl.modelId || null);
+          return;
+        }
+        // Fit visible non-ghosted geometry only
+        var box = new THREE.Box3();
+        S.mg.traverse(function(obj){
+          if (!obj.isMesh || !obj.visible || obj.userData._isGround) return;
+          if (S._isGhostMat && S._isGhostMat(obj.material)) return;
+          box.expandByObject(obj);
+        });
+        if (box.isEmpty()) box = _elemsBBox();
+        if (box.isEmpty()) return;
+        var ctr = box.getCenter(new THREE.Vector3());
+        var sz  = box.getSize(new THREE.Vector3());
+        var d   = Math.max(sz.x, sz.y, sz.z) * 1.0;
+        _animateFly(ctr, new THREE.Vector3(ctr.x+d, ctr.y+d*0.6, ctr.z+d));
+        if (window._ccUpdateShadowFrustum) window._ccUpdateShadowFrustum();
+      };
 
       // ── Walkthrough recording ─────────────────────────────────────
       var _recordingState = null;
@@ -6352,7 +6392,9 @@ function startApp() {
         // every time, making it look like the area context was lost.
         if (mode === 'area' && pts.length >= 2) {
           var polyEdgeMat = new THREE.LineBasicMaterial({color:0xb8533a, linewidth:2, depthTest:false, transparent:true, opacity:0.9});
-          var polyEdgeGeo = new THREE.BufferGeometry().setFromPoints(pts.slice());
+          // Sort placed points into non-crossing order for the preview polygon
+          var _orderedPts = (window._ccOrderPolygon && pts.length >= 3) ? window._ccOrderPolygon(pts) : pts.slice();
+          var polyEdgeGeo = new THREE.BufferGeometry().setFromPoints(_orderedPts);
           var polyEdgeLine = new THREE.Line(polyEdgeGeo, polyEdgeMat);
           polyEdgeLine.renderOrder = 999;
           _previewGroup.add(polyEdgeLine);
@@ -6363,9 +6405,10 @@ function startApp() {
         pline.computeLineDistances && pline.computeLineDistances();
         pline.renderOrder = 1000;
         _previewGroup.add(pline);
-        // For area mode: closing dotted line back to pts[0]
+        // For area mode: closing dotted line back to the first point of the sorted polygon
         if (mode === 'area' && pts.length >= 2) {
-          var cgeo = new THREE.BufferGeometry().setFromPoints([target, pts[0]]);
+          var _closeTarget = (_orderedPts && _orderedPts.length) ? _orderedPts[0] : pts[0];
+          var cgeo = new THREE.BufferGeometry().setFromPoints([target, _closeTarget]);
           var cline = new THREE.Line(cgeo, _previewLineMat);
           cline.computeLineDistances && cline.computeLineDistances();
           cline.renderOrder = 1000;
@@ -6428,22 +6471,23 @@ function startApp() {
         if (!pts || pts.length < 3) return;
         var p0 = pts[0];
         // Manually run the close logic
-        pts.push(p0.clone());
+        // Sort into non-crossing order before rendering and computing area
+        var _fcSorted = (window._ccOrderPolygon && pts.length >= 3) ? window._ccOrderPolygon(pts) : pts.slice();
         var polyMat = new THREE.LineBasicMaterial({color:0x1a6b4a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
-        var polyGeo = new THREE.BufferGeometry().setFromPoints(pts.concat([pts[0]]));
+        var polyGeo = new THREE.BufferGeometry().setFromPoints(_fcSorted.concat([_fcSorted[0]]));
         var polyLine = new THREE.Line(polyGeo, polyMat); polyLine.renderOrder = 998;
         scene.add(polyLine);
         measureObjsRef.current.push(polyLine);
         var nrm = new THREE.Vector3();
-        for (var i=0;i<pts.length;i++){
-          var a=pts[i], b=pts[(i+1)%pts.length];
+        for (var i=0;i<_fcSorted.length;i++){
+          var a=_fcSorted[i], b=_fcSorted[(i+1)%_fcSorted.length];
           nrm.x += (a.y-b.y)*(a.z+b.z);
           nrm.y += (a.z-b.z)*(a.x+b.x);
           nrm.z += (a.x-b.x)*(a.y+b.y);
         }
         var area = nrm.length()/2;
         var id = uid();
-        d({t:A.ADD_MEASUREMENT, v:{id:id, type:'area', value:area, label:_ccFmtArea(area, window._ccLatestState), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+        d({t:A.ADD_MEASUREMENT, v:{id:id, type:'area', value:area, label:_ccFmtArea(area, window._ccLatestState), points:_fcSorted.map(function(p){return [p.x,p.y,p.z]})}});
         if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(id);
         if (window._ccRegisterMeasurementGeo && !window._ccChainedArea) {
           window._ccRegisterMeasurementGeo(id, 'area', pts.length, 1);
@@ -7385,12 +7429,14 @@ function startApp() {
             var _rmMeas = (_rsMeas && _rsMeas.measurements||[]).find(function(x){return x.id===_epClick.id;});
             if (_rmMeas && _rmMeas.points && _rmMeas.points.length >= 2) {
               // Seed BOTH endpoints so the existing edge becomes the first side of the
-              // new area polygon. Clicked point = pts[0] (area closes back here);
-              // other end = pts[1] (rubber-band starts from there). User only needs
-              // 2 more corner clicks to complete a 4-sided area.
+              // new area polygon. Clicked endpoint = pts[LAST] so rubber-band extends
+              // naturally from the clicked side — prevents the rubber-band from crossing
+              // over the seeded edge when the cursor is on the same side as the clicked pt.
+              // Other endpoint = pts[0] (the polygon closes back there).
               var _allSeedPts = _rmMeas.points.map(function(p){return new THREE.Vector3(p[0],p[1],p[2]);});
-              var _seedA = (_epClick.pointIndex === 0) ? _allSeedPts[0] : _allSeedPts[1];
-              var _seedB = (_epClick.pointIndex === 0) ? _allSeedPts[1] : _allSeedPts[0];
+              var _seedClicked = _allSeedPts[_epClick.pointIndex];      // rubber-band starts here
+              var _seedOther   = _allSeedPts[1 - _epClick.pointIndex];  // polygon closes here
+              var _seedA = _seedOther, _seedB = _seedClicked;           // [other, clicked]
               measurePtsRef.current = [_seedA.clone(), _seedB.clone()];
               // Add overlay in-progress dots at both seeds so _ccDropInProgressDots
               // removes them on Esc (it stops at the committed Line from the length meas).
@@ -7638,22 +7684,24 @@ function startApp() {
               // The duplicate dot was already added to the scene before this branch — remove it
               var _extraDot = measureObjsRef.current.pop();
               if (_extraDot) { scene.remove(_extraDot); if (_extraDot.geometry) _extraDot.geometry.dispose(); }
+              // Sort into non-crossing order before rendering and computing area
+              var _sortedPts = (window._ccOrderPolygon && pts.length >= 3) ? window._ccOrderPolygon(pts) : pts.slice();
               var polyMat = new THREE.LineBasicMaterial({color:0x1a6b4a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
-              var polyPts = pts.concat([pts[0]]);
+              var polyPts = _sortedPts.concat([_sortedPts[0]]);
               var polyGeo = new THREE.BufferGeometry().setFromPoints(polyPts);
               var polyLine = new THREE.Line(polyGeo, polyMat); polyLine.renderOrder = 998;
               scene.add(polyLine);
               measureObjsRef.current.push(polyLine);
               var normal2 = new THREE.Vector3();
-              for(var ai=0;ai<pts.length;ai++){
-                var cur2=pts[ai], next2=pts[(ai+1)%pts.length];
+              for(var ai=0;ai<_sortedPts.length;ai++){
+                var cur2=_sortedPts[ai], next2=_sortedPts[(ai+1)%_sortedPts.length];
                 normal2.x += (cur2.y-next2.y)*(cur2.z+next2.z);
                 normal2.y += (cur2.z-next2.z)*(cur2.x+next2.x);
                 normal2.z += (cur2.x-next2.x)*(cur2.y+next2.y);
               }
               var area2 = normal2.length()/2;
               var _idR = uid();
-              d({t:A.ADD_MEASUREMENT, v:{id:_idR, type:'area', value:area2, label:_ccFmtArea(area2,_state), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
+              d({t:A.ADD_MEASUREMENT, v:{id:_idR, type:'area', value:area2, label:_ccFmtArea(area2,_state), points:_sortedPts.map(function(p){return [p.x,p.y,p.z]})}});
               if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_idR);
               // Skip registration when chained from a length: the committed length Line
               // sits inside measureObjsRef between the old dots and new ones, so the
@@ -18312,6 +18360,47 @@ function startApp() {
   window._ccFmtDeltas = _ccFmtDeltas;
   window._ccRelabelMeasurement = _ccRelabelMeasurement;
 
+  // Sort an array of THREE.Vector3 points into a non-crossing polygon order.
+  // Uses Newell's method to find the best-fit face normal, then projects all
+  // points to that plane and sorts by angle from the centroid. Works for any
+  // click order (CW, CCW, random) on any face orientation.
+  // Returns a NEW array — does not mutate the input.
+  function _ccOrderPolygon(pts) {
+    if (!pts || pts.length < 3) return pts ? pts.slice() : [];
+    // Centroid
+    var cx = 0, cy = 0, cz = 0;
+    for (var i = 0; i < pts.length; i++) { cx += pts[i].x; cy += pts[i].y; cz += pts[i].z; }
+    cx /= pts.length; cy /= pts.length; cz /= pts.length;
+    // Best-fit normal via Newell's method
+    var nx = 0, ny = 0, nz = 0;
+    for (var j = 0; j < pts.length; j++) {
+      var a = pts[j], b = pts[(j + 1) % pts.length];
+      nx += (a.y - b.y) * (a.z + b.z);
+      ny += (a.z - b.z) * (a.x + b.x);
+      nz += (a.x - b.x) * (a.y + b.y);
+    }
+    var nl = Math.sqrt(nx*nx + ny*ny + nz*nz);
+    if (nl < 1e-10) return pts.slice(); // degenerate — can't determine plane
+    nx /= nl; ny /= nl; nz /= nl;
+    // Build local 2D axes perpendicular to the normal
+    var ux, uy, uz;
+    if (Math.abs(nx) <= Math.abs(ny) && Math.abs(nx) <= Math.abs(nz)) { ux=0; uy=-nz; uz=ny; }
+    else if (Math.abs(ny) <= Math.abs(nz)) { ux=-nz; uy=0; uz=nx; }
+    else { ux=-ny; uy=nx; uz=0; }
+    var ul = Math.sqrt(ux*ux + uy*uy + uz*uz);
+    ux /= ul; uy /= ul; uz /= ul;
+    // v = normal × u
+    var vx = ny*uz - nz*uy, vy = nz*ux - nx*uz, vz = nx*uy - ny*ux;
+    // Project each point to 2D (u,v) relative to centroid and sort by angle
+    var indexed = pts.map(function(p, idx) {
+      var dx = p.x - cx, dy = p.y - cy, dz = p.z - cz;
+      return { idx: idx, angle: Math.atan2(dx*vx + dy*vy + dz*vz, dx*ux + dy*uy + dz*uz) };
+    });
+    indexed.sort(function(a, b) { return a.angle - b.angle; });
+    return indexed.map(function(e) { return pts[e.idx]; });
+  }
+  window._ccOrderPolygon = _ccOrderPolygon;
+
   function _ccMakeSheet(storeyName, elevation) {
     var id = (typeof uid === 'function' ? uid() : 'SH' + Date.now().toString(36).toUpperCase());
     var s = window._ccLatestState || {};
@@ -25079,6 +25168,16 @@ function startApp() {
     var caretRef = useRef(null);
     var ttState = useState(null), ttTip = ttState[0], setTtTip = ttState[1];
     var ttPos = useRef({x:0,y:0});
+    var homeMenuSt = useState(false), homeMenuOpen=homeMenuSt[0], setHomeMenuOpen=homeMenuSt[1];
+    var homeCaretRef = useRef(null);
+    var hasHome = !!(s.prefs && s.prefs.homeView);
+    function _saveHomeView() {
+      var S = window._ccState3d; if (!S || !S.camera || !S.orbit) return;
+      var home = {pos:[S.camera.position.x,S.camera.position.y,S.camera.position.z], target:[S.orbit.target.x,S.orbit.target.y,S.orbit.target.z]};
+      d({t:'UPD_PREFS', u:{homeView:home}});
+      if (window._ccToast) window._ccToast('Home view saved — press R to return here');
+    }
+    function _clearHomeView() { d({t:'UPD_PREFS', u:{homeView:null}}); if (window._ccToast) window._ccToast('Home view cleared'); }
 
     useEffect(function(){
       function onEnd(){ setPickOn(false); }
@@ -25125,13 +25224,14 @@ function startApp() {
       var on = !!opts.active;
       var tipText = opts.label || opts.title || opts.k;
       return html`<button key=${opts.k} onClick=${opts.onClick}
+        onContextMenu=${opts.onContextMenu||null}
         aria-label=${tipText} aria-pressed=${on}
-        style=${{
+        style=${Object.assign({
           width:36,height:36,display:'inline-flex',alignItems:'center',justifyContent:'center',
           background:'none',border:'none',cursor:'pointer',position:'relative',
           color:on?'var(--ink-primary)':'var(--ink-muted)',
           transition:'color var(--duration-fast) var(--ease-standard)'
-        }}
+        }, opts.extraStyle||{})}
         onMouseEnter=${function(e){ if(!on) e.currentTarget.style.color='var(--ink-secondary)'; var r=e.currentTarget.getBoundingClientRect(); setTtTip({label:tipText, desc:opts.desc||''}); ttPos.current={x:r.left+r.width/2,y:r.bottom}; }}
         onMouseLeave=${function(e){ if(!on) e.currentTarget.style.color='var(--ink-muted)'; setTtTip(null); }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -25253,10 +25353,46 @@ function startApp() {
         overflowX:'auto',overflowY:'hidden',flexWrap:'nowrap',scrollbarWidth:'thin'
       }}>
         <!-- VIEW -->
-        ${btn({k:'fit',  title:'Fit all (F)',          label:'Fit all', icon:I.fit,
+        ${btn({k:'fit', title:'Fit all (F) — frames visible geometry; frames selected element when one is active', label:'Fit all', icon:I.fit,
                 onClick:function(){ if(window._ccFitAll) window._ccFitAll(); else if(window._resetView) window._resetView(); }})}
-        ${btn({k:'reset',title:'Reset view (R)',       label:'Reset view', icon:I.reset,
+        ${btn({k:'reset', title:hasHome?'Reset view (R) — fly to saved home':'Reset view (R) — fit all geometry',
+                label:'Reset view', icon:I.reset,
+                extraStyle: hasHome ? {boxShadow:'inset 0 -2px 0 var(--accent)'} : {},
                 onClick:function(){ if(window._ccResetView) window._ccResetView(); else if(window._resetView) window._resetView(); }})}
+        <button ref=${homeCaretRef} title="Home view options" aria-label="Home view options"
+          onClick=${function(e){ e.stopPropagation(); setHomeMenuOpen(function(v){return !v;}); }}
+          style=${{
+            background:homeMenuOpen?'var(--accent-bg)':'transparent',
+            border:'none',padding:'0 .25rem',height:'1.6rem',color:homeMenuOpen?'var(--accent)':'var(--text-muted)',
+            cursor:'pointer',display:'inline-flex',alignItems:'center',marginLeft:'-.1rem',
+            borderRadius:'var(--radius-xs)'
+          }}>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 3 3-3"/></svg>
+        </button>
+        ${homeMenuOpen && (function(){
+          var rect = homeCaretRef.current ? homeCaretRef.current.getBoundingClientRect() : {bottom:50, left:120, width:14};
+          var anchorX = rect.left + rect.width/2;
+          var anchorY = rect.bottom + 6;
+          return html`<div onClick=${function(e){e.stopPropagation();}} style=${{position:'fixed',top:anchorY+'px',left:anchorX+'px',transform:'translateX(-50%)',zIndex:9999,
+            background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',
+            boxShadow:'var(--shadow-md)',padding:'.3rem',minWidth:200,fontSize:'var(--text-xs)'}}>
+            <div onClick=${function(){_saveHomeView();setHomeMenuOpen(false);}}
+              style=${{display:'flex',alignItems:'center',gap:'.55rem',padding:'.35rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',color:'var(--text-primary)'}}
+              onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+              onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <span style=${{flex:1}}>Set current view as home</span>
+            </div>
+            ${hasHome && html`<div onClick=${function(){_clearHomeView();setHomeMenuOpen(false);}}
+              style=${{display:'flex',alignItems:'center',gap:'.55rem',padding:'.35rem .55rem',borderRadius:'var(--radius-xs)',cursor:'pointer',color:'var(--text-secondary)'}}
+              onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+              onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
+              <span style=${{flex:1}}>Clear home view</span>
+            </div>`}
+          </div>
+          <div onClick=${function(){setHomeMenuOpen(false);}} style=${{position:'fixed',inset:0,zIndex:9998,background:'transparent'}}></div>`;
+        })()}
         ${div()}
         <!-- SECTION -->
         ${btn({k:'slice',    active:activeMode==='slice'&&!(s.sectionBox&&s.sectionBox.enabled), title:'Make Section — click a surface (X)', label:'Make Section', icon:I.slice,
