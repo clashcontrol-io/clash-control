@@ -9702,8 +9702,8 @@ function startApp() {
           var labelTxt = (m.name && m.name.trim()) ? m.name : (window._ccRelabelMeasurement ? window._ccRelabelMeasurement(m, s) : m.label);
           return html`<div key=${m.id} class="cc-measure-label" data-mid=${m.id}
             style=${{position:'absolute',left:0,top:0,transform:'translate3d(-9999px,-9999px,0)',
-              background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:4,
-              padding:'1px 6px',fontSize:11,fontFamily:'var(--font-mono)',color:color,
+              background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',
+              padding:'var(--space-1) var(--space-2)',fontSize:'var(--text-2xs)',fontFamily:'var(--font-mono)',color:color,
               boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',userSelect:'none',lineHeight:1.4}}>${labelTxt}</div>`;
         })}
       </div>
@@ -9713,8 +9713,8 @@ function startApp() {
             is found, the cursor itself is the only indicator — no overlapping markers. */ ''}
       <div id="cc-snap-marker" style=${{position:'fixed',left:0,top:0,width:0,height:0,pointerEvents:'none',zIndex:9997,display:'none'}}>
         <svg id="cc-snap-glyph" width="18" height="18" viewBox="0 0 18 18" style=${{position:'absolute',left:-9,top:-9,overflow:'visible',filter:'drop-shadow(0 1px 2px rgba(0,0,0,.35))'}}></svg>
-        <span id="cc-snap-typelabel" style=${{position:'absolute',left:14,top:-10,fontSize:'0.65rem',color:'var(--accent)',background:'var(--bg-primary)',border:'1px solid var(--accent)',padding:'.1rem .35rem',borderRadius:3,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',fontWeight:600,letterSpacing:'.02em',display:'none'}}></span>
-        <span id="cc-snap-chip" style=${{position:'absolute',left:14,top:8,fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'var(--text-primary)',background:'var(--bg-primary)',border:'1px solid var(--border)',padding:'.1rem .4rem',borderRadius:4,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',display:'none'}}></span>
+        <span id="cc-snap-typelabel" style=${{position:'absolute',left:14,top:-10,fontSize:'var(--text-2xs)',color:'var(--accent)',background:'var(--bg-primary)',border:'1px solid var(--accent)',padding:'var(--space-1) var(--space-2)',borderRadius:'var(--radius-xs)',boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',fontWeight:'var(--weight-semibold)',letterSpacing:'.02em',display:'none'}}></span>
+        <span id="cc-snap-chip" style=${{position:'absolute',left:14,top:8,fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)',color:'var(--text-primary)',background:'var(--bg-primary)',border:'1px solid var(--border)',padding:'var(--space-1) var(--space-2)',borderRadius:'var(--radius-xs)',boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',display:'none'}}></span>
       </div>
       ${/* Element-pick mini-menu shown after Measure → Element click (T2.1) */ ''}
       ${window._ccElementMeasureMenu && (function(){
@@ -9722,64 +9722,64 @@ function startApp() {
         return html`<div style=${{position:'fixed',left:em.x+'px',top:em.y+'px',zIndex:9999,
           background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',
           boxShadow:'var(--shadow-md)',padding:'.35rem .25rem',minWidth:190,fontSize:'var(--text-xs)',pointerEvents:'auto'}}>
-          <div style=${{padding:'.15rem .55rem',color:'var(--text-muted)',fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>${em.elementLabel||'Element'}</div>
+          <div style=${{padding:'var(--space-1) var(--space-3)',color:'var(--text-muted)',fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>${em.elementLabel||'Element'}</div>
           ${(em.options||[]).map(function(opt){return html`<button key=${opt.key} onClick=${function(){if(window._ccPickElementMeasure)window._ccPickElementMeasure(opt.key);}}
-            style=${{...S_BTN,display:'flex',justifyContent:'space-between',width:'100%',padding:'.3rem .55rem',background:'transparent',color:'var(--text-primary)',fontFamily:'var(--font-body)',fontSize:'var(--text-xs)',borderRadius:'var(--radius-xs)'}}>
+            style=${{...S_BTN,display:'flex',justifyContent:'space-between',width:'100%',padding:'var(--space-1) var(--space-3)',background:'transparent',color:'var(--text-primary)',fontFamily:'var(--font-body)',fontSize:'var(--text-xs)',borderRadius:'var(--radius-xs)'}}>
             <span>${opt.label}</span>
             <span style=${{fontFamily:'var(--font-mono)',color:'var(--text-secondary)'}}>${opt.formatted}</span>
           </button>`;})}
-          <div style=${{borderTop:'1px solid var(--border-subtle)',marginTop:'.2rem',paddingTop:'.2rem'}}>
+          <div style=${{borderTop:'1px solid var(--border-subtle)',marginTop:'var(--space-1)',paddingTop:'var(--space-1)'}}>
             <button onClick=${function(){window._ccElementMeasureMenu=null;if(window._ccHoverCoordTick)window._ccHoverCoordTick();}}
-              style=${{...S_BTN,width:'100%',padding:'.2rem',background:'transparent',color:'var(--text-muted)',fontSize:'var(--text-2xs)'}}>Cancel · Esc</button>
+              style=${{...S_BTN,width:'100%',padding:'var(--space-1)',background:'transparent',color:'var(--text-muted)',fontSize:'var(--text-2xs)'}}>Cancel · Esc</button>
           </div>
         </div>`;
       })()}
       ${s.walkMode && html`<${WalkModeHUD} d=${d} />`}
-      <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end',maxHeight:'calc(100% - 5rem)',overflowY:'auto'}}>
-        ${s.measureMode && html`<div style=${{fontSize:'0.69rem',color:'var(--text-primary)',background:'var(--overlay-bg)',border:'1px solid var(--border)',padding:'.25rem .55rem',borderRadius:6,boxShadow:'var(--shadow-sm)',display:'flex',alignItems:'center',gap:'.4rem'}}>
+      <div style=${{position:'absolute',bottom:'var(--space-3)',right:'var(--space-3)',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'var(--space-1)',alignItems:'flex-end',maxHeight:'calc(100% - 5rem)',overflowY:'auto'}}>
+        ${s.measureMode && html`<div class="cc-overlay-chrome" style=${{fontSize:'var(--text-xs)',color:'var(--text-primary)',padding:'var(--space-1) var(--space-3)',display:'flex',alignItems:'center',gap:'var(--space-2)'}}>
           <span>${s.measureMode==='length'?'Click 2 points · Shift = axis lock · Alt = quick (not saved) · Esc':s.measureMode==='angle'?'Click 3 points: start · vertex · end · Esc to cancel':s.measureMode==='area'?(window._ccChainedArea?'Length locked · keep clicking to trace an area · Enter or Esc':'Click points · click near first point or Enter to close · Esc to cancel'):s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A, then element B':'Measuring…'}</span>
         </div>`}
         ${s.measureMode && window._ccHoverPoint && (function(){
           var p=window._ccHoverPoint;
-          return html`<div style=${{fontFamily:'var(--font-mono)',fontSize:'0.65rem',color:'var(--text-secondary)',background:'var(--overlay-bg)',border:'1px solid var(--border-subtle)',padding:'.2rem .4rem',borderRadius:4}}>
+          return html`<div class="cc-overlay-chrome" style=${{fontFamily:'var(--font-mono)',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',padding:'var(--space-1) var(--space-2)'}}>
             X ${p.x.toFixed(2)} &nbsp; Y ${p.y.toFixed(2)} &nbsp; Z ${p.z.toFixed(2)} m
           </div>`;
         })()}
-        ${s.measurements.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:160,overflowY:'auto',width:220,boxShadow:'var(--shadow-sm)'}}>
+        ${s.measurements.length>0 && html`<div class="cc-overlay-chrome" style=${{padding:'var(--space-1)',maxHeight:160,overflowY:'auto',width:220}}>
           ${s.measurements.map(function(m){
-            var glyphColor = m.type==='length'||m.type==='clearance' ? 'var(--accent)' : m.type==='angle' ? 'var(--color-warning)' : m.type==='element' ? 'var(--color-info)' : '#1a6b4a';
+            var glyphColor = m.type==='length'||m.type==='clearance' ? 'var(--accent)' : m.type==='angle' ? 'var(--color-warning-fg)' : m.type==='element' ? 'var(--color-info-fg)' : 'var(--color-success-fg)';
             var labelTxt = (m.name && m.name.trim()) ? m.name : (window._ccRelabelMeasurement ? window._ccRelabelMeasurement(m,s) : m.label);
-            return html`<div key=${m.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.15rem .2rem',fontSize:'0.69rem',borderBottom:'1px solid var(--border-subtle)'}}
+            return html`<div key=${m.id} style=${{display:'flex',alignItems:'center',gap:'var(--space-1)',padding:'var(--space-1)',fontSize:'var(--text-xs)',borderBottom:'1px solid var(--border-subtle)'}}
               onDblClick=${function(){var nv=prompt('Rename measurement', m.name||'');if(nv!=null)d({t:A.UPD_MEASUREMENT,id:m.id,u:{name:nv}});}}>
               <span style=${{width:6,height:6,borderRadius:'50%',background:glyphColor,flex:'0 0 auto'}}></span>
-              <span style=${{flex:1,minWidth:0,color:'var(--text-primary)',fontFamily:'var(--font-mono)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer'}}
+              <span style=${{flex:1,minWidth:0,color:'var(--text-primary)',fontFamily:'var(--font-mono)',fontWeight:'var(--weight-semibold)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer'}}
                 onClick=${function(){if(window._ccFlyToMeasurement)window._ccFlyToMeasurement(m.id);}}
                 title=${m.type+' · click to fly to · double-click to rename'}>${labelTxt}</span>
               <button onClick=${function(e){e.stopPropagation();d({t:A.UPD_MEASUREMENT,id:m.id,u:{hidden:!m.hidden}});}}
-                style=${{...S_BTN,padding:'0 3px',background:'none',color:m.hidden?'var(--text-faint)':'var(--text-secondary)',fontSize:'0.6rem'}}
+                style=${{...S_BTN,padding:'0 var(--space-1)',background:'none',color:m.hidden?'var(--text-faint)':'var(--text-secondary)',fontSize:'var(--text-2xs)'}}
                 title=${m.hidden?'Show':'Hide'}>${m.hidden?'⌐':'◉'}</button>
               <button onClick=${function(e){e.stopPropagation();d({t:A.DEL_MEASUREMENT,id:m.id});}}
-                style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'0.57rem'}} aria-label="Delete measurement">✕</button>
+                style=${{...S_BTN,padding:'0 var(--space-1)',background:'none',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}} aria-label="Delete measurement">✕</button>
             </div>`;
           })}
         </div>`}
-        <div style=${{display:'flex',gap:'.2rem'}}>
+        <div style=${{display:'flex',gap:'var(--space-1)'}}>
           <button onClick=${function(){if(_captureViewpoint){var vp=_captureViewpoint('Viewpoint '+(s.viewpoints.length+1));d({t:A.ADD_VIEWPOINT,v:vp});}}}
-            style=${{...S_BTN,fontSize:'0.69rem',padding:'.2rem .5rem',background:'var(--overlay-bg)',color:'var(--text-secondary)',border:'1px solid var(--border)',boxShadow:'var(--shadow-sm)'}}>
+            style=${{...S_BTN,fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-2)',background:'var(--overlay-bg)',color:'var(--text-secondary)',border:'1px solid var(--border)',boxShadow:'var(--shadow-sm)'}}>
             Save Viewpoint
           </button>
-          ${s.viewpoints.length>0 && html`<span style=${{fontSize:'0.63rem',color:'var(--text-muted)',alignSelf:'center'}}>${s.viewpoints.length} saved</span>`}
+          ${s.viewpoints.length>0 && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)',alignSelf:'center'}}>${s.viewpoints.length} saved</span>`}
         </div>
-        ${s.viewpoints.length>0 && html`<div style=${{background:'var(--overlay-bg-strong)',border:'1px solid var(--border)',borderRadius:8,padding:'.3rem',maxHeight:160,overflowY:'auto',width:220,boxShadow:'var(--shadow-sm)'}}>
-          ${s.viewpoints.map(function(vp){return html`<div key=${vp.id} style=${{display:'flex',alignItems:'center',gap:'.3rem',padding:'.2rem',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer'}}
+        ${s.viewpoints.length>0 && html`<div class="cc-overlay-chrome" style=${{padding:'var(--space-1)',maxHeight:160,overflowY:'auto',width:220}}>
+          ${s.viewpoints.map(function(vp){return html`<div key=${vp.id} style=${{display:'flex',alignItems:'center',gap:'var(--space-1)',padding:'var(--space-1)',borderBottom:'1px solid var(--border-subtle)',cursor:'pointer'}}
             onClick=${function(){if(_restoreViewpoint)_restoreViewpoint(vp);}}>
-            ${vp.snapshot && html`<img src=${vp.snapshot} style=${{width:40,height:25,borderRadius:3,objectFit:'cover',border:'1px solid var(--border)'}} />`}
+            ${vp.snapshot && html`<img src=${vp.snapshot} style=${{width:40,height:25,borderRadius:'var(--radius-xs)',objectFit:'cover',border:'1px solid var(--border)'}} />`}
             <div style=${{flex:1,minWidth:0}}>
-              <div style=${{fontSize:'0.69rem',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${vp.name}</div>
-              <div style=${{fontSize:'0.57rem',color:'var(--text-faint)'}}>${new Date(vp.createdAt).toLocaleTimeString()}</div>
+              <div style=${{fontSize:'var(--text-xs)',color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>${vp.name}</div>
+              <div style=${{fontSize:'var(--text-2xs)',color:'var(--text-faint)'}}>${new Date(vp.createdAt).toLocaleTimeString()}</div>
             </div>
             <button onClick=${function(e){e.stopPropagation();d({t:A.DEL_VIEWPOINT,id:vp.id});}}
-              style=${{...S_BTN,padding:'0 3px',background:'none',color:'var(--text-faint)',fontSize:'0.57rem'}} aria-label="Delete viewpoint">✕</button>
+              style=${{...S_BTN,padding:'0 var(--space-1)',background:'none',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}} aria-label="Delete viewpoint">✕</button>
           </div>`})}
         </div>`}
       </div>
@@ -23904,16 +23904,16 @@ function startApp() {
         if (dV) addRow('Volume', dV.f(dV.v));
 
         var LABEL_STYLE = {
-          fontSize:'.72rem', fontWeight:600, color:'var(--text-muted)',
+          fontSize:'var(--text-xs)', fontWeight:'var(--weight-semibold)', color:'var(--text-muted)',
           textTransform:'uppercase', letterSpacing:'.04em',
-          width:90, flexShrink:0, paddingTop:2
+          width:90, flexShrink:0, paddingTop:'var(--space-1)'
         };
         var VALUE_STYLE = {
-          fontSize:'.82rem', color:'var(--text-primary)', fontWeight:500,
-          lineHeight:1.4, wordBreak:'break-word'
+          fontSize:'var(--text-sm)', color:'var(--text-primary)', fontWeight:'var(--weight-medium)',
+          lineHeight:'var(--leading-base)', wordBreak:'break-word'
         };
         var ROW_STYLE = {
-          display:'flex', gap:'0.75rem', padding:'.35rem 0',
+          display:'flex', gap:'var(--space-3)', padding:'var(--space-1) 0',
           borderBottom:'1px solid var(--border-subtle)', alignItems:'flex-start'
         };
 
@@ -23921,8 +23921,8 @@ function startApp() {
         var ctxBadges = null;
         if (linkedClashes.length || linkedIssues.length) {
           ctxBadges = html`<div style=${{display:'flex',gap:'.4rem',marginTop:'.6rem',flexWrap:'wrap'}}>
-            ${linkedClashes.length ? html`<span style=${{fontSize:'var(--text-xs)',background:'var(--color-danger-bg)',color:'var(--color-danger-fg)',border:'1px solid var(--color-danger-border)',borderRadius:'var(--radius-xs)',padding:'2px 8px',fontWeight:'var(--weight-semibold)'}}>${linkedClashes.length} conflict${linkedClashes.length===1?'':'s'}</span>` : null}
-            ${linkedIssues.length  ? html`<span style=${{fontSize:'var(--text-xs)',background:'var(--accent-bg)',color:'var(--accent)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',padding:'2px 8px',fontWeight:'var(--weight-semibold)'}}>${linkedIssues.length} issue${linkedIssues.length===1?'':'s'}</span>` : null}
+            ${linkedClashes.length ? html`<span class="cc-status-pill" style=${{background:'var(--color-danger-bg)',color:'var(--color-danger-fg)',border:'1px solid var(--color-danger-border)'}}>${linkedClashes.length} conflict${linkedClashes.length===1?'':'s'}</span>` : null}
+            ${linkedIssues.length  ? html`<span class="cc-status-pill" style=${{background:'var(--accent-bg)',color:'var(--accent)',border:'1px solid var(--border)'}}>${linkedIssues.length} issue${linkedIssues.length===1?'':'s'}</span>` : null}
           </div>`;
         }
 
