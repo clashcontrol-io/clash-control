@@ -6400,6 +6400,10 @@ function startApp() {
         var id = uid();
         d({t:A.ADD_MEASUREMENT, v:{id:id, type:'area', value:area, label:_ccFmtArea(area, window._ccLatestState), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
         if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(id);
+        if (window._ccRegisterMeasurementGeo && !window._ccChainedArea) {
+          window._ccRegisterMeasurementGeo(id, 'area', pts.length, 1);
+        }
+        window._ccChainedArea = false;
         measurePtsRef.current = [];
         _clearPreview();
         invalidate();
@@ -6929,14 +6933,19 @@ function startApp() {
           if(window._ccHoverCoordTick) window._ccHoverCoordTick();
           if((measureModeRef.current && measurePtsRef.current && measurePtsRef.current.length > 0) || (window._ccAltHeld && window._ccAltHoverFrom)) {
             _ccUpdateMeasurePreview();
+          } else {
+            // No in-progress measurement → no preview to invalidate; but the
+            // snap-marker DOM still needs the renderer tick to reposition it.
+            invalidate();
           }
         } else if (window._ccHoverPoint) {
           window._ccHoverPoint = null;
           window._ccHoverSnap = null;
           if(window._ccHoverCoordTick) window._ccHoverCoordTick();
           if((measureModeRef.current && measurePtsRef.current && measurePtsRef.current.length > 0) || window._ccAltHeld) {
-            _clearPreview(); invalidate();
+            _clearPreview();
           }
+          invalidate(); // hide the snap marker in the next tick
         }
         var hitMesh = null, hitInstanceId = -1;
         if(hits.length>0 && hits[0].object.isMesh) { hitMesh = hits[0].object; hitInstanceId = hits[0].instanceId != null ? hits[0].instanceId : -1; }
@@ -6981,6 +6990,18 @@ function startApp() {
           renderer.domElement.style.cursor = '';
         }
         lastHoveredMesh = hitMesh;
+        invalidate();
+      });
+      // Hide the snap marker when the cursor leaves the canvas, so it doesn't
+      // stick at its last position while you're hovering over the toolbar/panels.
+      renderer.domElement.addEventListener('mouseleave', function(){
+        if (window._ccHoverPoint || window._ccHoverSnap) {
+          window._ccHoverPoint = null;
+          window._ccHoverSnap = null;
+          if(window._ccHoverCoordTick) window._ccHoverCoordTick();
+        }
+        var marker = document.getElementById('cc-snap-marker');
+        if (marker) marker.style.display = 'none';
         invalidate();
       });
 
@@ -7349,8 +7370,10 @@ function startApp() {
             delete hitPt._axis;
           }
           measurePtsRef.current.push(hitPt);
-          var dotGeo = new THREE.SphereGeometry(0.08, 10, 10);
-          var dotMat = new THREE.MeshBasicMaterial({color:0xb8533a, depthTest:false, transparent:true, opacity:0.95});
+          // Persistent anchor sphere at the click point — the live snap marker
+          // continues to track the cursor; this dot is the locked-in mate.
+          var dotGeo = new THREE.SphereGeometry(0.09, 12, 12);
+          var dotMat = new THREE.MeshBasicMaterial({color:0xb8533a, depthTest:false, transparent:true, opacity:0.98});
           var dot = new THREE.Mesh(dotGeo, dotMat);
           dot.position.copy(hitPt); dot.renderOrder = 999;
           scene.add(dot);
@@ -7370,8 +7393,17 @@ function startApp() {
             d({t:A.ADD_MEASUREMENT, v:{id:_id, type:'length', value:dist, label:label, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
             if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_id);
             if (window._ccRegisterMeasurementGeo) window._ccRegisterMeasurementGeo(_id, 'length', 2, 1);
-            measurePtsRef.current = [];
+            // Chain into area mode: keep the 2 placed points as the first edge of a
+            // polygon. The user can keep clicking to trace more vertices and close to
+            // get an area, or press Esc to cancel the chain and return to a clean state.
+            // _ccChainedArea flag tells the area commit to skip _registerMeasurementGeo
+            // (the committed length line sits between the old dots and new dots in the
+            // array, which breaks the slice arithmetic for drag-edit — acceptable tradeoff).
             _clearPreview();
+            measureModeRef.current = 'area';
+            window._ccChainedArea = true;
+            d({t:A.MEASURE_MODE, v:'area'});
+            if (window._ccToast) window._ccToast('Keep clicking to trace an area · Esc to cancel');
             // Calibration finalisation: if a calibration is pending, prompt for
             // real distance and store a multiplier in prefs.
             if (window._ccCalibrationPending) {
@@ -7429,7 +7461,12 @@ function startApp() {
               var _idR = uid();
               d({t:A.ADD_MEASUREMENT, v:{id:_idR, type:'area', value:area2, label:_ccFmtArea(area2,_state), points:pts.map(function(p){return [p.x,p.y,p.z]})}});
               if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_idR);
-              if (window._ccRegisterMeasurementGeo) window._ccRegisterMeasurementGeo(_idR, 'area', pts.length, 1);
+              // Skip registration when chained from a length: the committed length Line
+              // sits inside measureObjsRef between the old dots and new ones, so the
+              // slice arithmetic in _registerMeasurementGeo would be wrong. Area drag-edit
+              // is not available for chained areas (acceptable tradeoff).
+              if (window._ccRegisterMeasurementGeo && !window._ccChainedArea) window._ccRegisterMeasurementGeo(_idR, 'area', pts.length, 1);
+              window._ccChainedArea = false;
               measurePtsRef.current = [];
               _clearPreview();
             }
@@ -8034,9 +8071,10 @@ function startApp() {
           //    render per frame while active; gated by prefs.measureMagnifier.
           if (window._ccRenderMagnifier) try { window._ccRenderMagnifier(); } catch(_e){}
           // ── Snap-point marker projection ─────────────────────────────
-          //    A 3D-anchored DOM dot that tracks the precise snap location.
-          //    Gives Revit/AutoCAD-style "glyph at the snap point" feedback
-          //    so the user sees exactly where their click will land.
+          //    A single 3D-anchored DOM marker that tracks the precise snap
+          //    location. Combines glyph (shape-encodes the snap type) + type
+          //    label + running distance chip so there's only one visual
+          //    feedback element, not two competing markers. AutoCAD/Revit style.
           (function(){
             var marker = document.getElementById('cc-snap-marker');
             if (!marker) return;
@@ -8051,6 +8089,46 @@ function startApp() {
             var sy = (-v.y*0.5+0.5) * rect.height + rect.top;
             marker.style.display = 'block';
             marker.style.transform = 'translate3d(' + Math.round(sx) + 'px,' + Math.round(sy) + 'px,0)';
+            // Glyph shape-encodes the snap type (vertex circle / midpoint diamond / edge bar / centre bullseye / face ring)
+            var glyphEl = document.getElementById('cc-snap-glyph');
+            if (glyphEl) {
+              var t = snap.type;
+              var svg = '';
+              if (t === 'vertex')        svg = '<circle cx="9" cy="9" r="4" fill="#b8533a" stroke="#fff" stroke-width="1.5"/>';
+              else if (t === 'midpoint') svg = '<rect x="4.5" y="4.5" width="9" height="9" fill="#b8533a" stroke="#fff" stroke-width="1.5" transform="rotate(45 9 9)"/>';
+              else if (t === 'center')   svg = '<circle cx="9" cy="9" r="6" fill="none" stroke="#b8533a" stroke-width="1.5"/><circle cx="9" cy="9" r="2" fill="#b8533a"/>';
+              else if (t === 'edge')     svg = '<line x1="3" y1="9" x2="15" y2="9" stroke="#b8533a" stroke-width="2.5" stroke-linecap="round"/>';
+              else                       svg = '<circle cx="9" cy="9" r="5" fill="#fff" stroke="#b8533a" stroke-width="2"/>';
+              if (glyphEl._lastSvg !== svg) { glyphEl.innerHTML = svg; glyphEl._lastSvg = svg; }
+            }
+            // Type label (Endpoint / Midpoint / Centre / Edge / Surface)
+            var lblEl = document.getElementById('cc-snap-typelabel');
+            if (lblEl) {
+              var lt = snap.type;
+              var ltxt = lt==='vertex'?'Endpoint':lt==='midpoint'?'Midpoint':lt==='center'?'Centre':lt==='edge'?'Edge':lt==='face'?'Surface':'';
+              if (ltxt) { if (lblEl._lastTxt !== ltxt) { lblEl.textContent = ltxt; lblEl._lastTxt = ltxt; } lblEl.style.display = 'block'; }
+              else lblEl.style.display = 'none';
+            }
+            // Live distance chip — running distance from last placed point (or Alt-from)
+            var chipEl = document.getElementById('cc-snap-chip');
+            if (chipEl) {
+              var chipTxt = '';
+              var pts = window._ccMeasurePtsRef && window._ccMeasurePtsRef.current;
+              if (pts && pts.length > 0) {
+                var p0 = pts[pts.length-1];
+                var dx = snap.point.x - p0.x, dy = snap.point.y - p0.y, dz = snap.point.z - p0.z;
+                var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                chipTxt = (window._ccFmtLength ? window._ccFmtLength(dist, st) : dist.toFixed(2)+' m');
+                if (window._ccPreviewTarget && window._ccPreviewTarget.axis) chipTxt += ' · ' + window._ccPreviewTarget.axis.toUpperCase();
+              } else if (window._ccAltHeld && window._ccAltHoverFrom) {
+                var f = window._ccAltHoverFrom;
+                var ax = snap.point.x - f.x, ay = snap.point.y - f.y, az = snap.point.z - f.z;
+                var ad = Math.sqrt(ax*ax + ay*ay + az*az);
+                chipTxt = (window._ccFmtLength ? window._ccFmtLength(ad, st) : ad.toFixed(2)+' m');
+              }
+              if (chipTxt) { if (chipEl._lastTxt !== chipTxt) { chipEl.textContent = chipTxt; chipEl._lastTxt = chipTxt; } chipEl.style.display = 'block'; }
+              else chipEl.style.display = 'none';
+            }
           })();
           // ── Project measurement labels onto screen ──────────────
           if (window._ccMeasurementsRef && window._ccMeasurementsRef.length > 0) {
@@ -9583,46 +9661,14 @@ function startApp() {
               boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',userSelect:'none',lineHeight:1.4}}>${labelTxt}</div>`;
         })}
       </div>
-      ${/* Cursor snap glyph + live distance chip while measuring or holding Alt */ ''}
-      ${(s.measureMode || window._ccAltHeld) && window._ccCursorXY && (function(){
-        var cur = window._ccCursorXY;
-        var snap = window._ccHoverSnap;
-        var snapType = snap ? snap.type : 'none';
-        var glyph;
-        if (snapType === 'vertex')   glyph = html`<circle cx="9" cy="9" r="4" fill="var(--accent)" stroke="var(--paper-bg)" stroke-width="1.5"/>`;
-        else if (snapType === 'midpoint') glyph = html`<rect x="4.5" y="4.5" width="9" height="9" fill="var(--accent)" stroke="var(--paper-bg)" stroke-width="1.5" transform="rotate(45 9 9)"/>`;
-        else if (snapType === 'center')   glyph = html`<circle cx="9" cy="9" r="6" fill="none" stroke="var(--accent)" stroke-width="1.5"/><circle cx="9" cy="9" r="2" fill="var(--accent)"/>`;
-        else if (snapType === 'face')     glyph = html`<circle cx="9" cy="9" r="5" fill="none" stroke="var(--accent)" stroke-width="1.5"/>`;
-        else if (snapType === 'edge')     glyph = html`<line x1="3" y1="9" x2="15" y2="9" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>`;
-        else                              glyph = html`<line x1="9" y1="3" x2="9" y2="15" stroke="var(--text-faint)" stroke-width="1"/><line x1="3" y1="9" x2="15" y2="9" stroke="var(--text-faint)" stroke-width="1"/>`;
-        // Live distance chip if a measurement is in progress
-        var pts = window._ccMeasurePtsRef && window._ccMeasurePtsRef.current;
-        var chipTxt = '';
-        if (pts && pts.length > 0 && snap) {
-          var p0 = pts[pts.length-1];
-          var dx = snap.point.x - p0.x, dy = snap.point.y - p0.y, dz = snap.point.z - p0.z;
-          var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-          chipTxt = (window._ccFmtLength ? window._ccFmtLength(dist, s) : dist.toFixed(2)+' m');
-          if (window._ccPreviewTarget && window._ccPreviewTarget.axis) chipTxt += ' · ' + window._ccPreviewTarget.axis.toUpperCase();
-        } else if (window._ccAltHeld && snap && window._ccAltHoverFrom) {
-          var f = window._ccAltHoverFrom;
-          var ax = snap.point.x - f.x, ay = snap.point.y - f.y, az = snap.point.z - f.z;
-          var ad = Math.sqrt(ax*ax + ay*ay + az*az);
-          chipTxt = (window._ccFmtLength ? window._ccFmtLength(ad, s) : ad.toFixed(2)+' m');
-        }
-        var snapTypeLabel = snapType==='vertex'?'Endpoint':snapType==='midpoint'?'Midpoint':snapType==='center'?'Centre':snapType==='edge'?'Edge':snapType==='face'?'Surface':'';
-        return html`<div id="cc-measure-cursor" style=${{position:'fixed',left:(cur.x+14)+'px',top:(cur.y-30)+'px',pointerEvents:'none',zIndex:9998,display:'flex',alignItems:'center',gap:'.3rem'}}>
-          <svg width="18" height="18" viewBox="0 0 18 18" style=${{filter:'drop-shadow(0 1px 2px rgba(0,0,0,.35))'}}>${glyph}</svg>
-          ${snapTypeLabel && html`<span style=${{fontSize:'0.65rem',color:'var(--accent)',background:'var(--bg-primary)',border:'1px solid var(--accent)',padding:'.1rem .35rem',borderRadius:3,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',fontWeight:600,letterSpacing:'.02em'}}>${snapTypeLabel}</span>`}
-          ${chipTxt && html`<span style=${{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'var(--text-primary)',background:'var(--bg-primary)',border:'1px solid var(--border)',padding:'.1rem .4rem',borderRadius:4,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap'}}>${chipTxt}</span>`}
-        </div>`;
-      })()}
-      ${/* 3D-anchored snap marker — small DOM dot projected to the snap point's
-            screen position each frame. Gives the user precise feedback about
-            *where* the click will land, AutoCAD/Revit style (tracking the snap
-            point itself, not just the cursor). */ ''}
+      ${/* Single combined snap marker — glyph + type label + live distance chip,
+            all 3D-anchored to the snap point's screen position (AutoCAD/Revit style).
+            Updated each frame inside the renderer tick (see ~line 8040). When no snap
+            is found, the cursor itself is the only indicator — no overlapping markers. */ ''}
       <div id="cc-snap-marker" style=${{position:'fixed',left:0,top:0,width:0,height:0,pointerEvents:'none',zIndex:9997,display:'none'}}>
-        <div style=${{position:'absolute',width:14,height:14,marginLeft:-7,marginTop:-7,borderRadius:'50%',border:'2px solid var(--accent)',background:'var(--bg-primary)',boxShadow:'0 0 0 1px rgba(0,0,0,.15), 0 1px 3px rgba(0,0,0,.25)'}}></div>
+        <svg id="cc-snap-glyph" width="18" height="18" viewBox="0 0 18 18" style=${{position:'absolute',left:-9,top:-9,overflow:'visible',filter:'drop-shadow(0 1px 2px rgba(0,0,0,.35))'}}></svg>
+        <span id="cc-snap-typelabel" style=${{position:'absolute',left:14,top:-10,fontSize:'0.65rem',color:'var(--accent)',background:'var(--bg-primary)',border:'1px solid var(--accent)',padding:'.1rem .35rem',borderRadius:3,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',fontWeight:600,letterSpacing:'.02em',display:'none'}}></span>
+        <span id="cc-snap-chip" style=${{position:'absolute',left:14,top:8,fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'var(--text-primary)',background:'var(--bg-primary)',border:'1px solid var(--border)',padding:'.1rem .4rem',borderRadius:4,boxShadow:'var(--shadow-sm)',whiteSpace:'nowrap',display:'none'}}></span>
       </div>
       ${/* Element-pick mini-menu shown after Measure → Element click (T2.1) */ ''}
       ${window._ccElementMeasureMenu && (function(){
@@ -9645,7 +9691,7 @@ function startApp() {
       ${s.walkMode && html`<${WalkModeHUD} d=${d} />`}
       <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end',maxHeight:'calc(100% - 5rem)',overflowY:'auto'}}>
         ${s.measureMode && html`<div style=${{fontSize:'0.69rem',color:'var(--text-primary)',background:'var(--overlay-bg)',border:'1px solid var(--border)',padding:'.25rem .55rem',borderRadius:6,boxShadow:'var(--shadow-sm)',display:'flex',alignItems:'center',gap:'.4rem'}}>
-          <span>${s.measureMode==='length'?'Click 2 points · Shift to lock axis · Esc to cancel':s.measureMode==='angle'?'Click 3 points: start · vertex · end · Esc to cancel':s.measureMode==='area'?'Click points · click near first point or Enter to close · Esc to cancel':s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A, then element B':'Measuring…'}</span>
+          <span>${s.measureMode==='length'?'Click 2 points · Shift to lock axis · Esc to cancel':s.measureMode==='angle'?'Click 3 points: start · vertex · end · Esc to cancel':s.measureMode==='area'?(window._ccChainedArea?'Length locked · keep clicking to trace an area · Enter or Esc':'Click points · click near first point or Enter to close · Esc to cancel'):s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A, then element B':'Measuring…'}</span>
         </div>`}
         ${s.measureMode && window._ccHoverPoint && (function(){
           var p=window._ccHoverPoint;
@@ -26259,6 +26305,7 @@ function startApp() {
         window._ccMeasurePtsRef.current = [];
         // Also remove the placed endpoint dots that haven't yet committed.
         if (window._ccDropInProgressDots) window._ccDropInProgressDots();
+        window._ccChainedArea = false;
       };
       window._ccPopLastMeasureVertex = function(){
         if (!window._ccMeasurePtsRef || !window._ccMeasurePtsRef.current) return;
