@@ -6369,12 +6369,25 @@ function startApp() {
         for (var k = 0; k < drop; k++){
           var obj = arr[arr.length-1];
           if (!obj) break;
-          // Stop dropping when we hit a Line (committed segment of a prior measurement)
-          if (obj.type === 'Line' && n != null) break;
+          // Always stop at a Line — those are committed measurement segments and
+          // must never be removed by an in-progress cancel. (Previously gated on
+          // `n != null`, which meant the no-arg call could nuke committed geo.)
+          if (obj.type === 'Line') break;
           arr.pop();
           scene.remove(obj);
           if (obj.geometry && obj.geometry.dispose) obj.geometry.dispose();
         }
+        invalidate();
+      };
+      // Purge any throwaway (Alt-held) measurement geo. Stored in _ccTransientObjs
+      // outside measureObjsRef so the normal cleanup paths leave it alone.
+      window._ccPurgeTransientMeasure = function(){
+        if (!window._ccTransientObjs || !window._ccTransientObjs.length) return;
+        window._ccTransientObjs.forEach(function(o){
+          scene.remove(o);
+          if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+        });
+        window._ccTransientObjs = [];
         invalidate();
       };
       // Force the area-close path: synthesize a click at pts[0]
@@ -7369,6 +7382,20 @@ function startApp() {
             hitPt = _axisLock(measurePtsRef.current[0], hitPt);
             delete hitPt._axis;
           }
+          // Throwaway dimensions: holding Alt at the FIRST click marks this measurement
+          // as transient — visible but not saved to s.measurements. Each new transient
+          // clears the previous one. Esc / mode-exit also cleans them up.
+          if (measurePtsRef.current.length === 0) {
+            // Always purge previous transient at the start of any new measurement
+            if (window._ccTransientObjs && window._ccTransientObjs.length) {
+              window._ccTransientObjs.forEach(function(o){
+                scene.remove(o);
+                if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+              });
+              window._ccTransientObjs = [];
+            }
+            window._ccPendingTransient = !!window._ccAltHeld && (mode === 'length' || mode === 'angle' || mode === 'area');
+          }
           measurePtsRef.current.push(hitPt);
           // Persistent anchor sphere at the click point — the live snap marker
           // continues to track the cursor; this dot is the locked-in mate.
@@ -7382,13 +7409,32 @@ function startApp() {
           var pts = measurePtsRef.current;
 
           if(mode==='length' && pts.length===2) {
-            var lineMat = new THREE.LineBasicMaterial({color:0xb8533a, linewidth:2, depthTest:false, transparent:true, opacity:0.95});
+            var _isTransient = !!window._ccPendingTransient;
+            var lineMat = new THREE.LineBasicMaterial({color: _isTransient ? 0x8a8a8a : 0xb8533a, linewidth:2, depthTest:false, transparent:true, opacity: _isTransient ? 0.7 : 0.95});
             var lineGeo = new THREE.BufferGeometry().setFromPoints([pts[0], pts[1]]);
             var line = new THREE.Line(lineGeo, lineMat); line.renderOrder = 998;
             scene.add(line);
             measureObjsRef.current.push(line);
             var dist = pts[0].distanceTo(pts[1]);
             var label = _ccFmtLength(dist, _state);
+            // ── Throwaway path: visible but not saved, cleared on next click/Esc/exit ──
+            if (_isTransient) {
+              // Move the just-rendered geo (last 3 entries: pt1_dot, pt2_dot, line) out of
+              // measureObjsRef into a parallel _ccTransientObjs list so the normal cleanup
+              // path leaves it alone, and we can purge on the next click.
+              var arr = measureObjsRef.current;
+              var transientGeo = arr.splice(arr.length - 3, 3);
+              window._ccTransientObjs = (window._ccTransientObjs || []).concat(transientGeo);
+              // Render a transient label DOM node anchored at the segment midpoint —
+              // re-uses the existing label tick by stashing the metadata on a free-form
+              // global so the projection block picks it up. Keep simple: just toast.
+              if (window._ccToast) window._ccToast('Quick: ' + label + ' (not saved)');
+              measurePtsRef.current = [];
+              _clearPreview();
+              window._ccPendingTransient = false;
+              // No chain to area for transient measurements
+              return;
+            }
             var _id = uid();
             d({t:A.ADD_MEASUREMENT, v:{id:_id, type:'length', value:dist, label:label, points:pts.map(function(p){return [p.x,p.y,p.z]})}});
             if (window._ccCaptureMeasurementSnapshot) window._ccCaptureMeasurementSnapshot(_id);
@@ -9691,7 +9737,7 @@ function startApp() {
       ${s.walkMode && html`<${WalkModeHUD} d=${d} />`}
       <div style=${{position:'absolute',bottom:'.75rem',right:'.75rem',pointerEvents:'auto',display:'flex',flexDirection:'column',gap:'.3rem',alignItems:'flex-end',maxHeight:'calc(100% - 5rem)',overflowY:'auto'}}>
         ${s.measureMode && html`<div style=${{fontSize:'0.69rem',color:'var(--text-primary)',background:'var(--overlay-bg)',border:'1px solid var(--border)',padding:'.25rem .55rem',borderRadius:6,boxShadow:'var(--shadow-sm)',display:'flex',alignItems:'center',gap:'.4rem'}}>
-          <span>${s.measureMode==='length'?'Click 2 points · Shift to lock axis · Esc to cancel':s.measureMode==='angle'?'Click 3 points: start · vertex · end · Esc to cancel':s.measureMode==='area'?(window._ccChainedArea?'Length locked · keep clicking to trace an area · Enter or Esc':'Click points · click near first point or Enter to close · Esc to cancel'):s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A, then element B':'Measuring…'}</span>
+          <span>${s.measureMode==='length'?'Click 2 points · Shift = axis lock · Alt = quick (not saved) · Esc':s.measureMode==='angle'?'Click 3 points: start · vertex · end · Esc to cancel':s.measureMode==='area'?(window._ccChainedArea?'Length locked · keep clicking to trace an area · Enter or Esc':'Click points · click near first point or Enter to close · Esc to cancel'):s.measureMode==='element'?'Click an element to read its quantities':s.measureMode==='clearance'?'Pick element A, then element B':'Measuring…'}</span>
         </div>`}
         ${s.measureMode && window._ccHoverPoint && (function(){
           var p=window._ccHoverPoint;
@@ -24873,7 +24919,10 @@ function startApp() {
       if (s.sectionAxis) d({t:A.SECTION,axis:null});
       if (s.sectionCustom) d({t:A.SECTION_CUSTOM,v:null});
       if (s.sectionBox && s.sectionBox.enabled) d({t:A.SECTION_BOX,v:null});
-      if (s.measureMode) d({t:A.MEASURE_MODE,v:false});
+      if (s.measureMode) {
+        d({t:A.MEASURE_MODE,v:false});
+        if (window._ccCancelInProgressMeasurement) window._ccCancelInProgressMeasurement();
+      }
       if (s.floorPlan) d({t:A.FLOOR_PLAN,v:null});
       if (s.commentMode) d({t:A.COMMENT_MODE,v:false});
     }
@@ -25044,7 +25093,7 @@ function startApp() {
                     window._ccActivateSectionBox();
                   }
                 }})}
-        ${btn({k:'sclear', title:'Clear Section (Esc)',  label:'Clear Section', icon:I.clear,
+        ${(s.sectionAxis||s.sectionCustom||(s.sectionBox&&s.sectionBox.enabled)) && btn({k:'sclear', title:'Clear Section (Esc)',  label:'Clear Section', icon:I.clear,
                 onClick:function(){ window._ccSectionPickPending=false; setPickOn(false); d({t:A.SECTION,axis:null}); d({t:A.SECTION_CUSTOM,v:null}); d({t:A.SECTION_BOX,v:null}); }})}
         ${div()}
         <!-- MEASURE — one button + caret popover (Trimble / FreeCAD pattern) -->
@@ -26306,6 +26355,9 @@ function startApp() {
         // Also remove the placed endpoint dots that haven't yet committed.
         if (window._ccDropInProgressDots) window._ccDropInProgressDots();
         window._ccChainedArea = false;
+        window._ccPendingTransient = false;
+        // Purge any throwaway (Alt-held) measurement geo via the Viewer-scoped helper
+        if (window._ccPurgeTransientMeasure) window._ccPurgeTransientMeasure();
       };
       window._ccPopLastMeasureVertex = function(){
         if (!window._ccMeasurePtsRef || !window._ccMeasurePtsRef.current) return;
