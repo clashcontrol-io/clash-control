@@ -6796,8 +6796,8 @@ function startApp() {
         var hit = _hitMeasureEndpoint(e.clientX, e.clientY);
         if (hit && hit.mesh) {
           _setDotHover(hit.mesh);
-          // 'copy' cursor on length endpoints hints at the Alt+click → trace area action
-          renderer.domElement.style.cursor = (hit.type === 'length') ? 'copy' : 'grab';
+          // 'copy' cursor on length endpoints (only while a measure tool is active) hints at the Alt+click → trace area action
+          renderer.domElement.style.cursor = (measureModeRef.current && hit.type === 'length') ? 'copy' : 'grab';
         } else if (_hoveredDot) {
           _setDotHover(null);
           renderer.domElement.style.cursor = '';
@@ -6810,8 +6810,9 @@ function startApp() {
         if (measureModeRef.current && measurePtsRef.current && measurePtsRef.current.length > 0) return;
         var hit = _hitMeasureEndpoint(e.clientX, e.clientY);
         if (!hit) return;
-        // Alt+click on a length endpoint = "continue as area" — handled by mouseup, not drag
-        if (window._ccAltHeld && hit.type === 'length') return;
+        // Alt+click on a length endpoint while a measure tool is active = "continue as area"
+        // (handled by mouseup, not drag). Outside measure mode, Alt+drag still resnaps.
+        if (window._ccAltHeld && measureModeRef.current && hit.type === 'length') return;
         e.preventDefault(); e.stopPropagation();
         if (S.orbit) S.orbit.enabled = false;
         _dragMeas = hit;
@@ -6957,9 +6958,9 @@ function startApp() {
           }
         } else {
           // No model-geometry hit. Check for a placed length endpoint under the cursor —
-          // the "Alt+click → trace area" hint shows on plain hover (discoverability);
-          // the action fires on Alt+click (see mouseup handler below).
-          var _epHov = (!measureModeRef.current && Object.keys(_measureGeoMap).length > 0)
+          // the "Alt+click → trace area" hint shows only when a measure tool is active and
+          // no measurement is in progress (so we don't compete with throwaway-dim alt-clicks).
+          var _epHov = (measureModeRef.current && (!measurePtsRef.current || measurePtsRef.current.length === 0) && Object.keys(_measureGeoMap).length > 0)
             ? _hitMeasureEndpoint(e.clientX, e.clientY) : null;
           if (_epHov && _epHov.mesh && _epHov.type === 'length') {
             window._ccAltEndpointHit = _epHov;
@@ -7291,10 +7292,12 @@ function startApp() {
         }
 
         // ── Alt+click on a placed length endpoint: resume as area polygon ──
-        // User sets a dimension, presses Esc, then Alt+clicks one of the
-        // endpoint spheres to continue tracing an area polygon from that edge.
+        // The user re-activates the measure tool, hovers a previously placed endpoint
+        // (sees the "Alt+click → trace area" hint), then Alt+clicks to continue tracing
+        // an area polygon from that edge. Gated on measure mode being active and no
+        // in-progress measurement (so it doesn't conflict with throwaway-dim alt-clicks).
         // Must come before the section-pick Alt handler so endpoints take priority.
-        if (e.altKey && !measureModeRef.current) {
+        if (e.altKey && measureModeRef.current && (!measurePtsRef.current || measurePtsRef.current.length === 0)) {
           var _epClick = _hitMeasureEndpoint(e.clientX, e.clientY);
           if (_epClick && _epClick.type === 'length') {
             var _rsMeas = window._ccLatestState;
