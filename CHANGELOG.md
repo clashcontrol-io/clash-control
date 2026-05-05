@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.9.6 (2026-05-05)
+- fix walk mode: mouse look works during WASD by listening at window level
+
 ## v5.9.5 (2026-05-05)
 - walk mode: free mouse look + dynamic resolution for performance
 
