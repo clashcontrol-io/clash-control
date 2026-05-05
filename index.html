@@ -7035,10 +7035,11 @@ function startApp() {
         hud = document.createElement('div');
         hud.id = 'cc-sbox-hud';
         hud.style.cssText = 'position:fixed;pointer-events:none;z-index:9999;'
-          + 'font:12px/1.2 var(--font-mono, ui-monospace, "DM Mono", "SF Mono", monospace);'
-          + 'background:var(--ink, #1a1a1a);color:var(--paper, #fff);'
-          + 'padding:4px 8px;border-radius:4px;'
-          + 'box-shadow:0 2px 8px rgba(0,0,0,0.25);'
+          + 'font-family:var(--font-mono);font-size:var(--text-xs);line-height:var(--leading-tight);'
+          + 'background:var(--bg-secondary);color:var(--text-primary);'
+          + 'border:1px solid var(--border);'
+          + 'padding:var(--space-1) var(--space-2);border-radius:var(--radius-xs);'
+          + 'box-shadow:var(--shadow-md);'
           + 'transform:translate(12px,12px);display:none;white-space:nowrap;';
         document.body.appendChild(hud);
         return hud;
@@ -9565,37 +9566,37 @@ function startApp() {
           return null;
         })}
       </svg>
-      ${compare.open && html`<div style=${{position:'absolute',bottom:'.75rem',left:'50%',transform:'translateX(-50%)',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',padding:'.5rem .65rem',display:'flex',flexDirection:'column',gap:'.4rem',minWidth:380}}>
-        <div style=${{display:'flex',alignItems:'center',gap:'.4rem'}}>
-          <span style=${{fontSize:'0.65rem',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',flex:1}}>Compare Models</span>
+      ${compare.open && html`<div style=${{position:'absolute',bottom:'var(--space-3)',left:'50%',transform:'translateX(-50%)',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',padding:'var(--space-2) var(--space-3)',display:'flex',flexDirection:'column',gap:'var(--space-2)',minWidth:380}}>
+        <div style=${{display:'flex',alignItems:'center',gap:'var(--space-2)'}}>
+          <span style=${{fontSize:'var(--text-2xs)',fontWeight:'var(--weight-bold)',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'.04em',flex:1}}>Compare Models</span>
           <button onClick=${function(){setCompare(Object.assign({},compare,{open:false}));}}
-            style=${{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:'1rem',padding:'0 .2rem',lineHeight:1}}>×</button>
+            style=${{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer',fontSize:'var(--text-md)',padding:'0 var(--space-1)',lineHeight:1}}>×</button>
         </div>
-        <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
-          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',width:36,whiteSpace:'nowrap'}}>A</span>
+        <div style=${{display:'flex',gap:'var(--space-1)',alignItems:'center'}}>
+          <span style=${{fontSize:'var(--text-2xs)',color:'var(--text-faint)',width:36,whiteSpace:'nowrap'}}>A</span>
           <select value=${compare.modelA||''} onChange=${function(e){setCompare(Object.assign({},compare,{modelA:e.target.value||null}));}}
-            style=${{flex:1,fontSize:'0.72rem',padding:'.2rem .3rem',background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:4}}>
+            style=${{flex:1,fontSize:'var(--text-xs)',padding:'var(--space-1)',background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)'}}>
             <option value="">Model A…</option>
             ${(s.models||[]).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}${m._version>1?' (v'+m._version+')':''}</option>`})}
           </select>
         </div>
-        <div style=${{display:'flex',gap:'.3rem',alignItems:'center'}}>
-          <span style=${{fontSize:'.65rem',color:'var(--text-faint)',width:36,whiteSpace:'nowrap'}}>B</span>
+        <div style=${{display:'flex',gap:'var(--space-1)',alignItems:'center'}}>
+          <span style=${{fontSize:'var(--text-2xs)',color:'var(--text-faint)',width:36,whiteSpace:'nowrap'}}>B</span>
           <select value=${compare.modelB||''} onChange=${function(e){setCompare(Object.assign({},compare,{modelB:e.target.value||null}));}}
-            style=${{flex:1,fontSize:'0.72rem',padding:'.2rem .3rem',background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:4}}>
+            style=${{flex:1,fontSize:'var(--text-xs)',padding:'var(--space-1)',background:'var(--bg-secondary)',color:'var(--text-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)'}}>
             <option value="">Model B…</option>
             ${(s.models||[]).filter(function(m){return m.id!==compare.modelA;}).map(function(m){return html`<option key=${m.id} value=${m.id}>${m.name}${m._version>1?' (v'+m._version+')':''}</option>`})}
           </select>
         </div>
-        ${compare.modelA && compare.modelB && html`<div style=${{display:'flex',gap:'.4rem',alignItems:'center'}}>
-          <span style=${{fontSize:'.65rem',color:'var(--text-muted)',width:36,whiteSpace:'nowrap'}}>A</span>
+        ${compare.modelA && compare.modelB && html`<div style=${{display:'flex',gap:'var(--space-2)',alignItems:'center'}}>
+          <span style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)',width:36,whiteSpace:'nowrap'}}>A</span>
           <input type="range" min="0" max="100" step="1" value=${compare.blend}
             onInput=${function(e){setCompare(Object.assign({},compare,{blend:+e.target.value}));}}
             style=${{flex:1}} />
-          <span style=${{fontSize:'.65rem',color:'var(--text-muted)',width:36,whiteSpace:'nowrap',textAlign:'right'}}>B</span>
+          <span style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)',width:36,whiteSpace:'nowrap',textAlign:'right'}}>B</span>
         </div>`}
       </div>`}
-      ${(markupTool3D || (markups3D && markups3D.length>0)) && html`<div style=${{position:'absolute',top:'.5rem',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'.25rem',padding:'.3rem',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',alignItems:'center'}}>
+      ${(markupTool3D || (markups3D && markups3D.length>0)) && html`<div style=${{position:'absolute',top:'var(--space-2)',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'var(--space-1)',padding:'var(--space-1)',background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',boxShadow:'var(--shadow-md)',zIndex:9,pointerEvents:'auto',alignItems:'center'}}>
         ${[
           ['line','╱','Line'],
           ['arrow','→','Arrow'],
@@ -9606,17 +9607,17 @@ function startApp() {
           var active = markupTool3D===t[0];
           return html`<button key=${t[0]} onClick=${function(){setMarkupTool3D(active?null:t[0]);}}
             title=${t[2]}
-            style=${{fontSize:'.78rem',padding:'.2rem .45rem',background:active?'var(--accent)':'var(--bg-secondary)',color:active?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer',fontFamily:'inherit',minWidth:24}}>${t[1]}</button>`;
+            style=${{fontSize:'var(--text-xs)',padding:'var(--space-1) var(--space-2)',background:active?'var(--accent)':'var(--bg-secondary)',color:active?'#fff':'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',cursor:'pointer',fontFamily:'inherit',minWidth:24}}>${t[1]}</button>`;
         })}
         <input type="color" value=${markupColor3D} onInput=${function(e){setMarkupColor3D(e.target.value);}}
-          title="Color" style=${{width:24,height:24,border:'1px solid var(--border)',borderRadius:3,cursor:'pointer',padding:0,background:'none'}} />
-        <span style=${{width:1,height:18,background:'var(--border)',margin:'0 .15rem'}}></span>
+          title="Color" style=${{width:24,height:24,border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',cursor:'pointer',padding:0,background:'none'}} />
+        <span style=${{width:1,height:18,background:'var(--border)',margin:'0 var(--space-1)'}}></span>
         ${markups3D.length>0 && html`<button onClick=${function(){setMarkups3D([]);}}
           title="Clear all markup"
-          style=${{fontSize:'.65rem',padding:'.2rem .4rem',background:'var(--bg-secondary)',color:'var(--text-muted)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer',fontFamily:'inherit'}}>Clear</button>`}
+          style=${{fontSize:'var(--text-2xs)',padding:'var(--space-1) var(--space-2)',background:'var(--bg-secondary)',color:'var(--text-muted)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',cursor:'pointer',fontFamily:'inherit'}}>Clear</button>`}
         <button onClick=${function(){setMarkupTool3D(null);setMarkups3D([]);}}
           title="Close markup toolbar"
-          style=${{fontSize:'.65rem',padding:'.2rem .4rem',background:'none',color:'var(--text-muted)',border:'none',cursor:'pointer',fontFamily:'inherit'}}>×</button>
+          style=${{fontSize:'var(--text-2xs)',padding:'var(--space-1) var(--space-2)',background:'none',color:'var(--text-muted)',border:'none',cursor:'pointer',fontFamily:'inherit'}}>×</button>
       </div>`}
       ${s.switchingProject && html`<div style=${{
         position:'absolute',inset:0,zIndex:50,
@@ -9684,10 +9685,10 @@ function startApp() {
         </button>
       </div>`}
       ${html`<${ViewCube} state3d=${state3d} theme=${s.prefs.theme||'light'} />`}
-      ${s.floorPlan && html`<div style=${{...P,top:'9.75rem',right:'.5rem',background:'var(--accent)',color:'#fff',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'.4rem'}}
+      ${s.floorPlan && html`<div style=${{...P,top:'9.75rem',right:'var(--space-2)',background:'var(--accent)',color:'#fff',pointerEvents:'auto',cursor:'pointer',display:'flex',alignItems:'center',gap:'var(--space-2)'}}
         onClick=${function(){d({t:A.FLOOR_PLAN,v:null})}}>
         <span>3D Section: ${s.floorPlan.storeyName} · ${_ccFormatElev(s.floorPlan.elevation+(s.floorPlan.cutHeight||1.2))}</span>
-        <span style=${{fontSize:'0.69rem',opacity:.7}} title="Exit 3D section" aria-label="Exit floor plan view">✕</span>
+        <span style=${{fontSize:'var(--text-xs)',opacity:.7}} title="Exit 3D section" aria-label="Exit floor plan view">✕</span>
       </div>`}
 
       ${s.walkMode && html`<div style=${{position:'absolute',inset:0,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center',zIndex:5}}>
