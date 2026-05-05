@@ -4598,7 +4598,7 @@ function startApp() {
   function _walkSetFootsteps(on){ _walkFootsteps=!!on; try{localStorage.setItem('cc_walkFoot',on?'1':'0');}catch(e){} _walkEmitFlags(); }
   function _walkSetSensitivity(v){ _walkSensitivity=Math.max(0.25,Math.min(3,v||1)); try{localStorage.setItem('cc_walkSens',String(_walkSensitivity));}catch(e){} _walkEmitFlags(); }
   function _walkSetInvertY(on){ _walkInvertY=!!on; try{localStorage.setItem('cc_walkInvY',on?'1':'0');}catch(e){} _walkEmitFlags(); }
-  function _walkSetHeight(m){ _walkUserHeight=Math.max(0.4,Math.min(10, parseFloat(m)||1.7)); try{localStorage.setItem('cc_walkHeight',String(_walkUserHeight));}catch(e){} if(_walkActive){ _walkEyeHeight = _walkUserHeight * _walkUnitScale; } _walkEmitFlags(); invalidate(2); }
+  function _walkSetHeight(m){ _walkUserHeight=Math.max(0.4,Math.min(10, parseFloat(m)||1.7)); try{localStorage.setItem('cc_walkHeight',String(_walkUserHeight));}catch(e){} if(_walkActive){ var oldH=_walkEyeHeight; _walkEyeHeight = _walkUserHeight * _walkUnitScale; var _Sh=window._ccState3d; if(_Sh&&_Sh.camera) _Sh.camera.position.y += (_walkEyeHeight - oldH); } _walkEmitFlags(); invalidate(2); }
   window._ccWalkSetBob = _walkSetBob;
   window._ccWalkSetCollision = _walkSetCollision;
   window._ccWalkSetFootsteps = _walkSetFootsteps;
@@ -4750,6 +4750,8 @@ function startApp() {
     _walkEmitFlags();
     _walkKeys = {};
     _walkLastTime = performance.now();
+    // Request pointer lock — succeeds when called from a user-gesture (e.g. Pegman drop)
+    try { if (S.renderer && S.renderer.domElement) S.renderer.domElement.requestPointerLock(); } catch(e) {}
     invalidate(999);
   }
 
@@ -4757,6 +4759,7 @@ function startApp() {
     if (!_walkActive) return;
     _walkActive = false;
     _walkPointerLocked = false;
+    _walkMovingFrame = false;
     _walkLMB = false;
     _walkKeys = {};
     _walkCrouching = false;
@@ -4795,6 +4798,8 @@ function startApp() {
     }
   }
 
+  var _walkGravityFrame = 0; // throttle gravity raycast to every 3rd frame
+  var _walkMovingFrame = false; // true while player is actively moving (WASD)
   function _walkTick(S) {
     if (!_walkActive) return;
     var now = performance.now();
@@ -4887,6 +4892,7 @@ function startApp() {
     }
 
     var moving = (mx !== 0 || mz !== 0 || my !== 0);
+    _walkMovingFrame = moving;
     if (moving) {
       S.camera.position.set(newX, newY, newZ);
       _walkBobBaseY = newY;
@@ -4919,7 +4925,8 @@ function startApp() {
       invalidate(2);
     }
 
-    if (_walkGravity && my === 0 && S.mg && S.mg.children.length > 0 && !altHeld) {
+    _walkGravityFrame = (_walkGravityFrame + 1) % 3; // run every 3rd frame
+    if (_walkGravity && my === 0 && S.mg && S.mg.children.length > 0 && !altHeld && _walkGravityFrame === 0) {
       var stepUp = 0.5 * _walkUnitScale;     // max step we'll climb (50 cm)
       var castFrom = stepUp;                   // start above the eye-relative ground line
       var maxFall = 4.0 * _walkUnitScale;       // how far we'll snap down
@@ -5026,6 +5033,8 @@ function startApp() {
     });
     _wlAdd('mousemove', function(e) {
       if(!dragging&&!panning) return;
+      // If walk mode activated while orbit drag was held, clear the drag state
+      if(_walkActive){ dragging=false; panning=false; el.style.cursor=''; _orbitDragging=false; return; }
       var dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
       if(dragging){ sph.theta-=dx*0.007; sph.phi-=dy*0.007; orbit.apply(); invalidate(); }
       if(panning){
@@ -5538,13 +5547,10 @@ function startApp() {
       });
       renderer.domElement.addEventListener('mousemove', function(e) {
         if (!_walkActive) return;
-        // Mouse look works always in walk mode; pointer-locked feels best
-        // but unlocked still drives look (with a clamp against jitter when
-        // cursor leaves canvas).
         var mx = e.movementX || 0, my = e.movementY || 0;
-        if (!_walkPointerLocked) {
-          if (Math.abs(mx) > 200 || Math.abs(my) > 200) return;
-        }
+        // Without pointer lock the cursor stops at the viewport edge — clamp
+        // large jumps that happen when the cursor re-enters after hitting an edge.
+        if (!_walkPointerLocked && (Math.abs(mx) > 80 || Math.abs(my) > 80)) return;
         var sens = 0.002 * (_walkSensitivity || 1);
         _walkYaw -= mx * sens;
         _walkPitch += my * (_walkInvertY ? sens : -sens);
@@ -8737,13 +8743,19 @@ function startApp() {
         if (_orbitDragging || window._ccSectionDragging) invalidate(2);
         if(_needsRender <= 0) return;
         _needsRender--;
-        // Half-resolution while moving: ~4× fewer pixels → smoother orbit/drag
+        // Lower resolution while moving: orbit drag → 50%, walk movement → 65%
         var _isDragFrame = _orbitDragging || window._ccSectionDragging;
-        if (_isDragFrame !== S._lastDragFrame) {
-          renderer.setPixelRatio(_isDragFrame ? Math.max(0.75, _baseDpr * 0.5) : _baseDpr);
+        var _isWalkFrame = _walkMovingFrame;
+        var _lowResFrame = _isDragFrame || _isWalkFrame;
+        var _targetDpr = _isDragFrame ? Math.max(0.75, _baseDpr * 0.5)
+                       : _isWalkFrame ? Math.max(0.85, _baseDpr * 0.65)
+                       : _baseDpr;
+        if (_lowResFrame !== S._lastDragFrame || _targetDpr !== S._lastDpr) {
+          renderer.setPixelRatio(_targetDpr);
           renderer.setSize(el.clientWidth, el.clientHeight, false);
-          if (!_isDragFrame && S._composer) S._composer.setSize(el.clientWidth, el.clientHeight);
-          S._lastDragFrame = _isDragFrame;
+          if (!_lowResFrame && S._composer) S._composer.setSize(el.clientWidth, el.clientHeight);
+          S._lastDragFrame = _lowResFrame;
+          S._lastDpr = _targetDpr;
         }
         cullFrame++;
         if(cullFrame >= cullEvery && S.mg && S.mg.children.length > 0){
@@ -8759,7 +8771,7 @@ function startApp() {
           renderer.setScissorTest(false);
           // localClippingEnabled is managed by section/floorplan effects; don't reset here.
           // Use the post-processing composer when 'rendered' style + composer ready.
-          if (S._composer && S._postPassesActive && !_isDragFrame) {
+          if (S._composer && S._postPassesActive && !_isDragFrame && !_isWalkFrame) {
             S._composer.render();
           } else {
             renderer.render(scene,S.camera);
@@ -16874,7 +16886,7 @@ function startApp() {
     function jumpStorey(st){
       var unit = (typeof window._ccWalkSmartEntry==='function') ? 1 : 1;
       try {
-        var box = (typeof _elemsBBox === 'function') ? _elemsBBox() : null;
+        var box = (typeof window._ccElemsBBox === 'function') ? window._ccElemsBBox() : null;
         var cx = 0, cz = 0;
         if (box && !box.isEmpty()){ cx=(box.min.x+box.max.x)/2; cz=(box.min.z+box.max.z)/2; }
         var Sref = window._ccState3d;
@@ -16932,7 +16944,7 @@ function startApp() {
     var locked = (typeof document !== 'undefined') && document.pointerLockElement === (window._ccState3d && window._ccState3d.renderer && window._ccState3d.renderer.domElement);
     var crosshair = html`<div style=${{position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:5}}>
       ${locked ? html`<div style=${{width:6,height:6,borderRadius:'50%',background:'rgba(255,255,255,.6)',boxShadow:'0 0 0 1px rgba(0,0,0,.4)'}}></div>`
-              : html`<div style=${{width:32,height:32,borderRadius:'50%',border:'1.5px dashed rgba(255,255,255,.7)',boxShadow:'0 0 4px rgba(0,0,0,.5)',animation:'cc-walk-pulse 1.2s ease-in-out infinite'}}></div>`}
+              : html`<div title="Click to lock cursor for unlimited look" style=${{width:32,height:32,borderRadius:'50%',border:'1.5px dashed rgba(255,255,255,.7)',boxShadow:'0 0 4px rgba(0,0,0,.5)',animation:'cc-walk-pulse 1.2s ease-in-out infinite'}}></div>`}
     </div>`;
 
     return html`<${React.Fragment}>
