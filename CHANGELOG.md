@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.5 (2026-05-05)
+- fix: only show alt+click endpoint hint when measure tool is active
+
 ## v5.7.4 (2026-05-05)
 - Token compliance pass for yesterday's section + compare UI
 
