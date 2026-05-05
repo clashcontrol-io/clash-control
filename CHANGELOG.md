@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.1 (2026-05-05)
+- Fix measurement tool UX: popover, cursor offset, icon, snap + drag feedback
+
 ## v5.7.0 (2026-05-05)
 - Drag-to-edit endpoints + PointerLens magnifier render
 
