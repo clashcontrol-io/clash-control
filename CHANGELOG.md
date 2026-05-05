@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.7.2 (2026-05-05)
+- Resurface IFC dimension & constraint properties in Inspector Details
+
 ## v5.7.1 (2026-05-05)
 - Fix measurement tool UX: popover, cursor offset, icon, snap + drag feedback
 
