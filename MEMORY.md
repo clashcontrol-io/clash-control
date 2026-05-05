@@ -87,6 +87,37 @@ Things to be careful about. Do not remove without a good reason — add a note i
 Update this section at the start and end of each session.
 Mark completed items with ~~strikethrough~~ and date, then let the daily sync archive them.
 
+On branch `claude/improve-measurement-tools-yBrCS` (2026-05-04) — measurement deep-redesign:
+
+- ~~Foundations: `_ccFmtLength/Area/Volume/Angle/Deltas`, IFC `IfcUnitAssignment` heuristic detection, `UPD_MEASUREMENT` action, `measureUnits/measurePrecision/measureMagnifier/measureCalibration` prefs~~ (2026-05-04)
+- ~~T1.1+T1.2 Snap engine: vertex/midpoint/edge/face/centre detection inside hit triangle, projected to screen with 18-px radius. Shape-encoded cursor glyph (filled circle / rotated square / ring / bullseye / bar) anchored to cursor with live distance chip + ΔX/Y/Z~~ (2026-05-04)
+- ~~T1.3 Live preview: dashed terracotta rubberband from last vertex to snap target; closing dotted line in area mode; Shift draws a coloured (R/G/B) axis guide and locks the click to the dominant world axis~~ (2026-05-04)
+- ~~T1.5 Keyboard parity: Esc cancels in-progress (then exits), Del/Backspace pops last vertex, Enter closes area, Cmd+Z undo with 20-deep stack, Shift axis-lock and Alt-hover tracking via window flags~~ (2026-05-04)
+- ~~T1.6 Toolbar collapse: single Measure button + caret popover (Trimble/FreeCAD pattern) with Distance · Angle · Area · Element · Clearance · Clear all; new architectural-dimension-line icon replaces the flat ruler~~ (2026-05-04)
+- ~~T1.7 In-canvas list upgrades: rename (dblclick), hide-eye (◉/⌐), fly-to (click), per-row delete; uses `_ccRelabelMeasurement` so unit changes propagate live~~ (2026-05-04)
+- ~~T2.1 Element measure: click an element while in `element` mode → mini-menu lists Qto_*.NetVolume/NetSideArea/Length/etc. converted to metres (heuristic for mm/cm), click to save as `type:'element'` measurement; bbox fallback when no Qto~~ (2026-05-04)
+- ~~T2.2 Min-distance / clearance: pick element A then B, sample-vertex × sample-vertex shortest pair (capped 400 each, bbox-corner fallback). Saved as `type:'clearance'` with `refA/refB`. Promote-to-rule button drafts a Detection Rules `minGap` from the value~~ (2026-05-04)
+- ~~T2.3 Alt-hover instant distance: hold Alt with an element selected → red dashed leader from its bbox centre to the snap point, value chip at cursor. Stateless — nothing saved~~ (2026-05-04)
+- ~~T2.4 Measurements panel: new "Measure" tab in the right Inspector (Coordinate + Review only; hidden in Present). Grouped by type, snapshot thumbs, rename/hide/fly-to/delete, takeoff sub-panel (Review only), CSV export, unit-mode badge in header~~ (2026-05-04)
+- ~~T2.5 Snapshot capture: 192×120 jpeg q70 attached on add/update via two-frame deferred renderer.domElement.toDataURL~~ (2026-05-04)
+- ~~T3.1 Settings UI: Measurement section with `Display units` (Auto/Metric/Imperial decimal/Imperial fractional 1/16"), `Decimal precision`, magnifier toggle, calibrate launcher~~ (2026-05-04)
+- ~~T3.3 Calibration tool: pick two points → prompt for real distance → store multiplier in `prefs.measureCalibration`, applied uniformly in length/area/volume formatters~~ (2026-05-04)
+- ~~T3.4 Takeoff: `_ccComputeTakeoff(filter)` walks all `s.models[*].elements`, sums Qto_* across matches; results render in the panel; `_ccExportTakeoffCsv()` for export~~ (2026-05-04)
+- ~~T3.5 BCF round-trip: `clashcontrol/measurements.json` sibling file written on export, parsed on import. Other BCF tools ignore the folder~~ (2026-05-04)
+- ~~T3.6 NL + MCP: regex pre-block + fuzzy intents for `measure element|clearance`, `takeoff <type>`, `units imperial|metric`. smart-bridge.js handlers `measure` (extended) + new `takeoff` + `set_measure_units`~~ (2026-05-04)
+
+**Follow-ups now landed:**
+- ~~T1.4 drag-to-edit endpoints: endpoint dots tagged via `_ccRegisterMeasurementGeo(id, type, dotCount, lineCount)`; `mousedown`-capture handler hit-tests the tagged dot list, disables orbit, drags with re-snap, recomputes value/label, dispatches `UPD_MEASUREMENT` per move and syncs Three.js geometry incrementally for snappy feel. Element measurements (single centroid) are excluded from drag.~~ (2026-05-04)
+- ~~T3.2 PointerLens magnifier render: lazy 96-px circular `WebGLRenderer` overlay attached to `document.body`, re-renders the scene with the main camera cloned at FOV/4 looking at the snap point, hooked into the main `tick()` after the primary render. Pref `measureMagnifier` gates activation; visible while measuring or holding Alt.~~ (2026-05-04)
+
+**Key new globals:** `_ccFmtLength/Area/Volume/Angle/Deltas`, `_ccRelabelMeasurement`, `_ccDetectIfcUnitSystem`, `_ccMeasureUnitMode`, `_ccCalibration`, `_ccComputeSnap`, `_ccUpdateMeasurePreview`, `_ccCancelInProgressMeasurement`, `_ccPopLastMeasureVertex`, `_ccCloseArea`, `_ccUndoMeasurement`, `_ccPromoteClearanceToRule`, `_ccComputeTakeoff`, `_ccExportTakeoffCsv`, `_ccStartCalibration`, `_ccResolveElementForObject`, `_ccOpenElementMeasureMenu`, `_ccPickElementMeasure`, `_ccComputeClearance`, `_ccCaptureMeasurementSnapshot`, `_ccFlyToMeasurement`, `_ccDropInProgressDots`, `_ccForceCloseArea`. Modifier flags: `_ccShiftHeld`, `_ccAltHeld`, `_ccAltHoverFrom`, `_ccCalibrationPending`, `_ccClearancePickA`, `_ccElementMeasureMenu`, `_ccPreviewTarget`, `_ccLastTakeoff`.
+
+**Workspace gating:**
+- All workspaces: Measure button, snap engine, live preview, in-canvas list, Alt-hover
+- Coordinate + Review: Measure tab in Inspector, Element + Clearance sub-modes, calibration
+- Review only: Takeoff sub-panel
+- Present: kept clean — no panel, no Element/Clearance buttons, no Qto_* UI
+
 On branch `claude/research-design-tools-TzNQG` (2026-05-03) — in progress:
 
 - ~~ViewCube fix: renderer size 120→74, arrows removed, face-click navigation correct~~ (2026-05-03)

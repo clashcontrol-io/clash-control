@@ -486,7 +486,32 @@
   handlers.export_bcf = function(p) { var s = _getState(); var items = s.issues && s.issues.length ? s.issues : (s.clashes || []); if (!items.length) return 'Nothing to export.'; if (window._ccExportBCF) { window._ccExportBCF(items, p.version || '2.1'); return 'Exported ' + items.length + ' items as BCF.'; } return 'BCF export not available.'; };
   handlers.create_project = function(p) { _dispatch({ t: 'CREATE_PROJECT', name: p.name }); return 'Project "' + p.name + '" created.'; };
   handlers.switch_project = function(p) { var s = _getState(); var projects = s.projectList || []; var match = projects.find(function(pr) { return (pr.name || '').toLowerCase().indexOf(p.name.toLowerCase()) >= 0; }); if (match) { _dispatch({ t: 'SET_PROJECT', id: match.id }); return 'Switched to "' + match.name + '".'; } return 'Project "' + p.name + '" not found.'; };
-  handlers.measure = function(p) { if (p.mode === 'stop') { _dispatch({ t: 'MEASURE_MODE', v: null }); return 'Measurement stopped.'; } if (p.mode === 'clear') { _dispatch({ t: 'CLEAR_MEASUREMENTS' }); return 'Measurements cleared.'; } _dispatch({ t: 'MEASURE_MODE', v: p.mode }); return 'Measurement mode: ' + p.mode + '.'; };
+  handlers.measure = function(p) {
+    if (p.mode === 'stop') { _dispatch({ t: 'MEASURE_MODE', v: null }); return 'Measurement stopped.'; }
+    if (p.mode === 'clear') { _dispatch({ t: 'CLEAR_MEASUREMENTS' }); return 'Measurements cleared.'; }
+    var mode = p.mode;
+    // Backwards-compat: 'point' / 'edge' both map to 'length'
+    if (mode === 'point' || mode === 'edge') mode = 'length';
+    _dispatch({ t: 'MEASURE_MODE', v: mode });
+    if (mode === 'clearance') window._ccClearancePickA = null;
+    return 'Measurement mode: ' + mode + '.';
+  };
+  handlers.takeoff = function(p) {
+    var f = (p && p.filter) || '';
+    if (!f || !window._ccComputeTakeoff) return 'Provide an IFC type filter.';
+    window._ccComputeTakeoff(f);
+    var r = window._ccLastTakeoff;
+    if (!r) return 'Takeoff failed.';
+    return 'Takeoff "' + f + '": ' + r.count + ' element' + (r.count===1?'':'s') +
+           (r.totalLength!=null ? ', length ' + r.totalLength.toFixed(2) + ' m' : '') +
+           (r.totalArea!=null   ? ', area '   + r.totalArea.toFixed(2)   + ' m²' : '') +
+           (r.totalVolume!=null ? ', volume ' + r.totalVolume.toFixed(2) + ' m³' : '') + '.';
+  };
+  handlers.set_measure_units = function(p) {
+    var v = (p && p.units) || 'auto';
+    _dispatch({ t: 'UPD_PREFS', u: { measureUnits: v } });
+    return 'Units set to ' + v + '.';
+  };
   handlers.walk_mode = function(p) {
     if (p.enabled) {
       _dispatch({ t: 'WALK_MODE', v: true });
@@ -859,8 +884,12 @@
       params:{ mode:{type:'string',enum:['ghost','hide','show_all'],opt:1}, ifcType:{type:'string',opt:1}, storey:{type:'string',opt:1}, discipline:{type:'string',opt:1}, material:{type:'string',opt:1}, expressIds:{type:'array',items:{type:'number'},opt:1} } },
     { name:'navigate_tab',        description:'Switches the active sidebar tab: clashes, issues, models, settings, addons.',
       params:{ tab:{type:'string'} } },
-    { name:'measure',             description:"Controls measurement tool: mode 'point', 'edge', 'stop', or 'clear'.",
-      params:{ mode:{type:'string',enum:['point','edge','stop','clear']} } },
+    { name:'measure',             description:"Activates measurement: 'length', 'angle', 'area', 'element' (read Qto_*), 'clearance' (min distance between two elements), 'stop', or 'clear'.",
+      params:{ mode:{type:'string',enum:['length','angle','area','element','clearance','point','edge','stop','clear']} } },
+    { name:'takeoff',             description:'Aggregates length/area/volume across all elements matching an IFC type filter (e.g. IfcWall). Reads Qto_* quantity sets.',
+      params:{ filter:{type:'string'} } },
+    { name:'set_measure_units',   description:"Changes measurement display units. 'auto' detects from IFC; 'metric' uses mm/m; 'imperial-decimal' uses ft.dec; 'imperial-fractional' uses ft' in\".",
+      params:{ units:{type:'string',enum:['auto','metric','imperial-decimal','imperial-fractional']} } },
     { name:'walk_mode',           description:'Enables or disables first-person walk mode.',
       params:{ enabled:{type:'boolean'} } },
     { name:'get_model_bounds',    description:'Returns the bounding box of all loaded models: min, max, center, size (metres).' },
