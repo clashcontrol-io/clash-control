@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.8.0 (2026-05-05)
+- chore: bump version to 5.7.13
+
 ## v5.7.13 (2026-05-05)
 - feat(measure): edge-vertex insert, Z-axis labels, and geo disposal
 
