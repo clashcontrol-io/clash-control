@@ -17153,6 +17153,12 @@ function startApp() {
     var sep = msg.indexOf(': ');
     if (sep > 0) { fname = msg.slice(0, sep); phase = msg.slice(sep + 2); }
     if (fname.length > 60) fname = '…' + fname.slice(-57);
+    // The pct chip on the right already shows the number — strip "NN%" or "N/M"
+    // from the phase text so it isn't displayed twice.
+    if (pct != null) {
+      phase = phase.replace(/\s*\d+\s*\/\s*\d+\s*$/,'').replace(/\s*\d+\s*%\s*$/,'').replace(/\s+$/,'');
+      if (!phase) phase = 'Opening model…';
+    }
     var elapsed = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
 
     return html`<div aria-live="polite" role="status"
