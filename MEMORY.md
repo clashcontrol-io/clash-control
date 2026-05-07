@@ -240,6 +240,73 @@ UI_OVERHAUL.md written (7 chapters, 1469 lines). PLAN.md updated.
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-05-07
+**Summary:** 57 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- 5d33059 chore: bump version to 5.9.6
+- 29a232c fix walk mode: mouse look works during WASD by listening at window level
+- 7afbe4e chore: bump version to 5.9.5
+- f31d52f walk mode: free mouse look + dynamic resolution for performance
+- 6d43564 fix walk mode: pointer lock rotation, drone height, performance
+- 7564cc5 chore: bump version to 5.9.4
+- 0f94b83 Fix walk-mode auto-exit on 'w' key + ViewCube ReferenceError
+- c90826e chore: bump version to 5.9.3
+- b03efdf Remove [2D Outlines] / [2D Sheet] console.log spam
+- 6a34c59 Fix _isGhostMat ReferenceError crashing walk-tick gravity
+- 87894e6 chore: bump version to 5.9.2
+- d791312 Walk mode: call _ccWalkEnter directly from Pegman click
+- 0b44fe4 chore: bump version to 5.9.1
+- ea0bdd0 Fix Pegman placement, reduce walk-mode render overhead
+- cc593f1 chore: bump version to 5.9.0
+- ca0b6a2 Walk mode follow-up: spline recorder, bookmarks UI, sun slider, footprint check, Settings section
+- 30a5e0c chore: bump version to 5.8.0
+- e504753 chore: bump version to 5.7.13
+- 06c26c6 feat(measure): edge-vertex insert, Z-axis labels, and geo disposal
+- 1122987 Walk mode deep redesign: Pegman entry, teleport-anywhere, radar + minimap
+- 8884ecf chore: bump version to 5.7.12
+- c16efa0 feat(measure): smart polygon ordering for area tool
+- 35b9d51 Fix area seeding direction and replace right-click with caret for home view
+- 2fb3aed feat: differentiate Fit All and Reset View with context-awareness and saved home
+- 8b92a0c chore: bump version to 5.7.11
+- 0dbf122 Fix model replacement: stale ghost, stale meshList, ortho near-clip, stale state closure
+- eb6b5e1 Strip embedded NN%/N-of-M from loading phase text to avoid double percentage
+- c617ebb chore: bump version to 5.7.10
+- dcc31ea Fix glass detection for IfcWindow curtain wall frames + type-level material inheritance
+- d17d92b Fix clearance: sample real mesh vertices instead of bbox corners
+- 496b71c chore: bump version to 5.7.9
+- 3a5fa12 Fix glass detection, area preview edges, and add IFC type to Identity panel
+- 15bb2ea chore: bump version to 5.7.8
+- 947b7b0 Hide measurement 3D geometry when m.hidden toggled
+- 120ca6b Fix coordinate chip showing &nbsp; literally; alt+click seeds both endpoints
+- 066759f chore: bump version to 5.7.7
+- a127884 fix: raise click/drag threshold during active measurement to 8px
+- f879b88 fix: block alt+click section plane shortcut while measure tool is active
+- f982f4f chore: bump version to 5.7.6
+- c5f5571 fix: area icon, snap race condition, endpoint hint, area seeding
+- 0616c9a chore: bump version to 5.7.5
+- e45ba6c fix: only show alt+click endpoint hint when measure tool is active
+- 29cd66e feat: alt+click placed length endpoint to continue as area polygon
+- 9102282 chore: bump version to 5.7.4
+- 0db6416 Token compliance pass for yesterday's section + compare UI
+- f53447a Design token compliance pass for measurement UI additions
+- 703aabe Fix Esc deleting committed dimensions; hide section-clear when no section; add Alt-throwaway
+- 1fbeac4 chore: bump version to 5.7.3
+- f0233fa chore: daily memory sync 2026-05-05
+- 708a7b2 Add click-to-continue: length auto-chains into area on 3rd click
+- aaaf4c4 Consolidate measure cursor + snap marker into one combined element
+- fe9c48f chore: bump version to 5.7.2
+- d3ca74b Resurface IFC dimension & constraint properties in Inspector Details
+- 16ab0ef chore: bump version to 5.7.1
+- d94cbea Fix measurement tool UX: popover, cursor offset, icon, snap + drag feedback
+- 0677141 chore: bump version to 5.7.0
+- 8c8fbb3 Drag-to-edit endpoints + PointerLens magnifier render
+
+</details>
+
 ### 2026-05-05
 **Summary:** 52 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
