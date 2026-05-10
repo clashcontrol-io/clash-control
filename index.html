@@ -1454,6 +1454,7 @@ function startApp() {
   function _geoDeserialize(cached) {
     var isV3 = cached.v >= 3; // v3+ uses quantized positions + oct-encoded normals
     var meshByEid = {};
+    var _tmpMtx4 = new THREE.Matrix4(); // reused across all meshes in this batch
     var meshes = cached.meshData.map(function(md) {
       var geo = new THREE.BufferGeometry();
       if (isV3 && md.qpos) {
@@ -1469,7 +1470,7 @@ function startApp() {
       var c = md.col;
       var mat = new THREE.MeshPhongMaterial({color:new THREE.Color(c[0],c[1],c[2]), opacity:c[3], transparent:!!md.tr, side:THREE.DoubleSide});
       var mesh = new THREE.Mesh(geo, mat);
-      mesh.applyMatrix4(new THREE.Matrix4().fromArray(md.mtx));
+      mesh.applyMatrix4(_tmpMtx4.fromArray(md.mtx));
       mesh.userData.expressId = md.eid;
       _ccBakeMesh(mesh);
       if(!meshByEid[md.eid]) meshByEid[md.eid] = [];
@@ -1920,6 +1921,10 @@ function startApp() {
 
   function buildMaterialMap(api, modelID) {
     var matMap = {};
+    // Many IfcRelAssociatesMaterial rows reference the same IfcMaterial /
+    // IfcMaterialLayerSet — resolveMaterialName walks deep relation chains
+    // for each. Cache by matRef so we walk each material once.
+    var _matNameCache = {};
     try {
       var relIds = api.GetLineIDsWithType(modelID, IFC.IFCRELASSOCIATESMATERIAL);
       for (var i = 0; i < relIds.size(); i++) {
@@ -1927,8 +1932,12 @@ function startApp() {
           var rel = api.GetLine(modelID, relIds.get(i));
           var matRef = rel.RelatingMaterial ? (rel.RelatingMaterial.value||rel.RelatingMaterial) : null;
           if (!matRef) continue;
-          var mat = api.GetLine(modelID, matRef);
-          var matName = resolveMaterialName(api, modelID, mat);
+          var matName = _matNameCache[matRef];
+          if (matName === undefined) {
+            var mat = api.GetLine(modelID, matRef);
+            matName = resolveMaterialName(api, modelID, mat) || '';
+            _matNameCache[matRef] = matName;
+          }
           if (!matName) continue;
           var objs = rel.RelatedObjects || [];
           for (var j = 0; j < objs.length; j++) {
@@ -2238,6 +2247,7 @@ function startApp() {
       var matCache = {}; // material dedup: "r,g,b,a" → MeshPhongMaterial
       var geoCache = {}; // geometryExpressID → BufferGeometry (shared across identical elements)
       var _geoReused = 0;
+      var _tmpMtx4 = new THREE.Matrix4(); // reused per placement to avoid 5k-50k allocations per load
       var _estTotal = Math.max(500, Math.round(buffer.byteLength / 500));
       var _streamCount = 0;
       api.StreamAllMeshes(modelID, function(ifcMesh) {
@@ -2278,7 +2288,7 @@ function startApp() {
             var mat = matCache[matKey];
             if (!mat) { mat = new THREE.MeshPhongMaterial({ color:col, opacity:c?c.w:1, transparent:c?c.w<0.99:false, side:THREE.DoubleSide }); matCache[matKey] = mat; }
             var mesh = new THREE.Mesh(geo, mat);
-            mesh.applyMatrix4(new THREE.Matrix4().fromArray(placed.flatTransformation));
+            mesh.applyMatrix4(_tmpMtx4.fromArray(placed.flatTransformation));
             mesh.userData.expressId = expressID;
             mesh.userData._ifcMaterial = matMap[expressID] || '';
             elBox.expandByObject(mesh);
@@ -2679,6 +2689,7 @@ function startApp() {
 
           var _tGeoBuild = 0, _tMesh = 0, _tBBox = 0;
           var _sbStart = performance.now();
+          var _tmpMtx4 = new THREE.Matrix4(); // reused per placement to avoid 5k-50k allocations per load
 
           for (var i = 0; i < rawEls.length; i++) {
             var raw = rawEls[i];
@@ -2708,7 +2719,7 @@ function startApp() {
               var mat = matCache[matKey];
               if (!mat) { mat = new THREE.MeshPhongMaterial({color:col, opacity:c?c.a:1, transparent:c?c.a<0.99:false, side:THREE.DoubleSide}); matCache[matKey] = mat; }
               var mesh = new THREE.Mesh(geo, mat);
-              mesh.applyMatrix4(new THREE.Matrix4().fromArray(gData.tf));
+              mesh.applyMatrix4(_tmpMtx4.fromArray(gData.tf));
               mesh.userData.expressId = raw.expressId;
               mesh.userData._ifcMaterial = (raw.props && raw.props.material) || '';
               _ccBakeMesh(mesh);
