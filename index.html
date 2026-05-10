@@ -1690,6 +1690,63 @@ function startApp() {
     return null;
   }
 
+  // ── Pset / Quantities canonicalization ─────────────────────────
+  // Many IFC elements share byte-identical property sets — every wall of a
+  // type carries the same Pset_WallCommon, every column the same Pset_ColumnCommon,
+  // etc. In a 50k-element model with ~50 unique signatures, naive storage
+  // allocates ~50k pset objects where ~50 would do.
+  //
+  // We canonicalize twice: once on each inner pset (high-frequency hits) and
+  // once on the outer container (full combination). Frozen objects are returned
+  // as-is — that's our marker for "already canonical, don't re-hash".
+  // Caches live on window so they survive across model loads in the same
+  // session; re-loading a model finds the same canonical refs.
+  var _ccPsetCanonCache  = window._ccPsetCanonCache  || (window._ccPsetCanonCache  = new Map());
+  var _ccPsetInnerCache  = window._ccPsetInnerCache  || (window._ccPsetInnerCache  = new Map());
+  var _ccQtoCanonCache   = window._ccQtoCanonCache   || (window._ccQtoCanonCache   = new Map());
+  function _ccStableJSON(o) {
+    if (o === null || typeof o !== 'object') return JSON.stringify(o);
+    if (Array.isArray(o)) {
+      var arr = ''; for (var i = 0; i < o.length; i++) { if (i) arr += ','; arr += _ccStableJSON(o[i]); }
+      return '[' + arr + ']';
+    }
+    var keys = Object.keys(o); keys.sort();
+    var out = ''; for (var i = 0; i < keys.length; i++) { if (i) out += ','; out += JSON.stringify(keys[i]) + ':' + _ccStableJSON(o[keys[i]]); }
+    return '{' + out + '}';
+  }
+  function _ccCanonOne(obj, cache) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+    if (Object.isFrozen(obj)) return obj;
+    var key = _ccStableJSON(obj);
+    var hit = cache.get(key);
+    if (hit) return hit;
+    Object.freeze(obj);
+    cache.set(key, obj);
+    return obj;
+  }
+  function _ccCanonPsets(psets) {
+    if (!psets || typeof psets !== 'object') return psets;
+    if (Object.isFrozen(psets)) return psets;
+    var keys = Object.keys(psets);
+    for (var i = 0; i < keys.length; i++) {
+      psets[keys[i]] = _ccCanonOne(psets[keys[i]], _ccPsetInnerCache);
+    }
+    return _ccCanonOne(psets, _ccPsetCanonCache);
+  }
+  function _ccCanonQuantities(qto) {
+    return _ccCanonOne(qto, _ccQtoCanonCache);
+  }
+  function _ccPsetCacheStats() {
+    return {
+      psetContainers: _ccPsetCanonCache.size,
+      psetInner:      _ccPsetInnerCache.size,
+      quantities:     _ccQtoCanonCache.size
+    };
+  }
+  window._ccCanonPsets = _ccCanonPsets;
+  window._ccCanonQuantities = _ccCanonQuantities;
+  window._ccPsetCacheStats = _ccPsetCacheStats;
+
   function extractProperties(api, modelID, expressID) {
     var props = {expressId:expressID, globalId:'', ifcType:'', name:'', description:'', objectType:'', storey:'', storeyId:null, material:'', quantities:{}, psets:{}};
     try {
@@ -2231,7 +2288,7 @@ function startApp() {
           elProps.storey = storeyMap[expressID] || '';
           elProps.material = matMap[expressID] || '';
           var pm = propMap[expressID];
-          if (pm) { elProps.quantities = pm.quantities; elProps.psets = pm.psets; }
+          if (pm) { elProps.quantities = _ccCanonQuantities(pm.quantities); elProps.psets = _ccCanonPsets(pm.psets); }
           rawElements.push({expressId:expressID, meshes:elMeshes, box:elBox.clone(), props:elProps});
         }
       });
@@ -2253,7 +2310,7 @@ function startApp() {
             _rprops.storey = storeyMap[_reid] || '';
             _rprops.material = matMap[_reid] || '';
             var _rpm = propMap[_reid];
-            if (_rpm) { _rprops.quantities = _rpm.quantities; _rprops.psets = _rpm.psets; }
+            if (_rpm) { _rprops.quantities = _ccCanonQuantities(_rpm.quantities); _rprops.psets = _ccCanonPsets(_rpm.psets); }
             rawElements.push({expressId:_reid, meshes:[], box:new THREE.Box3(), props:_rprops});
           }
         } catch(e) { console.warn('[IFC] Re-add pass failed for ' + _reAddNames[_rti] + ':', e); }
@@ -2298,7 +2355,8 @@ function startApp() {
                 prev = ph[name];
               });
               rows.push({Phase: 'TOTAL', Time: loadTime+'ms', 'Pct': '100%', 'Cumulative': loadTime+'ms'});
-              console.groupCollapsed('%c[IFC Load Profile] ' + elements.length + ' elements · ' + (buffer.byteLength/1024/1024).toFixed(1) + ' MB · ' + loadTime + 'ms total · geo dedup: ' + _geoUnique + ' unique / ' + (_geoUnique+_geoReused) + ' total (' + _geoReused + ' reused)', 'color:#38bdf8;font-weight:bold');
+              var _psetStats = _ccPsetCacheStats();
+              console.groupCollapsed('%c[IFC Load Profile] ' + elements.length + ' elements · ' + (buffer.byteLength/1024/1024).toFixed(1) + ' MB · ' + loadTime + 'ms total · geo dedup: ' + _geoUnique + ' unique / ' + (_geoUnique+_geoReused) + ' total (' + _geoReused + ' reused) · pset dedup: ' + _psetStats.psetContainers + ' containers / ' + _psetStats.psetInner + ' inner / ' + _psetStats.quantities + ' qto', 'color:#38bdf8;font-weight:bold');
               console.table(rows);
               console.groupEnd();
               window._ccLoadProfile = rows;
@@ -2327,8 +2385,8 @@ function startApp() {
       var el = model.elements[i];
       var pm = propMap[el.expressId];
       if (pm) {
-        if (pm.quantities) el.props.quantities = pm.quantities;
-        if (pm.psets)      el.props.psets      = pm.psets;
+        if (pm.quantities) el.props.quantities = _ccCanonQuantities(pm.quantities);
+        if (pm.psets)      el.props.psets      = _ccCanonPsets(pm.psets);
         merged++;
       }
     }
@@ -2497,7 +2555,7 @@ function startApp() {
             elProps.storey = storeyMap[eid] || '';
             elProps.material = matMap[eid] || '';
             var pm = propMap[eid];
-            if (pm) { elProps.quantities = pm.quantities; elProps.psets = pm.psets; }
+            if (pm) { elProps.quantities = _ccCanonQuantities(pm.quantities); elProps.psets = _ccCanonPsets(pm.psets); }
             _tProps += performance.now() - _tP;
             rawEls.push({expressId:eid, geos:geos, props:elProps});
           }
@@ -2657,6 +2715,10 @@ function startApp() {
               elMeshes.push(mesh); meshes.push(mesh);
             }
             if (elMeshes.length > 0) {
+              if (raw.props) {
+                if (raw.props.psets)      raw.props.psets      = _ccCanonPsets(raw.props.psets);
+                if (raw.props.quantities) raw.props.quantities = _ccCanonQuantities(raw.props.quantities);
+              }
               elements.push({expressId:raw.expressId, meshes:elMeshes, box:elBox, props:raw.props});
             }
           }
@@ -2701,7 +2763,8 @@ function startApp() {
               }
             });
             rows.push({Phase: 'TOTAL', Time: loadTime+'ms', Pct: '100%', Cumulative: loadTime+'ms'});
-            console.groupCollapsed('%c[IFC Load Profile · Worker] ' + elements.length + ' elements · ' + (msg.fileSize/1024/1024).toFixed(1) + ' MB · ' + loadTime + 'ms total · geo dedup: ' + _gu + ' unique / ' + (_gu+_gr) + ' total (' + _gr + ' reused)', 'color:#38bdf8;font-weight:bold');
+            var _wPsetStats = _ccPsetCacheStats();
+            console.groupCollapsed('%c[IFC Load Profile · Worker] ' + elements.length + ' elements · ' + (msg.fileSize/1024/1024).toFixed(1) + ' MB · ' + loadTime + 'ms total · geo dedup: ' + _gu + ' unique / ' + (_gu+_gr) + ' total (' + _gr + ' reused) · pset dedup: ' + _wPsetStats.psetContainers + ' containers / ' + _wPsetStats.psetInner + ' inner / ' + _wPsetStats.quantities + ' qto', 'color:#38bdf8;font-weight:bold');
             console.table(rows);
             console.groupEnd();
             window._ccLoadProfile = rows;
@@ -10019,42 +10082,45 @@ function startApp() {
         } else if (style === 'rendered') {
           _disposeEdges(obj);
           if (!cache.rendered) {
-            // Keyword-based PBR preset from IFC material name
+            // Photorealistic: respect the IFC-exported colour from the source
+            // software (Revit / ArchiCAD / etc.) — origColor came from
+            // placed.color, which is the resolved IfcSurfaceStyle colour.
+            // Material name and IFC type only inform PBR characteristics
+            // (roughness, metalness, glass transparency); the colour itself
+            // is whatever the architect set in their authoring tool.
             var _matName = (obj.userData._ifcMaterial || '').toLowerCase();
-            var _r = 0.85, _m = 0.0, _clr = origColor.clone();
             var _rdType = _eidToType[obj.userData.expressId] || '';
-            var _rdOpaque = /steel|metal|alum|copper|brass|iron|zinc|concrete|beton|brick|masonry|wood|timber|stone|gypsum|plaster|insul/.test(_matName);
-            // Hard frame types: ALWAYS opaque regardless of material name.
+            var _r = 0.85, _m = 0.0;
             var _rdHardFrame = /^Ifc(Member|CurtainWall|Beam|Column|Pile|Footing|Wall|Slab|Roof|Stair|Ramp|Covering|Railing|Rail)/i.test(_rdType);
-            // Soft frame: opaque by default, glass only if material explicitly says so.
             var _rdSoftFrame = /^Ifc(Door|Plate|BuildingElementProxy)/i.test(_rdType);
+            var _rdOpaqueMat = /steel|metal|alum|copper|brass|iron|zinc|concrete|beton|brick|masonry|wood|timber|stone|gypsum|plaster|insul/.test(_matName);
+            // Glass: trust the IFC alpha first; fall back to name guess.
             var _isGlass = !_rdHardFrame && (
-              /glass|glazing|fenst/.test(_matName)
-              || (/^IfcWindow/i.test(_rdType) && orig.transparent && orig.opacity < 0.5)
-              || (!_rdOpaque && !_rdSoftFrame && orig.transparent && orig.opacity < 0.3)
+              (orig.transparent && orig.opacity < 0.5)
+              || (!_rdSoftFrame && /glass|glazing|fenst/.test(_matName))
             );
             if (_isGlass) {
-              _r = 0.05; _m = 0.0; _clr.set(0xbfe8ff);
+              _r = 0.05; _m = 0.0;
             } else if (/steel|metal|alum|copper|brass|iron|zinc/.test(_matName)) {
               _r = 0.25; _m = 0.9;
             } else if (/concrete|beton|cast/.test(_matName)) {
-              _r = 0.95; _m = 0.0; _clr.set(0xb0a898);
+              _r = 0.95; _m = 0.0;
             } else if (/wood|timber|oak|pine|parquet|ply/.test(_matName)) {
-              _r = 0.85; _m = 0.0; _clr.set(0xc49a6c);
+              _r = 0.80; _m = 0.0;
             } else if (/brick|masonry|tile|ceramic|stone/.test(_matName)) {
-              _r = 0.90; _m = 0.0; _clr.set(0xc97d5a);
+              _r = 0.90; _m = 0.0;
             } else if (/gypsum|plasterboard|plaster|drywall|gips/.test(_matName)) {
-              _r = 0.85; _m = 0.0; _clr.set(0xe8e5e0);
+              _r = 0.85; _m = 0.0;
             } else if (/insul|foam|mineral|rockwool|glass.*wool/.test(_matName)) {
-              _r = 1.0; _m = 0.0; _clr.set(0xf0c850);
+              _r = 1.0; _m = 0.0;
             }
-            var _rdForceOpaque = !_isGlass && (_rdHardFrame || _rdSoftFrame || _rdOpaque);
+            var _rdForceOpaque = !_isGlass && (_rdHardFrame || _rdSoftFrame || _rdOpaqueMat);
             cache.rendered = new THREE.MeshStandardMaterial({
-              color: (_matName || _isGlass) ? _clr : origColor,
+              color: origColor,
               roughness: _r, metalness: _m,
               envMapIntensity: 0.85,
               transparent: _isGlass ? true : (_rdForceOpaque ? false : orig.transparent),
-              opacity: _isGlass ? 0.25 : (_rdForceOpaque ? 1.0 : orig.opacity),
+              opacity: _isGlass ? Math.min(0.35, orig.opacity > 0.05 ? orig.opacity : 0.25) : (_rdForceOpaque ? 1.0 : orig.opacity),
               depthWrite: _isGlass ? false : true,
               side: _isGlass ? THREE.DoubleSide : THREE.FrontSide
             });
@@ -11422,7 +11488,7 @@ function startApp() {
         props.storey = storeyResult.map[eid] || '';
         props.material = matMap[eid] || '';
         var pm = propMap[eid];
-        if (pm) { props.quantities = pm.quantities; props.psets = pm.psets; }
+        if (pm) { props.quantities = _ccCanonQuantities(pm.quantities); props.psets = _ccCanonPsets(pm.psets); }
         if (props.globalId) propsByGlobalId[props.globalId] = props;
         propsByExpressId[eid] = props;
       });
@@ -11438,7 +11504,7 @@ function startApp() {
           spProps2.storey = storeyResult.map[sid2] || '';
           spProps2.material = matMap[sid2] || '';
           var spPm2 = propMap[sid2];
-          if (spPm2) { spProps2.quantities = spPm2.quantities; spProps2.psets = spPm2.psets; }
+          if (spPm2) { spProps2.quantities = _ccCanonQuantities(spPm2.quantities); spProps2.psets = _ccCanonPsets(spPm2.psets); }
           if (spProps2.globalId) propsByGlobalId[spProps2.globalId] = spProps2;
           propsByExpressId[sid2] = spProps2;
         }
