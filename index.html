@@ -5293,6 +5293,10 @@ function startApp() {
     commentModeRef.current = s.commentMode;
     var commentsRef = useRef(s.comments);
     commentsRef.current = s.comments;
+    var workspaceRef = useRef(s.workspace);
+    workspaceRef.current = s.workspace;
+    var inspectorOpenRef = useRef(s.inspectorOpen);
+    inspectorOpenRef.current = s.inspectorOpen;
 
     useEffect(function() {
       var el = ref.current; if(!el) return;
@@ -8405,7 +8409,15 @@ function startApp() {
             setSelectedEl(found ? {props:found.el.props||{}, modelName:found.model.name, expressId:eid, point:hitPt, box:hitBox, normal:hitNormal} : {props:{expressId:eid}, modelName:'Unknown', expressId:eid, point:hitPt, box:hitBox, normal:hitNormal});
             window.dispatchEvent(new CustomEvent('cc-element-selected'));
             if(outlineRef.current){scene.remove(outlineRef.current);outlineRef.current=null;}
-            if(prefsRef.current.autoFlyTo!==false && _flyTo) {
+            // Workspace gating for click-to-fly:
+            //   present    → never (read-only walkthrough; framing fights the user)
+            //   review     → only when the right-side Inspector is open
+            //                (otherwise the click is just a selection action)
+            //   coordinate → always (legacy behaviour; coordination needs framing)
+            var _wsFly = workspaceRef.current || 'present';
+            var _flyAllowed = (_wsFly === 'coordinate')
+              || (_wsFly === 'review' && inspectorOpenRef.current);
+            if(_flyAllowed && prefsRef.current.autoFlyTo!==false && _flyTo) {
               var elSz = hitBox.getSize(new THREE.Vector3());
               _flyTo(hitPt, _zoomDist(Math.max(elSz.x,elSz.y,elSz.z)), hitNormal ? {normal:hitNormal} : null);
             }
