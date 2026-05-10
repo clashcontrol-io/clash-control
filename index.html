@@ -882,7 +882,12 @@ function startApp() {
     if (item._groupedElems) item._groupedElems.forEach(function(eid){ refs.push({modelId: null, expressId: eid, role: 'grouped'}); });
     return refs;
   }
-  function _clearElCaches(model) { _bvhLRURemoveModel(model); }
+  function _clearElCaches(model) {
+    _bvhLRURemoveModel(model);
+    if (model && model.id && typeof _pairCacheClearForModel === 'function') {
+      _pairCacheClearForModel(model.id);
+    }
+  }
 
   function reducer(s,a) {
     switch(a.t) {
@@ -2802,6 +2807,101 @@ function startApp() {
             b.max.x.toFixed(3), b.max.y.toFixed(3), b.max.z.toFixed(3)].join('|');
   }
 
+  // ── Type-pair impossibility memo ────────────────────────────────
+  // Per-set-of-loaded-models record of which (typeA, typeB) IFC type pairs
+  // have produced zero clashes for K consecutive runs. Skipped at
+  // _processCandidate entry to avoid testing pairs that historically
+  // never clash (e.g. IfcWall × IfcSpace).
+  //
+  // Gated by an unchanged-model fingerprint: any geometric edit or load
+  // change invalidates the memo, falling back to full testing.
+  var _TP_MEMO_EMPTY_RUNS_THRESHOLD = 3;
+  var _TP_MEMO_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+  function _tpMemoModelsKey(models) {
+    return models.map(function(m){ return m.id; }).sort().join('|');
+  }
+  function _tpModelFingerprint(models) {
+    // Sums element count + sampled AABB extents per model. Stable under
+    // re-runs without edits; perturbed by any non-trivial geometric change.
+    var parts = [];
+    models.forEach(function(m) {
+      var els = m.elements || [];
+      var n = els.length, sx = 0, sy = 0, sz = 0;
+      var k = Math.min(els.length, 200);
+      for (var i = 0; i < k; i++) {
+        var el = els[i];
+        if (!el || !el.box) continue;
+        sx += el.box.max.x - el.box.min.x;
+        sy += el.box.max.y - el.box.min.y;
+        sz += el.box.max.z - el.box.min.z;
+      }
+      parts.push(m.id + ':' + n + ':' + sx.toFixed(2) + ':' + sy.toFixed(2) + ':' + sz.toFixed(2));
+    });
+    parts.sort();
+    return parts.join('|');
+  }
+  function _tpMemoLoad(modelsKey) {
+    if (!modelsKey) return null;
+    try {
+      var raw = localStorage.getItem('cc_typePairMemo:' + modelsKey);
+      if (!raw) return null;
+      var memo = JSON.parse(raw);
+      if (Date.now() - (memo.ts || 0) > _TP_MEMO_TTL_MS) return null;
+      return memo;
+    } catch (e) { return null; }
+  }
+  function _tpMemoSave(modelsKey, memo) {
+    if (!modelsKey) return;
+    try {
+      memo.ts = Date.now();
+      localStorage.setItem('cc_typePairMemo:' + modelsKey, JSON.stringify(memo));
+    } catch (e) {}
+  }
+  function _tpPairKey(a, b) {
+    return a < b ? a + ':' + b : b + ':' + a;
+  }
+  window._ccResetTypePairMemo = function(models) {
+    var key = _tpMemoModelsKey(models || (window._ccLatestState && window._ccLatestState.models) || []);
+    try { localStorage.removeItem('cc_typePairMemo:' + key); } catch(e) {}
+  };
+
+  // ── Pair-result cache (narrow-phase) ────────────────────────────
+  // Stores clash objects from previous detection runs, keyed by
+  // (mA:eidA | mB:eidB | rulesHash). When changeAware is on and neither
+  // element changed since last run, re-emit the cached clash instead of
+  // dropping it silently (the legacy changeAware behaviour). Misses are
+  // not cached — undefined lookup falls through naturally.
+  var _PAIR_CACHE_MAX = 50000;
+  var _pairResultCache = new Map();
+  function _pairKey(mA, eA, mB, eB) {
+    return mA.id + ':' + eA.expressId + '|' + mB.id + ':' + eB.expressId;
+  }
+  function _pairCacheGet(pk, rulesHash) {
+    var v = _pairResultCache.get(pk);
+    if (!v || v.rulesHash !== rulesHash) return undefined;
+    _pairResultCache.delete(pk); _pairResultCache.set(pk, v);
+    return v.clash;
+  }
+  function _pairCacheSet(pk, rulesHash, clash) {
+    if (!clash) return;
+    if (_pairResultCache.size >= _PAIR_CACHE_MAX) {
+      var oldest = _pairResultCache.keys().next().value;
+      if (oldest !== undefined) _pairResultCache.delete(oldest);
+    }
+    _pairResultCache.set(pk, { clash: clash, rulesHash: rulesHash });
+  }
+  function _pairCacheClearForModel(modelId) {
+    if (!modelId) return;
+    var prefix1 = modelId + ':';
+    var midToken = '|' + modelId + ':';
+    var toDel = [];
+    _pairResultCache.forEach(function(_, k) {
+      if (k.indexOf(prefix1) === 0 || k.indexOf(midToken) !== -1) toDel.push(k);
+    });
+    for (var i = 0; i < toDel.length; i++) _pairResultCache.delete(toDel[i]);
+  }
+  window._ccPairCacheClearForModel = _pairCacheClearForModel;
+
   // ── Geometry-accurate narrow-phase clash detection ──────────────
 
   function _getWorldVerts(el) {
@@ -2927,7 +3027,20 @@ function startApp() {
   // re-runs on the same model don't rebuild. A Map preserves insertion order,
   // so delete+set gives O(1) move-to-end (LRU touch) and keys().next() gives
   // O(1) eviction of the oldest entry.
-  var _BVH_CACHE_MAX = 300;
+  //
+  // Cap is adaptive to available heap when the runtime exposes it (Chromium).
+  // Average BVH is ~50 KB; we allow ~5 % of the heap budget, clamped to
+  // [300, 2500] so small devices stay safe and big workstations don't thrash.
+  var _BVH_CACHE_MAX = (function() {
+    try {
+      var m = (typeof performance !== 'undefined') && performance.memory;
+      if (m && m.jsHeapSizeLimit) {
+        var budget = Math.floor(m.jsHeapSizeLimit * 0.05 / (50 * 1024));
+        return Math.max(300, Math.min(2500, budget));
+      }
+    } catch (e) {}
+    return 300;
+  })();
   var _bvhLRU = new Map(); // element → true, insertion-ordered
 
   function _bvhLRUTouch(el) {
@@ -3616,6 +3729,21 @@ function startApp() {
       });
     }
 
+    // ── Phase 2.4 / 2.5 caches: type-pair memo + pair-result cache ──
+    // Both stay null/no-op when their gating conditions don't hold so
+    // legacy detection paths are unaffected.
+    var _curRulesHash = (function(){ try { return _ccStableJSON(rules); } catch(e){ return ''; } })();
+    var _modelsKey = _tpMemoModelsKey(models);
+    var _curFingerprint = _tpModelFingerprint(models);
+    var _tpMemoBefore = _tpMemoLoad(_modelsKey);
+    var _tpMemoApplied = !!(_tpMemoBefore &&
+                            _tpMemoBefore.modelFingerprint === _curFingerprint &&
+                            _tpMemoBefore.rulesHash === _curRulesHash &&
+                            _tpMemoBefore.activeMemo && _tpMemoBefore.activeMemo.length > 0);
+    var _activeMemoSet = _tpMemoApplied ? new Set(_tpMemoBefore.activeMemo) : null;
+    var _nMemoSkipped = 0;
+    var _nPairCacheReemit = 0;
+
     var _exPairSet = {};
     if (rules.excludeTypePairs && rules.excludeTypePairs.length) {
       rules.excludeTypePairs.forEach(function(p) { _exPairSet[p] = true; });
@@ -3634,19 +3762,136 @@ function startApp() {
     _phase(candidates.length.toLocaleString() + ' pairs to test');
 
     // ── Per-candidate timing accumulators ─────────────────────────
-    var _tHard = 0, _tSoft = 0, _tFilters = 0, _nHardTests = 0, _nSoftTests = 0;
+    var _tHard = 0, _tSoft = 0, _tFilters = 0, _nHardTests = 0, _nSoftTests = 0, _nHardTestsBatched = 0;
+
+    // ── WASM batch hard-clash warmup ──────────────────────────────
+    // For each chunk we group surviving candidates by elA and call
+    // _ccWasmBatchIntersect once per group, instead of N JS↔WASM calls.
+    // The cache is per-chunk: built fresh, consulted inside
+    // _processCandidate, freed at chunk end. Map values:
+    //   [cx,cy,cz,depth]  → hit
+    //   null              → batched, confirmed miss
+    //   absent            → not batched (small group / no WASM): fall through
+    var _chunkBatchCache = null;
+    var _BATCH_MIN_GROUP = 4;        // groups smaller than this stay per-pair
+    var _BATCH_MAX_TRIS = 1500000;   // soft cap on triangles per WASM call
+
+    function _warmChunkBatch(startIdx, endIdx) {
+      if (!rules.hard) return;
+      if (typeof window._ccWasmBatchIntersect !== 'function') return;
+      if (typeof window._ccWasmReady === 'function' && !window._ccWasmReady()) return;
+
+      // Group by elA. Pre-filter pairs we'd skip anyway so the batch
+      // doesn't waste cycles on pairs that won't be tested.
+      var groups = new Map();
+      for (var i = startIdx; i < endIdx; i++) {
+        var c = candidates[i];
+        if (rules.changeAware &&
+            !changedElements[c.mA.id+':'+c.eA.expressId] &&
+            !changedElements[c.mB.id+':'+c.eB.expressId]) continue;
+        if (_exPairSet && c.eA.props && c.eB.props && c.eA.props.ifcType && c.eB.props.ifcType) {
+          var _ek = c.eA.props.ifcType < c.eB.props.ifcType ? c.eA.props.ifcType+':'+c.eB.props.ifcType : c.eB.props.ifcType+':'+c.eA.props.ifcType;
+          if (_exPairSet[_ek]) continue;
+        }
+        var gkey = c.mA.id + ':' + c.eA.expressId;
+        var g = groups.get(gkey);
+        if (!g) { g = { eA:c.eA, mA:c.mA, items:[] }; groups.set(gkey, g); }
+        g.items.push({ eB:c.eB, mB:c.mB });
+      }
+
+      groups.forEach(function(g) {
+        if (g.items.length < _BATCH_MIN_GROUP) return;
+        var trisA = _getWorldTris(g.eA);
+        if (!trisA || !trisA.length) return;
+
+        // Build (allTris, offsets) sub-batches respecting _BATCH_MAX_TRIS
+        var sub = [];
+        var subTotal = 0;
+        for (var i = 0; i < g.items.length; i++) {
+          var trisB = _getWorldTris(g.items[i].eB);
+          if (!trisB || !trisB.length) continue;
+          // If adding this would blow the cap, flush current sub first
+          if (sub.length >= _BATCH_MIN_GROUP && (subTotal + trisB.length) > _BATCH_MAX_TRIS) {
+            _runBatch(g, sub);
+            sub = []; subTotal = 0;
+          }
+          sub.push({ orig:i, tris:trisB });
+          subTotal += trisB.length;
+        }
+        if (sub.length >= _BATCH_MIN_GROUP) _runBatch(g, sub);
+      });
+    }
+
+    function _runBatch(group, valid) {
+      var trisA = _getWorldTris(group.eA);
+      if (!trisA) return;
+      var total = 0;
+      for (var i = 0; i < valid.length; i++) total += valid[i].tris.length;
+      var allTris = new Float32Array(total);
+      var offsets = new Uint32Array(valid.length * 2);
+      var off = 0;
+      for (var i = 0; i < valid.length; i++) {
+        allTris.set(valid[i].tris, off);
+        offsets[i*2]   = off;
+        offsets[i*2+1] = off + valid[i].tris.length;
+        off += valid[i].tris.length;
+      }
+      var hits;
+      try { hits = window._ccWasmBatchIntersect(trisA, allTris, offsets); }
+      catch(e) { return; } // bail this sub; single-pair fallback will run
+
+      // Populate cache for every valid item — hits AND confirmed misses.
+      var hitByIdx = {};
+      if (hits && hits.length) {
+        for (var h = 0; h < hits.length; h++) {
+          var hi = hits[h];
+          if (hi && hi.meshIdx >= 0 && hi.meshIdx < valid.length) {
+            hitByIdx[hi.meshIdx] = [hi.point[0], hi.point[1], hi.point[2], hi.depth];
+          }
+        }
+      }
+      for (var i = 0; i < valid.length; i++) {
+        var origIdx = valid[i].orig;
+        var pk = group.mA.id + ':' + group.eA.expressId + '|' +
+                 group.items[origIdx].mB.id + ':' + group.items[origIdx].eB.expressId;
+        _chunkBatchCache.set(pk, hitByIdx[i] || null);
+      }
+    }
 
     // ── Process candidate pairs (chunkable) ───────────────────────
     function _processCandidate(pair) {
       var eA=pair.eA, mA=pair.mA, eB=pair.eB, mB=pair.mB, sameModel=pair.sameModel;
 
+      // ── Pair-result cache (Phase 2.5) ────────────────────────────
+      // When changeAware is on and neither element has changed since the
+      // last run, re-emit the cached clash (if any) instead of dropping
+      // the pair silently. The legacy changeAware skip is preserved when
+      // the pair was a miss (cache returns undefined → no re-emit).
       if (rules.changeAware &&
           !changedElements[mA.id+':'+eA.expressId] &&
-          !changedElements[mB.id+':'+eB.expressId]) return;
+          !changedElements[mB.id+':'+eB.expressId]) {
+        var _cachedClash = _pairCacheGet(_pairKey(mA, eA, mB, eB), _curRulesHash);
+        if (_cachedClash) {
+          clashes.push(_cachedClash);
+          _nPairCacheReemit++;
+        }
+        return;
+      }
 
       if (_exPairSet && eA.props && eB.props && eA.props.ifcType && eB.props.ifcType) {
         var _epKey = eA.props.ifcType < eB.props.ifcType ? eA.props.ifcType+':'+eB.props.ifcType : eB.props.ifcType+':'+eA.props.ifcType;
         if (_exPairSet[_epKey]) return;
+      }
+
+      // ── Type-pair impossibility memo (Phase 2.4) ────────────────
+      // Active only when the model fingerprint + rules hash both match
+      // the snapshot when the memo was built — any geometric change
+      // invalidates it automatically (memo not applied, just rebuilt).
+      if (_activeMemoSet && eA.props && eB.props && eA.props.ifcType && eB.props.ifcType) {
+        if (_activeMemoSet.has(_tpPairKey(eA.props.ifcType, eB.props.ifcType))) {
+          _nMemoSkipped++;
+          return;
+        }
       }
 
       var bA=eA.box, bB=eB.box;
@@ -3729,7 +3974,16 @@ function startApp() {
         } catch(e) {}
       }
       var _t1 = performance.now();
-      if (rules.hard && !_semanticSkipHard) { hardPt = _meshesIntersect(eA, eB); _nHardTests++; }
+      if (rules.hard && !_semanticSkipHard) {
+        var _bpk = _chunkBatchCache && (mA.id + ':' + eA.expressId + '|' + mB.id + ':' + eB.expressId);
+        if (_bpk && _chunkBatchCache.has(_bpk)) {
+          hardPt = _chunkBatchCache.get(_bpk) || false;
+          _nHardTestsBatched++;
+        } else {
+          hardPt = _meshesIntersect(eA, eB);
+          _nHardTests++;
+        }
+      }
       _tHard += performance.now() - _t1;
       if (hardPt && rules.minOverlapVolM3 > 0) {
         if (_aabbOverlap(bA, bB).vol < rules.minOverlapVolM3) hardPt = false;
@@ -3817,6 +4071,47 @@ function startApp() {
     // ── Finalize results after all candidates processed ───────────
     function _finalize() {
     if (rules.changeAware) _prevElementHashes = newHashes;
+
+    // ── Update type-pair memo (Phase 2.4) ──────────────────────────
+    // Increment empty-run counter for type-pairs that produced zero
+    // clashes; reset for those that did. Pairs reaching the threshold
+    // join activeMemo and will be skipped on the next matching run.
+    try {
+      var _pairCountThisRun = {};
+      clashes.forEach(function(c) {
+        if (!c.elemAType || !c.elemBType) return;
+        var k = _tpPairKey(c.elemAType, c.elemBType);
+        _pairCountThisRun[k] = (_pairCountThisRun[k] || 0) + 1;
+      });
+      var _observedPairs = new Set();
+      for (var ci = 0; ci < candidates.length; ci++) {
+        var p = candidates[ci];
+        if (!p.eA.props || !p.eB.props || !p.eA.props.ifcType || !p.eB.props.ifcType) continue;
+        _observedPairs.add(_tpPairKey(p.eA.props.ifcType, p.eB.props.ifcType));
+      }
+      var _memoNext;
+      if (_tpMemoBefore && _tpMemoBefore.modelFingerprint === _curFingerprint && _tpMemoBefore.rulesHash === _curRulesHash) {
+        _memoNext = { modelFingerprint: _curFingerprint, rulesHash: _curRulesHash,
+                      emptyRunCount: Object.assign({}, _tpMemoBefore.emptyRunCount || {}),
+                      activeMemo: [] };
+      } else {
+        _memoNext = { modelFingerprint: _curFingerprint, rulesHash: _curRulesHash,
+                      emptyRunCount: {}, activeMemo: [] };
+      }
+      _observedPairs.forEach(function(tp) {
+        if (_pairCountThisRun[tp]) {
+          delete _memoNext.emptyRunCount[tp];
+        } else {
+          _memoNext.emptyRunCount[tp] = (_memoNext.emptyRunCount[tp] || 0) + 1;
+        }
+      });
+      Object.keys(_memoNext.emptyRunCount).forEach(function(tp) {
+        if (_memoNext.emptyRunCount[tp] >= _TP_MEMO_EMPTY_RUNS_THRESHOLD) {
+          _memoNext.activeMemo.push(tp);
+        }
+      });
+      _tpMemoSave(_modelsKey, _memoNext);
+    } catch(e) { console.warn('[Detect] type-pair memo update failed:', e.message||e); }
 
     // ── Merge related clashes (IFC segment grouping) ─────────────
     var merged = [];
@@ -3946,7 +4241,13 @@ function startApp() {
       candidates: _prof._nCandidates,
       elements: _prof._nElements,
       hard_tests: _nHardTests,
+      hard_tests_batched: _nHardTestsBatched,
       soft_tests: _nSoftTests,
+      memo_skipped: _nMemoSkipped,
+      memo_active_pairs: _activeMemoSet ? _activeMemoSet.size : 0,
+      pair_cache_reemits: _nPairCacheReemit,
+      pair_cache_size: _pairResultCache.size,
+      bvh_cache_max: _BVH_CACHE_MAX,
       clashes_found: merged.length
     };
     var _pcts = {};
@@ -3959,7 +4260,7 @@ function startApp() {
       console.table([
         {Phase:'Sweep & Prune',    Time:profile.sweep_and_prune_ms+'ms', Pct:_pcts.sweep_and_prune, Detail:profile.elements+' elements → '+profile.candidates+' candidates'},
         {Phase:'BVH Build',        Time:profile.bvh_build_ms+'ms',       Pct:_pcts.bvh_build,       Detail:profile.elements+' element BVHs'},
-        {Phase:'Hard Clash Tests', Time:profile.hard_clash_ms+'ms',      Pct:_pcts.hard_clash,      Detail:profile.hard_tests+' tri-tri tests'},
+        {Phase:'Hard Clash Tests', Time:profile.hard_clash_ms+'ms',      Pct:_pcts.hard_clash,      Detail:profile.hard_tests+' single + '+profile.hard_tests_batched+' batched'},
         {Phase:'Soft Clash Tests', Time:profile.soft_clash_ms+'ms',      Pct:_pcts.soft_clash,      Detail:profile.soft_tests+' spatial hash queries'},
         {Phase:'Merge & Post',     Time:profile.merge_and_post_ms+'ms',  Pct:_pcts.merge_and_post,  Detail:merged.length+' clashes after merge'},
         {Phase:'TOTAL',            Time:profile.total_ms+'ms',           Pct:'100%',                Detail:''}
@@ -3974,11 +4275,18 @@ function startApp() {
     // ── Chunked execution: process candidates in batches ──────────
     var totalCandidates = candidates.length;
     if (totalCandidates <= _DETECT_CHUNK_SIZE || !resolveAsync) {
+      _chunkBatchCache = new Map();
+      _warmChunkBatch(0, totalCandidates);
       for (var si=0; si<totalCandidates; si++) {
         var _sc=candidates[si];
         _getBVH(_sc.eA); _getBVH(_sc.eB);
+        var _cBefore = clashes.length;
         _processCandidate(_sc);
+        if (clashes.length > _cBefore) {
+          _pairCacheSet(_pairKey(_sc.mA, _sc.eA, _sc.mB, _sc.eB), _curRulesHash, clashes[clashes.length - 1]);
+        }
       }
+      _chunkBatchCache = null;
       return _finalize();
     }
     _phase('Testing intersections');
@@ -3996,7 +4304,19 @@ function startApp() {
         if (!_chunkEls[_kB]) { _chunkEls[_kB]=_cp.eB; _getBVH(_cp.eB); }
       }
       _prof._nElements += Object.keys(_chunkEls).length;
-      for (var i=chunkIdx; i<end; i++) { try { _processCandidate(candidates[i]); } catch(e) { /* skip bad candidate */ } }
+      _chunkBatchCache = new Map();
+      _warmChunkBatch(chunkIdx, end);
+      for (var i=chunkIdx; i<end; i++) {
+        try {
+          var _cp2 = candidates[i];
+          var _cBef = clashes.length;
+          _processCandidate(_cp2);
+          if (clashes.length > _cBef) {
+            _pairCacheSet(_pairKey(_cp2.mA, _cp2.eA, _cp2.mB, _cp2.eB), _curRulesHash, clashes[clashes.length - 1]);
+          }
+        } catch(e) { /* skip bad candidate */ }
+      }
+      _chunkBatchCache = null;
       chunkIdx = end;
       if (onProgress) onProgress(chunkIdx, totalCandidates);
       if (chunkIdx < totalCandidates) {
@@ -8820,6 +9140,36 @@ function startApp() {
         if (_orbitDragging || window._ccSectionDragging) invalidate(2);
         if(_needsRender <= 0) return;
         _needsRender--;
+
+        // ── Normalize section-box handle sizes to a constant pixel size ──
+        // Without this, handles built at world scale ~maxDim*0.01 look
+        // disproportionately large on big models and tiny on small ones.
+        // Re-scales every frame so each tagged handle keeps its target
+        // pixel footprint regardless of model scale / camera distance.
+        if (S._sboxHandles || S._sboxFaceHandles || S._sboxRotRing) {
+          var _camPos = S.camera.position;
+          var _canvasH = renderer.domElement.height || el.clientHeight || 1;
+          var _isPersp = S.camera.isPerspectiveCamera !== false && S.camera.fov != null;
+          var _tanHalfFov = _isPersp ? Math.tan((S.camera.fov || 50) * Math.PI / 360) : 0;
+          var _orthoSpan = !_isPersp ? ((S.camera.top - S.camera.bottom) / (S.camera.zoom || 1)) : 0;
+          function _scaleHandle(h) {
+            if (!h || !h.userData || !h.userData._baseSize) return;
+            var pxTarget = h.userData._targetPx || 9;
+            var worldSize;
+            if (_isPersp) {
+              var d = _camPos.distanceTo(h.position);
+              worldSize = (pxTarget / _canvasH) * 2 * _tanHalfFov * d;
+            } else {
+              worldSize = (pxTarget / _canvasH) * _orthoSpan;
+            }
+            var s = worldSize / h.userData._baseSize;
+            if (s > 0 && isFinite(s)) h.scale.setScalar(s);
+          }
+          if (S._sboxHandles)     S._sboxHandles.forEach(_scaleHandle);
+          if (S._sboxFaceHandles) S._sboxFaceHandles.forEach(_scaleHandle);
+          if (S._sboxRotRing)     _scaleHandle(S._sboxRotRing);
+        }
+
         // Lower resolution while moving: orbit drag → 50%, walk movement → 65%
         var _isDragFrame = _orbitDragging || window._ccSectionDragging;
         var _isWalkFrame = _walkMovingFrame;
@@ -9478,6 +9828,10 @@ function startApp() {
       S._sboxFacePanels=facePanels;
 
       var maxDim = Math.max(hx,hy,hz);
+      // Handles are built at a representative world size, but the tick loop
+      // re-scales them every frame so they appear at a constant pixel size
+      // regardless of model scale or camera distance — otherwise the same
+      // handle looks tiny on a 5 m apartment and huge on a 500 m tower.
       var handleSize = Math.max(0.046, Math.min(maxDim*0.0104, 0.37));
       var handleGeo=new THREE.SphereGeometry(handleSize,8,8);
       var handles=[];
@@ -9502,6 +9856,8 @@ function startApp() {
         mesh.userData._handleAxX=axX.clone();
         mesh.userData._handleAxY=axY.clone();
         mesh.userData._handleAxZ=axZ.clone();
+        mesh.userData._baseSize=handleSize;
+        mesh.userData._targetPx=9;
         mesh.renderOrder=999;
         _sboxUnclip(mesh);
         S.scene.add(mesh);
@@ -9537,6 +9893,8 @@ function startApp() {
         arrow.userData._faceSign = fd.sign;
         arrow.userData._faceIdx  = fd.idx;
         arrow.userData._faceSide = fd.side;
+        arrow.userData._baseSize = faceArrowSize;
+        arrow.userData._targetPx = 16;
         arrow.renderOrder = 999;
         _sboxUnclip(arrow);
         S.scene.add(arrow);
@@ -9554,6 +9912,8 @@ function startApp() {
       ring.position.copy(ctr).addScaledVector(axY,ringY);
       ring.rotation.x=Math.PI/2; // lay flat
       ring.userData._sboxRotation=true;
+      ring.userData._baseSize=ringRadius;
+      ring.userData._targetPx=72;
       ring.renderOrder=999;
       _sboxUnclip(ring);
       S.scene.add(ring);
@@ -10158,6 +10518,13 @@ function startApp() {
     useEffect(function(){ window._ccHoverCoordTick = function(){ setHcTick(function(x){return (x+1)%1000;}); }; return function(){window._ccHoverCoordTick=null;}; }, []);
     var ps = useState(false), perfOpen=ps[0], setPerfOpen=ps[1];
     var pd = useState({fps:0,tris:0,meshCount:0,drawCalls:0}), perfData=pd[0], setPerfData=pd[1];
+    var dp = useState(window._ccDetectProfile || null), detectProfile=dp[0], setDetectProfile=dp[1];
+    var dpO = useState(false), detectProfOpen=dpO[0], setDetectProfOpen=dpO[1];
+    useEffect(function(){
+      function onDP(){ setDetectProfile(window._ccDetectProfile || null); }
+      window.addEventListener('cc-detect-profile', onDP);
+      return function(){ window.removeEventListener('cc-detect-profile', onDP); };
+    }, []);
     useEffect(function(){
       var iv = setInterval(function(){
         var S = state3d.current;
@@ -10442,6 +10809,58 @@ function startApp() {
           <span>Version</span>
           <span style=${{color:'var(--text-muted)'}}>${CC_VERSION.v} (${CC_VERSION.hash})</span>
         </div>
+      </div>`}
+      ${(s.workspace==='coordinate' || s.workspace==='review') && s.diagnostics && detectProfile && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'var(--space-3)',left:s.workspace==='review'?'5.5rem':'var(--space-3)',padding:'var(--space-1) var(--space-2)',pointerEvents:'auto',fontSize:'var(--text-xs)'}}>
+        <span style=${{color:'var(--accent)',cursor:'pointer',fontWeight:'var(--weight-medium)',fontFamily:'var(--font-mono)'}}
+          onClick=${function(){setDetectProfOpen(!detectProfOpen)}}>${detectProfile.total_ms} ms · ${detectProfile.clashes_found}</span>
+      </div>`}
+      ${(s.workspace==='coordinate' || s.workspace==='review') && s.diagnostics && detectProfile && detectProfOpen && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'2.4rem',left:s.workspace==='review'?'5.5rem':'var(--space-3)',padding:'var(--space-2) var(--space-3)',pointerEvents:'auto',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',minWidth:220}}>
+        <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'var(--space-1)'}}>
+          <span style=${{fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',fontSize:'var(--text-xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>Last detection</span>
+          <button onClick=${function(){setDetectProfOpen(false)}} style=${{...S_BTN,padding:'0 var(--space-1)',background:'none',color:'var(--text-faint)',fontSize:'var(--text-xs)'}} aria-label="Close detection profile">✕</button>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Sweep &amp; Prune</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.sweep_and_prune_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>BVH build</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.bvh_build_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Hard clash</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.hard_clash_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Soft clash</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.soft_clash_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Merge &amp; post</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.merge_and_post_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0',borderTop:'1px solid var(--border-subtle)',marginTop:'.2rem',paddingTop:'.2rem'}}>
+          <span>Total</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)',fontWeight:'var(--weight-semibold)'}}>${detectProfile.total_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Elements</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.elements}</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Candidates</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.candidates}</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Hard tests</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.hard_tests}${detectProfile.hard_tests_batched ? ' + '+detectProfile.hard_tests_batched+' batched' : ''}</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Soft tests</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.soft_tests}</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Clashes</span><span style=${{color:'var(--accent)',fontFamily:'var(--font-mono)',fontWeight:'var(--weight-semibold)'}}>${detectProfile.clashes_found}</span>
+        </div>
+        ${(detectProfile.memo_active_pairs > 0 || detectProfile.memo_skipped > 0) && html`<div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0',color:'var(--text-faint)'}}>
+          <span>Memo skipped</span><span style=${{fontFamily:'var(--font-mono)'}}>${detectProfile.memo_skipped} / ${detectProfile.memo_active_pairs} pairs</span>
+        </div>`}
+        ${detectProfile.pair_cache_reemits > 0 && html`<div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0',color:'var(--text-faint)'}}>
+          <span>Pair cache re-emits</span><span style=${{fontFamily:'var(--font-mono)'}}>${detectProfile.pair_cache_reemits} / ${detectProfile.pair_cache_size}</span>
+        </div>`}
+        ${detectProfile.bvh_cache_max && html`<div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0',color:'var(--text-faint)'}}>
+          <span>BVH cache cap</span><span style=${{fontFamily:'var(--font-mono)'}}>${detectProfile.bvh_cache_max}</span>
+        </div>`}
       </div>`}
       ${s.clashes.length>0 && html`<div class="cc-overlay-top" style=${{position:'absolute',top:'var(--space-3)',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'var(--space-1)',pointerEvents:'auto'}}>
         <button class="cc-btn-press" onClick=${function(){if(_fitToClashes)_fitToClashes(s.clashes);}}

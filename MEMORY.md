@@ -95,6 +95,26 @@ On branch `claude/research-global-dictionary-F5W0N` (2026-05-10) — global-dict
 - ~~Rendered render style: stop overriding IFC-exported colour with keyword presets. `origColor` (from `placed.color` = resolved IfcSurfaceStyle) is preserved as base; keyword on material name now only informs roughness/metalness and glass detection. Glass opacity prefers IFC-defined alpha.~~ (2026-05-10)
 - ~~Click-to-fly gated by workspace + Inspector state. Present: never. Review: only when Inspector open. Coordinate: unchanged. New refs `workspaceRef`, `inspectorOpenRef` next to existing `prefsRef` pattern at the on-pick handler (`index.html:8419`).~~ (2026-05-10)
 - ~~MEMORY.md correction: founding architecture row described engine as "OBB clash detection" — actually AABB broad + BVH tri-tri narrow with optional WASM acceleration. Live-features bullet and architecture-decisions row updated; new Known Issues entry on IFC spatial hierarchy not being a valid pair-pruning filter.~~ (2026-05-10)
+- ~~Phase 1.1: WASM batch hard-clash. New `_warmChunkBatch`/`_runBatch` near `_processCandidate` (`index.html:~3699`). Groups chunk candidates by elA and calls `_ccWasmBatchIntersect` once per group ≥4 items. Populates `_chunkBatchCache` Map; `_processCandidate` consults before falling through to `_meshesIntersect`. Single-pair WASM and JS BVH paths unchanged. New counter `_nHardTestsBatched` in profile output.~~ (2026-05-10)
+- ~~Phase 1.2: Detection profile overlay panel. New state `detectProfile`/`detectProfOpen` listening to `cc-detect-profile` event (already dispatched at `index.html:~4000`). Chip + expandable panel show phase breakdown, hard/soft test counts, memo + pair-cache stats. Gated `(coordinate|review) && diagnostics`.~~ (2026-05-10)
+- ~~Phase 1.3: `_BVH_CACHE_MAX` adaptive to `performance.memory.jsHeapSizeLimit` (5% budget, ~50 KB/BVH, clamped [300, 2500]). Old constant 300 used as floor.~~ (2026-05-10)
+- ~~Phase 2.4: Type-pair impossibility memo, gated by model-unchanged fingerprint. Per-models-key localStorage entry `cc_typePairMemo:<modelsKey>` tracks empty-run counts; pairs at K=3 empty consecutive runs enter `activeMemo` and are skipped at `_processCandidate` entry. Invalidates automatically when model fingerprint (element count + sampled AABBs) or rules hash diverges. 30-day TTL. Manual reset: `window._ccResetTypePairMemo()`.~~ (2026-05-10)
+- ~~Phase 2.5: Pair-result cache for narrow phase. Bounded LRU (50000) `_pairResultCache` keyed by `(mA:eidA|mB:eidB|rulesHash)`. When `rules.changeAware` is on and neither element changed, re-emits cached clash instead of dropping silently. Misses not cached (undefined lookup falls through). Cache cleared per-model in `_clearElCaches` on DEL_MODEL / REPLACE_MODEL. Global reset: `window._ccPairCacheClearForModel(modelId)`.~~ (2026-05-10)
+- ~~Bbox handle normalization. Section-box corner spheres, face arrows, and rotation ring now tagged with `_baseSize`/`_targetPx` at build time; `tick()` rescales `mesh.scale` every frame to maintain a constant pixel footprint regardless of model scale or camera distance. Perspective + ortho both supported.~~ (2026-05-10)
+
+**Sensitive paths from this session (check first if regressions appear):**
+
+| Suspect symptom | Likely culprit | File / line | Quick verify |
+|---|---|---|---|
+| TypeError on mutating element pset | Target A `Object.freeze` on canonicalized psets | `index.html:1707-1746` | Console: `window._ccPsetCacheStats()`; check if mutating code wrote into a frozen pset |
+| Wrong/duplicate AI clash titles | Title cache returning stale entry | `api/title.js` | Response header `X-CC-Title-Cache` shows cache state; clear by serverless cold start or wait 1 h TTL |
+| "Wood looks wrong" / colours differ in Rendered mode | IFC `placed.color` now respected | `index.html:~10218-10266` | Switch to Shaded (uses same colour) and compare; previous behaviour overrode with keyword presets |
+| Click on element doesn't fly anymore | Click-to-fly gating | `index.html:~8419` | Check `s.workspace` and `s.inspectorOpen`; Coordinate always flies, Review only with Inspector open, Present never |
+| Missed clashes that "should" be there | Type-pair memo wrongly skipped | `index.html:_processCandidate` (memo branch) | Run `window._ccResetTypePairMemo()` then re-detect; check `detectProfile.memo_skipped` |
+| Stale/duplicate clashes appearing | Pair-result cache re-emit with bad invalidation | `index.html:_pairResultCache` | Reload model (REPLACE_MODEL hits `_clearElCaches` → cache cleared); or `window._ccPairCacheClearForModel(modelId)` |
+| WASM batch returns wrong hits | Batch path mismatch with single-pair WASM | `index.html:_warmChunkBatch`/`_runBatch` near `_processCandidate` | Disable the batch by setting `window._ccWasmBatchIntersect=null` and re-detect; should fall back cleanly to single-pair |
+| BVH cache eviction thrashing | Adaptive `_BVH_CACHE_MAX` too high for device | `index.html:2931-2942` | Check `detectProfile.bvh_cache_max`; revert to literal `300` if needed |
+| Section handles wrong size after rotate / camera change | Per-frame scale formula assumes default FOV | `tick()` section handle block in `index.html` | Set `mesh.scale.setScalar(1)` on a handle and compare visually |
 
 Plan file: `/root/.claude/plans/i-just-read-about-transient-pnueli.md`.
 
