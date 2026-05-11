@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.9.7 (2026-05-11)
+- chore: daily memory sync 2026-05-11
+
 ## v5.9.6 (2026-05-05)
 - fix walk mode: mouse look works during WASD by listening at window level
 
