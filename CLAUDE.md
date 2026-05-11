@@ -11,6 +11,12 @@ each session (Active Work and Project State sections).
 After reading, update the `Active Work` section in `MEMORY.md` with what you
 are about to do. When you finish, mark completed items with ~~strikethrough~~ + date.
 
+> **Design work? Read `DESIGN.md` first.** It is the source of truth for colors,
+> typography, spacing, and component styling. Never hand-pick hex values or
+> raw sizes — always pull from the CSS custom-property tokens defined there.
+> Key tokens: `--color-success/warning/danger/info`, `--accent`, `--border`,
+> `--text-*`, `--space-*`, `--radius-*`.
+
 ## What is this?
 ClashControl is a free, open-source IFC clash detection web app. It lets users load IFC building models, detect geometric clashes between elements, create/manage issues, and export to BCF format.
 
