@@ -13,7 +13,7 @@
 **Version:** 4.15.4 (2026-04-16)
 
 **Live features (all working):**
-- OBB-based clash detection engine with rules (discipline filters, clearance, group-by)
+- Mesh-based clash detection engine: AABB broad-phase + BVH tri-tri narrow-phase (Möller–Trumbore), optional `_ccWasmIntersect`/`_ccWasmMinDist` WASM accelerators; rules (discipline filters, clearance, group-by); soft/clearance via spatial-hash vertex distance; optional escalation to `local-engine.js` for true solid boolean ops
 - BCF 2.1 import/export (viewpoints, markup, snapshots)
 - IFC loading via web-ifc WASM (lazy, with geometry + property extraction)
 - AI NL command interface (Gemma 4 via `/api/nl`, 13 tool declarations, native function calling)
@@ -51,7 +51,7 @@ These are permanent. Do not remove entries — add new ones when significant dec
 |------|----------|--------|
 | founding | Single `index.html` app, no build step | Zero setup for users; open-source transparency; easy to fork/inspect |
 | founding | Three.js r128 (pinned, not latest) | API stability; newer versions break existing render/material code |
-| founding | OBB clash detection (not exact mesh) | Order-of-magnitude faster; exact mesh available via optional `local-engine.js` addon |
+| founding | In-browser clash engine: AABB broad-phase + BVH tri-tri narrow-phase (legacy name "OBB engine" is a simplification — orientation only enters via the slimline-axis prune for directional elements). `_ccWasmIntersect`/`_ccWasmMinDist` accelerate when loaded. Optional `local-engine.js` addon escalates to true solid boolean ops on a localhost Python server. | Tri-tri is the browser sweet spot: tighter than AABB-only (kills false positives on rotated beams/pipes), fast enough for thousands of pairs in JS, and has a clean WASM acceleration path. True solid boolean ops are too slow in JS so they live in the Python local engine. |
 | founding | CDN deps pinned with SRI hashes | Reproducible builds; integrity verification |
 | founding | Addons pattern (`addons/*.js` IIFE) | Keeps `index.html` lean; optional features don't block initial load |
 | founding | Preact/React via CDN UMD (not ESM) | Avoids bundler; works with htm tagged templates inline |
@@ -79,6 +79,7 @@ Things to be careful about. Do not remove without a good reason — add a note i
 - **Service worker excludes `/api/*`**: Don't add API paths to the SW cache list.
 - **NL pre-block**: Conversational messages that look like commands are allowed through to Gemma. Don't make the pre-block over-eager.
 - **2D annotation coordinates**: Fixed in v4.15.4. Coordinate bug was in annotation placement — if re-implementing annotation rendering, test coordinate transform carefully.
+- **IFC spatial hierarchy is NOT a clash-pruning filter**: `IfcProject → IfcSite → IfcBuilding → IfcBuildingStorey → IfcSpace` is logical containment, not proximity. Real geometry spans containment boundaries (vertical ducts cross storeys, foundations sit between site and building, stairs intersect two slabs). Pair pruning must come from the AABB broad-phase / spatial index, not from shared spatial parent. Don't be tempted to "speed up" detection by filtering pairs that share an IfcBuildingStorey only.
 <!-- END:known-issues -->
 
 <!-- BEGIN:active-work -->
@@ -86,6 +87,36 @@ Things to be careful about. Do not remove without a good reason — add a note i
 
 Update this section at the start and end of each session.
 Mark completed items with ~~strikethrough~~ and date, then let the daily sync archive them.
+
+On branch `claude/research-global-dictionary-F5W0N` (2026-05-10) — global-dictionary-inspired changes after reading LangSplat v2:
+
+- ~~Target A: pset/quantities canonicalization via stable-JSON + `Object.freeze`. Caches on window (`_ccPsetCanonCache`, `_ccPsetInnerCache`, `_ccQtoCanonCache`); helpers `_ccCanonPsets`/`_ccCanonQuantities`/`_ccPsetCacheStats`. Applied at all six pset assignment sites in the IFC loader plus the worker→main merge and lazy-merge. Dedup ratio logged in IFC Load Profile.~~ (2026-05-10)
+- ~~Target B: bounded LRU + TTL title cache in `api/title.js`. Hard cap 200 entries, 1 h TTL, lazy expiry sweep, oldest-first eviction. Cache key = `(elemAType|elemBType|type|sameStorey)`. Returns `X-CC-Title-Cache` and `X-CC-Title-Cache-Size` headers.~~ (2026-05-10)
+- ~~Rendered render style: stop overriding IFC-exported colour with keyword presets. `origColor` (from `placed.color` = resolved IfcSurfaceStyle) is preserved as base; keyword on material name now only informs roughness/metalness and glass detection. Glass opacity prefers IFC-defined alpha.~~ (2026-05-10)
+- ~~Click-to-fly gated by workspace + Inspector state. Present: never. Review: only when Inspector open. Coordinate: unchanged. New refs `workspaceRef`, `inspectorOpenRef` next to existing `prefsRef` pattern at the on-pick handler (`index.html:8419`).~~ (2026-05-10)
+- ~~MEMORY.md correction: founding architecture row described engine as "OBB clash detection" — actually AABB broad + BVH tri-tri narrow with optional WASM acceleration. Live-features bullet and architecture-decisions row updated; new Known Issues entry on IFC spatial hierarchy not being a valid pair-pruning filter.~~ (2026-05-10)
+- ~~Phase 1.1: WASM batch hard-clash. New `_warmChunkBatch`/`_runBatch` near `_processCandidate` (`index.html:~3699`). Groups chunk candidates by elA and calls `_ccWasmBatchIntersect` once per group ≥4 items. Populates `_chunkBatchCache` Map; `_processCandidate` consults before falling through to `_meshesIntersect`. Single-pair WASM and JS BVH paths unchanged. New counter `_nHardTestsBatched` in profile output.~~ (2026-05-10)
+- ~~Phase 1.2: Detection profile overlay panel. New state `detectProfile`/`detectProfOpen` listening to `cc-detect-profile` event (already dispatched at `index.html:~4000`). Chip + expandable panel show phase breakdown, hard/soft test counts, memo + pair-cache stats. Gated `(coordinate|review) && diagnostics`.~~ (2026-05-10)
+- ~~Phase 1.3: `_BVH_CACHE_MAX` adaptive to `performance.memory.jsHeapSizeLimit` (5% budget, ~50 KB/BVH, clamped [300, 2500]). Old constant 300 used as floor.~~ (2026-05-10)
+- ~~Phase 2.4: Type-pair impossibility memo, gated by model-unchanged fingerprint. Per-models-key localStorage entry `cc_typePairMemo:<modelsKey>` tracks empty-run counts; pairs at K=3 empty consecutive runs enter `activeMemo` and are skipped at `_processCandidate` entry. Invalidates automatically when model fingerprint (element count + sampled AABBs) or rules hash diverges. 30-day TTL. Manual reset: `window._ccResetTypePairMemo()`.~~ (2026-05-10)
+- ~~Phase 2.5: Pair-result cache for narrow phase. Bounded LRU (50000) `_pairResultCache` keyed by `(mA:eidA|mB:eidB|rulesHash)`. When `rules.changeAware` is on and neither element changed, re-emits cached clash instead of dropping silently. Misses not cached (undefined lookup falls through). Cache cleared per-model in `_clearElCaches` on DEL_MODEL / REPLACE_MODEL. Global reset: `window._ccPairCacheClearForModel(modelId)`.~~ (2026-05-10)
+- ~~Bbox handle normalization. Section-box corner spheres, face arrows, and rotation ring now tagged with `_baseSize`/`_targetPx` at build time; `tick()` rescales `mesh.scale` every frame to maintain a constant pixel footprint regardless of model scale or camera distance. Perspective + ortho both supported.~~ (2026-05-10)
+
+**Sensitive paths from this session (check first if regressions appear):**
+
+| Suspect symptom | Likely culprit | File / line | Quick verify |
+|---|---|---|---|
+| TypeError on mutating element pset | Target A `Object.freeze` on canonicalized psets | `index.html:1707-1746` | Console: `window._ccPsetCacheStats()`; check if mutating code wrote into a frozen pset |
+| Wrong/duplicate AI clash titles | Title cache returning stale entry | `api/title.js` | Response header `X-CC-Title-Cache` shows cache state; clear by serverless cold start or wait 1 h TTL |
+| "Wood looks wrong" / colours differ in Rendered mode | IFC `placed.color` now respected | `index.html:~10218-10266` | Switch to Shaded (uses same colour) and compare; previous behaviour overrode with keyword presets |
+| Click on element doesn't fly anymore | Click-to-fly gating | `index.html:~8419` | Check `s.workspace` and `s.inspectorOpen`; Coordinate always flies, Review only with Inspector open, Present never |
+| Missed clashes that "should" be there | Type-pair memo wrongly skipped | `index.html:_processCandidate` (memo branch) | Run `window._ccResetTypePairMemo()` then re-detect; check `detectProfile.memo_skipped` |
+| Stale/duplicate clashes appearing | Pair-result cache re-emit with bad invalidation | `index.html:_pairResultCache` | Reload model (REPLACE_MODEL hits `_clearElCaches` → cache cleared); or `window._ccPairCacheClearForModel(modelId)` |
+| WASM batch returns wrong hits | Batch path mismatch with single-pair WASM | `index.html:_warmChunkBatch`/`_runBatch` near `_processCandidate` | Disable the batch by setting `window._ccWasmBatchIntersect=null` and re-detect; should fall back cleanly to single-pair |
+| BVH cache eviction thrashing | Adaptive `_BVH_CACHE_MAX` too high for device | `index.html:2931-2942` | Check `detectProfile.bvh_cache_max`; revert to literal `300` if needed |
+| Section handles wrong size after rotate / camera change | Per-frame scale formula assumes default FOV | `tick()` section handle block in `index.html` | Set `mesh.scale.setScalar(1)` on a handle and compare visually |
+
+Plan file: `/root/.claude/plans/i-just-read-about-transient-pnueli.md`.
 
 On branch `claude/improve-walk-mode-tool-gNoMu` (2026-05-05) — walk-mode deep redesign:
 

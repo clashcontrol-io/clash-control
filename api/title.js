@@ -1,11 +1,61 @@
 // ClashControl — AI clash title generation via Gemma 4
-// Batch-generates human-readable titles from clash metadata
+// Batch-generates human-readable titles from clash metadata.
+//
+// Bounded LRU + TTL cache by clash signature: many clashes in a project
+// share (typeA, typeB, clashType) and produce essentially the same title.
+// Caching by signature collapses 1000-clash projects to ~30-50 LLM calls.
+//
+// Memory bounds (so warm serverless instances don't grow unbounded):
+//   * TITLE_CACHE_MAX  — hard cap on entry count (oldest evicted)
+//   * TITLE_CACHE_TTL_MS — soft TTL, expired-on-read entries are deleted
+// Cold starts naturally wipe the cache.
 
 var { cors, llmGuard } = require('./_lib');
 
-// Hard cap so a malicious caller can't pass 10 000 clashes hoping the
-// .slice(0, 20) below silently truncates — fail fast instead.
 var MAX_CLASHES = 50;
+
+var TITLE_CACHE_MAX    = 200;
+var TITLE_CACHE_TTL_MS = 60 * 60 * 1000;
+var _titleCache = new Map();
+
+function _sigForClash(c) {
+  return [
+    c.elemAType || '',
+    c.elemBType || '',
+    c.type || '',
+    c.storey ? '1' : '0'
+  ].join('|');
+}
+
+function _cacheGet(sig) {
+  var v = _titleCache.get(sig);
+  if (!v) return null;
+  if (Date.now() - v.ts > TITLE_CACHE_TTL_MS) {
+    _titleCache.delete(sig);
+    return null;
+  }
+  _titleCache.delete(sig);
+  _titleCache.set(sig, v);
+  return v.entry;
+}
+
+function _cacheSet(sig, entry) {
+  if (_titleCache.size >= TITLE_CACHE_MAX) {
+    var oldest = _titleCache.keys().next().value;
+    if (oldest !== undefined) _titleCache.delete(oldest);
+  }
+  _titleCache.set(sig, { entry: entry, ts: Date.now() });
+}
+
+function _sweepExpired() {
+  if (_titleCache.size < 32) return;
+  var now = Date.now();
+  var toDel = [];
+  _titleCache.forEach(function(v, k) {
+    if (now - v.ts > TITLE_CACHE_TTL_MS) toDel.push(k);
+  });
+  for (var i = 0; i < toDel.length; i++) _titleCache.delete(toDel[i]);
+}
 
 module.exports = async function handler(req, res) {
   if (cors(req, res)) return;
@@ -23,8 +73,34 @@ module.exports = async function handler(req, res) {
     return res.status(413).json({ error: 'too many clashes', maxClashes: MAX_CLASHES });
   }
 
-  // Cap at 20 clashes per batch
+  _sweepExpired();
+
   var clashes = body.clashes.slice(0, 20);
+
+  var cachedTitles = [];
+  var toGenerate = [];
+  var sigByIndex = new Array(clashes.length);
+  for (var i = 0; i < clashes.length; i++) {
+    var c = clashes[i];
+    var sig = _sigForClash(c);
+    sigByIndex[i] = sig;
+    var hit = _cacheGet(sig);
+    if (hit) {
+      cachedTitles.push({
+        id: c.id,
+        title: hit.title,
+        severity: hit.severity,
+        resolution: hit.resolution
+      });
+    } else {
+      toGenerate.push(c);
+    }
+  }
+
+  if (toGenerate.length === 0) {
+    res.setHeader('X-CC-Title-Cache', 'hit:' + cachedTitles.length + '/' + clashes.length);
+    return res.status(200).json({ titles: cachedTitles });
+  }
 
   var prompt = [
     'Generate short, human-readable titles for these BIM clash detections.',
@@ -35,7 +111,7 @@ module.exports = async function handler(req, res) {
     '[{"id":"...","title":"...","severity":"...","resolution":"..."}]',
     '',
     'Clashes:',
-    JSON.stringify(clashes.map(function(c) {
+    JSON.stringify(toGenerate.map(function(c) {
       return {
         id: c.id,
         elemAType: c.elemAType,
@@ -78,19 +154,36 @@ module.exports = async function handler(req, res) {
 
     var text = parts[0].text || '';
 
-    // Parse JSON array from response
+    var generated;
     try {
-      var titles = JSON.parse(text);
-      if (!Array.isArray(titles)) throw new Error('not array');
-      return res.status(200).json({ titles: titles });
+      generated = JSON.parse(text);
+      if (!Array.isArray(generated)) throw new Error('not array');
     } catch (e) {
-      // Try to extract JSON from markdown fences
       var match = text.match(/\[[\s\S]*\]/);
-      if (match) {
-        return res.status(200).json({ titles: JSON.parse(match[0]) });
-      }
-      return res.status(502).json({ error: 'Could not parse AI response' });
+      if (!match) return res.status(502).json({ error: 'Could not parse AI response' });
+      generated = JSON.parse(match[0]);
     }
+
+    var byId = {};
+    for (var gi = 0; gi < generated.length; gi++) {
+      if (generated[gi] && generated[gi].id) byId[String(generated[gi].id)] = generated[gi];
+    }
+    for (var ti = 0; ti < toGenerate.length; ti++) {
+      var tc = toGenerate[ti];
+      var t = byId[String(tc.id)];
+      if (!t) continue;
+      _cacheSet(_sigForClash(tc), {
+        title: t.title,
+        severity: t.severity,
+        resolution: t.resolution
+      });
+    }
+
+    res.setHeader('X-CC-Title-Cache',
+      (cachedTitles.length ? 'partial:' : 'miss:') +
+      cachedTitles.length + '/' + clashes.length);
+    res.setHeader('X-CC-Title-Cache-Size', String(_titleCache.size));
+    return res.status(200).json({ titles: cachedTitles.concat(generated) });
   } catch (e) {
     console.error('Title generation error:', e);
     return res.status(500).json({ error: 'Internal error' });

@@ -882,7 +882,12 @@ function startApp() {
     if (item._groupedElems) item._groupedElems.forEach(function(eid){ refs.push({modelId: null, expressId: eid, role: 'grouped'}); });
     return refs;
   }
-  function _clearElCaches(model) { _bvhLRURemoveModel(model); }
+  function _clearElCaches(model) {
+    _bvhLRURemoveModel(model);
+    if (model && model.id && typeof _pairCacheClearForModel === 'function') {
+      _pairCacheClearForModel(model.id);
+    }
+  }
 
   function reducer(s,a) {
     switch(a.t) {
@@ -1449,6 +1454,7 @@ function startApp() {
   function _geoDeserialize(cached) {
     var isV3 = cached.v >= 3; // v3+ uses quantized positions + oct-encoded normals
     var meshByEid = {};
+    var _tmpMtx4 = new THREE.Matrix4(); // reused across all meshes in this batch
     var meshes = cached.meshData.map(function(md) {
       var geo = new THREE.BufferGeometry();
       if (isV3 && md.qpos) {
@@ -1464,7 +1470,7 @@ function startApp() {
       var c = md.col;
       var mat = new THREE.MeshPhongMaterial({color:new THREE.Color(c[0],c[1],c[2]), opacity:c[3], transparent:!!md.tr, side:THREE.DoubleSide});
       var mesh = new THREE.Mesh(geo, mat);
-      mesh.applyMatrix4(new THREE.Matrix4().fromArray(md.mtx));
+      mesh.applyMatrix4(_tmpMtx4.fromArray(md.mtx));
       mesh.userData.expressId = md.eid;
       _ccBakeMesh(mesh);
       if(!meshByEid[md.eid]) meshByEid[md.eid] = [];
@@ -1690,6 +1696,63 @@ function startApp() {
     return null;
   }
 
+  // ── Pset / Quantities canonicalization ─────────────────────────
+  // Many IFC elements share byte-identical property sets — every wall of a
+  // type carries the same Pset_WallCommon, every column the same Pset_ColumnCommon,
+  // etc. In a 50k-element model with ~50 unique signatures, naive storage
+  // allocates ~50k pset objects where ~50 would do.
+  //
+  // We canonicalize twice: once on each inner pset (high-frequency hits) and
+  // once on the outer container (full combination). Frozen objects are returned
+  // as-is — that's our marker for "already canonical, don't re-hash".
+  // Caches live on window so they survive across model loads in the same
+  // session; re-loading a model finds the same canonical refs.
+  var _ccPsetCanonCache  = window._ccPsetCanonCache  || (window._ccPsetCanonCache  = new Map());
+  var _ccPsetInnerCache  = window._ccPsetInnerCache  || (window._ccPsetInnerCache  = new Map());
+  var _ccQtoCanonCache   = window._ccQtoCanonCache   || (window._ccQtoCanonCache   = new Map());
+  function _ccStableJSON(o) {
+    if (o === null || typeof o !== 'object') return JSON.stringify(o);
+    if (Array.isArray(o)) {
+      var arr = ''; for (var i = 0; i < o.length; i++) { if (i) arr += ','; arr += _ccStableJSON(o[i]); }
+      return '[' + arr + ']';
+    }
+    var keys = Object.keys(o); keys.sort();
+    var out = ''; for (var i = 0; i < keys.length; i++) { if (i) out += ','; out += JSON.stringify(keys[i]) + ':' + _ccStableJSON(o[keys[i]]); }
+    return '{' + out + '}';
+  }
+  function _ccCanonOne(obj, cache) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+    if (Object.isFrozen(obj)) return obj;
+    var key = _ccStableJSON(obj);
+    var hit = cache.get(key);
+    if (hit) return hit;
+    Object.freeze(obj);
+    cache.set(key, obj);
+    return obj;
+  }
+  function _ccCanonPsets(psets) {
+    if (!psets || typeof psets !== 'object') return psets;
+    if (Object.isFrozen(psets)) return psets;
+    var keys = Object.keys(psets);
+    for (var i = 0; i < keys.length; i++) {
+      psets[keys[i]] = _ccCanonOne(psets[keys[i]], _ccPsetInnerCache);
+    }
+    return _ccCanonOne(psets, _ccPsetCanonCache);
+  }
+  function _ccCanonQuantities(qto) {
+    return _ccCanonOne(qto, _ccQtoCanonCache);
+  }
+  function _ccPsetCacheStats() {
+    return {
+      psetContainers: _ccPsetCanonCache.size,
+      psetInner:      _ccPsetInnerCache.size,
+      quantities:     _ccQtoCanonCache.size
+    };
+  }
+  window._ccCanonPsets = _ccCanonPsets;
+  window._ccCanonQuantities = _ccCanonQuantities;
+  window._ccPsetCacheStats = _ccPsetCacheStats;
+
   function extractProperties(api, modelID, expressID) {
     var props = {expressId:expressID, globalId:'', ifcType:'', name:'', description:'', objectType:'', storey:'', storeyId:null, material:'', quantities:{}, psets:{}};
     try {
@@ -1858,6 +1921,10 @@ function startApp() {
 
   function buildMaterialMap(api, modelID) {
     var matMap = {};
+    // Many IfcRelAssociatesMaterial rows reference the same IfcMaterial /
+    // IfcMaterialLayerSet — resolveMaterialName walks deep relation chains
+    // for each. Cache by matRef so we walk each material once.
+    var _matNameCache = {};
     try {
       var relIds = api.GetLineIDsWithType(modelID, IFC.IFCRELASSOCIATESMATERIAL);
       for (var i = 0; i < relIds.size(); i++) {
@@ -1865,8 +1932,12 @@ function startApp() {
           var rel = api.GetLine(modelID, relIds.get(i));
           var matRef = rel.RelatingMaterial ? (rel.RelatingMaterial.value||rel.RelatingMaterial) : null;
           if (!matRef) continue;
-          var mat = api.GetLine(modelID, matRef);
-          var matName = resolveMaterialName(api, modelID, mat);
+          var matName = _matNameCache[matRef];
+          if (matName === undefined) {
+            var mat = api.GetLine(modelID, matRef);
+            matName = resolveMaterialName(api, modelID, mat) || '';
+            _matNameCache[matRef] = matName;
+          }
           if (!matName) continue;
           var objs = rel.RelatedObjects || [];
           for (var j = 0; j < objs.length; j++) {
@@ -2176,6 +2247,7 @@ function startApp() {
       var matCache = {}; // material dedup: "r,g,b,a" → MeshPhongMaterial
       var geoCache = {}; // geometryExpressID → BufferGeometry (shared across identical elements)
       var _geoReused = 0;
+      var _tmpMtx4 = new THREE.Matrix4(); // reused per placement to avoid 5k-50k allocations per load
       var _estTotal = Math.max(500, Math.round(buffer.byteLength / 500));
       var _streamCount = 0;
       api.StreamAllMeshes(modelID, function(ifcMesh) {
@@ -2216,7 +2288,7 @@ function startApp() {
             var mat = matCache[matKey];
             if (!mat) { mat = new THREE.MeshPhongMaterial({ color:col, opacity:c?c.w:1, transparent:c?c.w<0.99:false, side:THREE.DoubleSide }); matCache[matKey] = mat; }
             var mesh = new THREE.Mesh(geo, mat);
-            mesh.applyMatrix4(new THREE.Matrix4().fromArray(placed.flatTransformation));
+            mesh.applyMatrix4(_tmpMtx4.fromArray(placed.flatTransformation));
             mesh.userData.expressId = expressID;
             mesh.userData._ifcMaterial = matMap[expressID] || '';
             elBox.expandByObject(mesh);
@@ -2231,7 +2303,7 @@ function startApp() {
           elProps.storey = storeyMap[expressID] || '';
           elProps.material = matMap[expressID] || '';
           var pm = propMap[expressID];
-          if (pm) { elProps.quantities = pm.quantities; elProps.psets = pm.psets; }
+          if (pm) { elProps.quantities = _ccCanonQuantities(pm.quantities); elProps.psets = _ccCanonPsets(pm.psets); }
           rawElements.push({expressId:expressID, meshes:elMeshes, box:elBox.clone(), props:elProps});
         }
       });
@@ -2253,7 +2325,7 @@ function startApp() {
             _rprops.storey = storeyMap[_reid] || '';
             _rprops.material = matMap[_reid] || '';
             var _rpm = propMap[_reid];
-            if (_rpm) { _rprops.quantities = _rpm.quantities; _rprops.psets = _rpm.psets; }
+            if (_rpm) { _rprops.quantities = _ccCanonQuantities(_rpm.quantities); _rprops.psets = _ccCanonPsets(_rpm.psets); }
             rawElements.push({expressId:_reid, meshes:[], box:new THREE.Box3(), props:_rprops});
           }
         } catch(e) { console.warn('[IFC] Re-add pass failed for ' + _reAddNames[_rti] + ':', e); }
@@ -2298,7 +2370,8 @@ function startApp() {
                 prev = ph[name];
               });
               rows.push({Phase: 'TOTAL', Time: loadTime+'ms', 'Pct': '100%', 'Cumulative': loadTime+'ms'});
-              console.groupCollapsed('%c[IFC Load Profile] ' + elements.length + ' elements · ' + (buffer.byteLength/1024/1024).toFixed(1) + ' MB · ' + loadTime + 'ms total · geo dedup: ' + _geoUnique + ' unique / ' + (_geoUnique+_geoReused) + ' total (' + _geoReused + ' reused)', 'color:#38bdf8;font-weight:bold');
+              var _psetStats = _ccPsetCacheStats();
+              console.groupCollapsed('%c[IFC Load Profile] ' + elements.length + ' elements · ' + (buffer.byteLength/1024/1024).toFixed(1) + ' MB · ' + loadTime + 'ms total · geo dedup: ' + _geoUnique + ' unique / ' + (_geoUnique+_geoReused) + ' total (' + _geoReused + ' reused) · pset dedup: ' + _psetStats.psetContainers + ' containers / ' + _psetStats.psetInner + ' inner / ' + _psetStats.quantities + ' qto', 'color:#38bdf8;font-weight:bold');
               console.table(rows);
               console.groupEnd();
               window._ccLoadProfile = rows;
@@ -2327,8 +2400,8 @@ function startApp() {
       var el = model.elements[i];
       var pm = propMap[el.expressId];
       if (pm) {
-        if (pm.quantities) el.props.quantities = pm.quantities;
-        if (pm.psets)      el.props.psets      = pm.psets;
+        if (pm.quantities) el.props.quantities = _ccCanonQuantities(pm.quantities);
+        if (pm.psets)      el.props.psets      = _ccCanonPsets(pm.psets);
         merged++;
       }
     }
@@ -2497,7 +2570,7 @@ function startApp() {
             elProps.storey = storeyMap[eid] || '';
             elProps.material = matMap[eid] || '';
             var pm = propMap[eid];
-            if (pm) { elProps.quantities = pm.quantities; elProps.psets = pm.psets; }
+            if (pm) { elProps.quantities = _ccCanonQuantities(pm.quantities); elProps.psets = _ccCanonPsets(pm.psets); }
             _tProps += performance.now() - _tP;
             rawEls.push({expressId:eid, geos:geos, props:elProps});
           }
@@ -2616,6 +2689,7 @@ function startApp() {
 
           var _tGeoBuild = 0, _tMesh = 0, _tBBox = 0;
           var _sbStart = performance.now();
+          var _tmpMtx4 = new THREE.Matrix4(); // reused per placement to avoid 5k-50k allocations per load
 
           for (var i = 0; i < rawEls.length; i++) {
             var raw = rawEls[i];
@@ -2645,7 +2719,7 @@ function startApp() {
               var mat = matCache[matKey];
               if (!mat) { mat = new THREE.MeshPhongMaterial({color:col, opacity:c?c.a:1, transparent:c?c.a<0.99:false, side:THREE.DoubleSide}); matCache[matKey] = mat; }
               var mesh = new THREE.Mesh(geo, mat);
-              mesh.applyMatrix4(new THREE.Matrix4().fromArray(gData.tf));
+              mesh.applyMatrix4(_tmpMtx4.fromArray(gData.tf));
               mesh.userData.expressId = raw.expressId;
               mesh.userData._ifcMaterial = (raw.props && raw.props.material) || '';
               _ccBakeMesh(mesh);
@@ -2657,6 +2731,10 @@ function startApp() {
               elMeshes.push(mesh); meshes.push(mesh);
             }
             if (elMeshes.length > 0) {
+              if (raw.props) {
+                if (raw.props.psets)      raw.props.psets      = _ccCanonPsets(raw.props.psets);
+                if (raw.props.quantities) raw.props.quantities = _ccCanonQuantities(raw.props.quantities);
+              }
               elements.push({expressId:raw.expressId, meshes:elMeshes, box:elBox, props:raw.props});
             }
           }
@@ -2701,7 +2779,8 @@ function startApp() {
               }
             });
             rows.push({Phase: 'TOTAL', Time: loadTime+'ms', Pct: '100%', Cumulative: loadTime+'ms'});
-            console.groupCollapsed('%c[IFC Load Profile · Worker] ' + elements.length + ' elements · ' + (msg.fileSize/1024/1024).toFixed(1) + ' MB · ' + loadTime + 'ms total · geo dedup: ' + _gu + ' unique / ' + (_gu+_gr) + ' total (' + _gr + ' reused)', 'color:#38bdf8;font-weight:bold');
+            var _wPsetStats = _ccPsetCacheStats();
+            console.groupCollapsed('%c[IFC Load Profile · Worker] ' + elements.length + ' elements · ' + (msg.fileSize/1024/1024).toFixed(1) + ' MB · ' + loadTime + 'ms total · geo dedup: ' + _gu + ' unique / ' + (_gu+_gr) + ' total (' + _gr + ' reused) · pset dedup: ' + _wPsetStats.psetContainers + ' containers / ' + _wPsetStats.psetInner + ' inner / ' + _wPsetStats.quantities + ' qto', 'color:#38bdf8;font-weight:bold');
             console.table(rows);
             console.groupEnd();
             window._ccLoadProfile = rows;
@@ -2738,6 +2817,101 @@ function startApp() {
     return [el.expressId, b.min.x.toFixed(3), b.min.y.toFixed(3), b.min.z.toFixed(3),
             b.max.x.toFixed(3), b.max.y.toFixed(3), b.max.z.toFixed(3)].join('|');
   }
+
+  // ── Type-pair impossibility memo ────────────────────────────────
+  // Per-set-of-loaded-models record of which (typeA, typeB) IFC type pairs
+  // have produced zero clashes for K consecutive runs. Skipped at
+  // _processCandidate entry to avoid testing pairs that historically
+  // never clash (e.g. IfcWall × IfcSpace).
+  //
+  // Gated by an unchanged-model fingerprint: any geometric edit or load
+  // change invalidates the memo, falling back to full testing.
+  var _TP_MEMO_EMPTY_RUNS_THRESHOLD = 3;
+  var _TP_MEMO_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+  function _tpMemoModelsKey(models) {
+    return models.map(function(m){ return m.id; }).sort().join('|');
+  }
+  function _tpModelFingerprint(models) {
+    // Sums element count + sampled AABB extents per model. Stable under
+    // re-runs without edits; perturbed by any non-trivial geometric change.
+    var parts = [];
+    models.forEach(function(m) {
+      var els = m.elements || [];
+      var n = els.length, sx = 0, sy = 0, sz = 0;
+      var k = Math.min(els.length, 200);
+      for (var i = 0; i < k; i++) {
+        var el = els[i];
+        if (!el || !el.box) continue;
+        sx += el.box.max.x - el.box.min.x;
+        sy += el.box.max.y - el.box.min.y;
+        sz += el.box.max.z - el.box.min.z;
+      }
+      parts.push(m.id + ':' + n + ':' + sx.toFixed(2) + ':' + sy.toFixed(2) + ':' + sz.toFixed(2));
+    });
+    parts.sort();
+    return parts.join('|');
+  }
+  function _tpMemoLoad(modelsKey) {
+    if (!modelsKey) return null;
+    try {
+      var raw = localStorage.getItem('cc_typePairMemo:' + modelsKey);
+      if (!raw) return null;
+      var memo = JSON.parse(raw);
+      if (Date.now() - (memo.ts || 0) > _TP_MEMO_TTL_MS) return null;
+      return memo;
+    } catch (e) { return null; }
+  }
+  function _tpMemoSave(modelsKey, memo) {
+    if (!modelsKey) return;
+    try {
+      memo.ts = Date.now();
+      localStorage.setItem('cc_typePairMemo:' + modelsKey, JSON.stringify(memo));
+    } catch (e) {}
+  }
+  function _tpPairKey(a, b) {
+    return a < b ? a + ':' + b : b + ':' + a;
+  }
+  window._ccResetTypePairMemo = function(models) {
+    var key = _tpMemoModelsKey(models || (window._ccLatestState && window._ccLatestState.models) || []);
+    try { localStorage.removeItem('cc_typePairMemo:' + key); } catch(e) {}
+  };
+
+  // ── Pair-result cache (narrow-phase) ────────────────────────────
+  // Stores clash objects from previous detection runs, keyed by
+  // (mA:eidA | mB:eidB | rulesHash). When changeAware is on and neither
+  // element changed since last run, re-emit the cached clash instead of
+  // dropping it silently (the legacy changeAware behaviour). Misses are
+  // not cached — undefined lookup falls through naturally.
+  var _PAIR_CACHE_MAX = 50000;
+  var _pairResultCache = new Map();
+  function _pairKey(mA, eA, mB, eB) {
+    return mA.id + ':' + eA.expressId + '|' + mB.id + ':' + eB.expressId;
+  }
+  function _pairCacheGet(pk, rulesHash) {
+    var v = _pairResultCache.get(pk);
+    if (!v || v.rulesHash !== rulesHash) return undefined;
+    _pairResultCache.delete(pk); _pairResultCache.set(pk, v);
+    return v.clash;
+  }
+  function _pairCacheSet(pk, rulesHash, clash) {
+    if (!clash) return;
+    if (_pairResultCache.size >= _PAIR_CACHE_MAX) {
+      var oldest = _pairResultCache.keys().next().value;
+      if (oldest !== undefined) _pairResultCache.delete(oldest);
+    }
+    _pairResultCache.set(pk, { clash: clash, rulesHash: rulesHash });
+  }
+  function _pairCacheClearForModel(modelId) {
+    if (!modelId) return;
+    var prefix1 = modelId + ':';
+    var midToken = '|' + modelId + ':';
+    var toDel = [];
+    _pairResultCache.forEach(function(_, k) {
+      if (k.indexOf(prefix1) === 0 || k.indexOf(midToken) !== -1) toDel.push(k);
+    });
+    for (var i = 0; i < toDel.length; i++) _pairResultCache.delete(toDel[i]);
+  }
+  window._ccPairCacheClearForModel = _pairCacheClearForModel;
 
   // ── Geometry-accurate narrow-phase clash detection ──────────────
 
@@ -2864,7 +3038,20 @@ function startApp() {
   // re-runs on the same model don't rebuild. A Map preserves insertion order,
   // so delete+set gives O(1) move-to-end (LRU touch) and keys().next() gives
   // O(1) eviction of the oldest entry.
-  var _BVH_CACHE_MAX = 300;
+  //
+  // Cap is adaptive to available heap when the runtime exposes it (Chromium).
+  // Average BVH is ~50 KB; we allow ~5 % of the heap budget, clamped to
+  // [300, 2500] so small devices stay safe and big workstations don't thrash.
+  var _BVH_CACHE_MAX = (function() {
+    try {
+      var m = (typeof performance !== 'undefined') && performance.memory;
+      if (m && m.jsHeapSizeLimit) {
+        var budget = Math.floor(m.jsHeapSizeLimit * 0.05 / (50 * 1024));
+        return Math.max(300, Math.min(2500, budget));
+      }
+    } catch (e) {}
+    return 300;
+  })();
   var _bvhLRU = new Map(); // element → true, insertion-ordered
 
   function _bvhLRUTouch(el) {
@@ -3553,6 +3740,21 @@ function startApp() {
       });
     }
 
+    // ── Phase 2.4 / 2.5 caches: type-pair memo + pair-result cache ──
+    // Both stay null/no-op when their gating conditions don't hold so
+    // legacy detection paths are unaffected.
+    var _curRulesHash = (function(){ try { return _ccStableJSON(rules); } catch(e){ return ''; } })();
+    var _modelsKey = _tpMemoModelsKey(models);
+    var _curFingerprint = _tpModelFingerprint(models);
+    var _tpMemoBefore = _tpMemoLoad(_modelsKey);
+    var _tpMemoApplied = !!(_tpMemoBefore &&
+                            _tpMemoBefore.modelFingerprint === _curFingerprint &&
+                            _tpMemoBefore.rulesHash === _curRulesHash &&
+                            _tpMemoBefore.activeMemo && _tpMemoBefore.activeMemo.length > 0);
+    var _activeMemoSet = _tpMemoApplied ? new Set(_tpMemoBefore.activeMemo) : null;
+    var _nMemoSkipped = 0;
+    var _nPairCacheReemit = 0;
+
     var _exPairSet = {};
     if (rules.excludeTypePairs && rules.excludeTypePairs.length) {
       rules.excludeTypePairs.forEach(function(p) { _exPairSet[p] = true; });
@@ -3571,19 +3773,136 @@ function startApp() {
     _phase(candidates.length.toLocaleString() + ' pairs to test');
 
     // ── Per-candidate timing accumulators ─────────────────────────
-    var _tHard = 0, _tSoft = 0, _tFilters = 0, _nHardTests = 0, _nSoftTests = 0;
+    var _tHard = 0, _tSoft = 0, _tFilters = 0, _nHardTests = 0, _nSoftTests = 0, _nHardTestsBatched = 0;
+
+    // ── WASM batch hard-clash warmup ──────────────────────────────
+    // For each chunk we group surviving candidates by elA and call
+    // _ccWasmBatchIntersect once per group, instead of N JS↔WASM calls.
+    // The cache is per-chunk: built fresh, consulted inside
+    // _processCandidate, freed at chunk end. Map values:
+    //   [cx,cy,cz,depth]  → hit
+    //   null              → batched, confirmed miss
+    //   absent            → not batched (small group / no WASM): fall through
+    var _chunkBatchCache = null;
+    var _BATCH_MIN_GROUP = 4;        // groups smaller than this stay per-pair
+    var _BATCH_MAX_TRIS = 1500000;   // soft cap on triangles per WASM call
+
+    function _warmChunkBatch(startIdx, endIdx) {
+      if (!rules.hard) return;
+      if (typeof window._ccWasmBatchIntersect !== 'function') return;
+      if (typeof window._ccWasmReady === 'function' && !window._ccWasmReady()) return;
+
+      // Group by elA. Pre-filter pairs we'd skip anyway so the batch
+      // doesn't waste cycles on pairs that won't be tested.
+      var groups = new Map();
+      for (var i = startIdx; i < endIdx; i++) {
+        var c = candidates[i];
+        if (rules.changeAware &&
+            !changedElements[c.mA.id+':'+c.eA.expressId] &&
+            !changedElements[c.mB.id+':'+c.eB.expressId]) continue;
+        if (_exPairSet && c.eA.props && c.eB.props && c.eA.props.ifcType && c.eB.props.ifcType) {
+          var _ek = c.eA.props.ifcType < c.eB.props.ifcType ? c.eA.props.ifcType+':'+c.eB.props.ifcType : c.eB.props.ifcType+':'+c.eA.props.ifcType;
+          if (_exPairSet[_ek]) continue;
+        }
+        var gkey = c.mA.id + ':' + c.eA.expressId;
+        var g = groups.get(gkey);
+        if (!g) { g = { eA:c.eA, mA:c.mA, items:[] }; groups.set(gkey, g); }
+        g.items.push({ eB:c.eB, mB:c.mB });
+      }
+
+      groups.forEach(function(g) {
+        if (g.items.length < _BATCH_MIN_GROUP) return;
+        var trisA = _getWorldTris(g.eA);
+        if (!trisA || !trisA.length) return;
+
+        // Build (allTris, offsets) sub-batches respecting _BATCH_MAX_TRIS
+        var sub = [];
+        var subTotal = 0;
+        for (var i = 0; i < g.items.length; i++) {
+          var trisB = _getWorldTris(g.items[i].eB);
+          if (!trisB || !trisB.length) continue;
+          // If adding this would blow the cap, flush current sub first
+          if (sub.length >= _BATCH_MIN_GROUP && (subTotal + trisB.length) > _BATCH_MAX_TRIS) {
+            _runBatch(g, sub);
+            sub = []; subTotal = 0;
+          }
+          sub.push({ orig:i, tris:trisB });
+          subTotal += trisB.length;
+        }
+        if (sub.length >= _BATCH_MIN_GROUP) _runBatch(g, sub);
+      });
+    }
+
+    function _runBatch(group, valid) {
+      var trisA = _getWorldTris(group.eA);
+      if (!trisA) return;
+      var total = 0;
+      for (var i = 0; i < valid.length; i++) total += valid[i].tris.length;
+      var allTris = new Float32Array(total);
+      var offsets = new Uint32Array(valid.length * 2);
+      var off = 0;
+      for (var i = 0; i < valid.length; i++) {
+        allTris.set(valid[i].tris, off);
+        offsets[i*2]   = off;
+        offsets[i*2+1] = off + valid[i].tris.length;
+        off += valid[i].tris.length;
+      }
+      var hits;
+      try { hits = window._ccWasmBatchIntersect(trisA, allTris, offsets); }
+      catch(e) { return; } // bail this sub; single-pair fallback will run
+
+      // Populate cache for every valid item — hits AND confirmed misses.
+      var hitByIdx = {};
+      if (hits && hits.length) {
+        for (var h = 0; h < hits.length; h++) {
+          var hi = hits[h];
+          if (hi && hi.meshIdx >= 0 && hi.meshIdx < valid.length) {
+            hitByIdx[hi.meshIdx] = [hi.point[0], hi.point[1], hi.point[2], hi.depth];
+          }
+        }
+      }
+      for (var i = 0; i < valid.length; i++) {
+        var origIdx = valid[i].orig;
+        var pk = group.mA.id + ':' + group.eA.expressId + '|' +
+                 group.items[origIdx].mB.id + ':' + group.items[origIdx].eB.expressId;
+        _chunkBatchCache.set(pk, hitByIdx[i] || null);
+      }
+    }
 
     // ── Process candidate pairs (chunkable) ───────────────────────
     function _processCandidate(pair) {
       var eA=pair.eA, mA=pair.mA, eB=pair.eB, mB=pair.mB, sameModel=pair.sameModel;
 
+      // ── Pair-result cache (Phase 2.5) ────────────────────────────
+      // When changeAware is on and neither element has changed since the
+      // last run, re-emit the cached clash (if any) instead of dropping
+      // the pair silently. The legacy changeAware skip is preserved when
+      // the pair was a miss (cache returns undefined → no re-emit).
       if (rules.changeAware &&
           !changedElements[mA.id+':'+eA.expressId] &&
-          !changedElements[mB.id+':'+eB.expressId]) return;
+          !changedElements[mB.id+':'+eB.expressId]) {
+        var _cachedClash = _pairCacheGet(_pairKey(mA, eA, mB, eB), _curRulesHash);
+        if (_cachedClash) {
+          clashes.push(_cachedClash);
+          _nPairCacheReemit++;
+        }
+        return;
+      }
 
       if (_exPairSet && eA.props && eB.props && eA.props.ifcType && eB.props.ifcType) {
         var _epKey = eA.props.ifcType < eB.props.ifcType ? eA.props.ifcType+':'+eB.props.ifcType : eB.props.ifcType+':'+eA.props.ifcType;
         if (_exPairSet[_epKey]) return;
+      }
+
+      // ── Type-pair impossibility memo (Phase 2.4) ────────────────
+      // Active only when the model fingerprint + rules hash both match
+      // the snapshot when the memo was built — any geometric change
+      // invalidates it automatically (memo not applied, just rebuilt).
+      if (_activeMemoSet && eA.props && eB.props && eA.props.ifcType && eB.props.ifcType) {
+        if (_activeMemoSet.has(_tpPairKey(eA.props.ifcType, eB.props.ifcType))) {
+          _nMemoSkipped++;
+          return;
+        }
       }
 
       var bA=eA.box, bB=eB.box;
@@ -3666,7 +3985,16 @@ function startApp() {
         } catch(e) {}
       }
       var _t1 = performance.now();
-      if (rules.hard && !_semanticSkipHard) { hardPt = _meshesIntersect(eA, eB); _nHardTests++; }
+      if (rules.hard && !_semanticSkipHard) {
+        var _bpk = _chunkBatchCache && (mA.id + ':' + eA.expressId + '|' + mB.id + ':' + eB.expressId);
+        if (_bpk && _chunkBatchCache.has(_bpk)) {
+          hardPt = _chunkBatchCache.get(_bpk) || false;
+          _nHardTestsBatched++;
+        } else {
+          hardPt = _meshesIntersect(eA, eB);
+          _nHardTests++;
+        }
+      }
       _tHard += performance.now() - _t1;
       if (hardPt && rules.minOverlapVolM3 > 0) {
         if (_aabbOverlap(bA, bB).vol < rules.minOverlapVolM3) hardPt = false;
@@ -3754,6 +4082,47 @@ function startApp() {
     // ── Finalize results after all candidates processed ───────────
     function _finalize() {
     if (rules.changeAware) _prevElementHashes = newHashes;
+
+    // ── Update type-pair memo (Phase 2.4) ──────────────────────────
+    // Increment empty-run counter for type-pairs that produced zero
+    // clashes; reset for those that did. Pairs reaching the threshold
+    // join activeMemo and will be skipped on the next matching run.
+    try {
+      var _pairCountThisRun = {};
+      clashes.forEach(function(c) {
+        if (!c.elemAType || !c.elemBType) return;
+        var k = _tpPairKey(c.elemAType, c.elemBType);
+        _pairCountThisRun[k] = (_pairCountThisRun[k] || 0) + 1;
+      });
+      var _observedPairs = new Set();
+      for (var ci = 0; ci < candidates.length; ci++) {
+        var p = candidates[ci];
+        if (!p.eA.props || !p.eB.props || !p.eA.props.ifcType || !p.eB.props.ifcType) continue;
+        _observedPairs.add(_tpPairKey(p.eA.props.ifcType, p.eB.props.ifcType));
+      }
+      var _memoNext;
+      if (_tpMemoBefore && _tpMemoBefore.modelFingerprint === _curFingerprint && _tpMemoBefore.rulesHash === _curRulesHash) {
+        _memoNext = { modelFingerprint: _curFingerprint, rulesHash: _curRulesHash,
+                      emptyRunCount: Object.assign({}, _tpMemoBefore.emptyRunCount || {}),
+                      activeMemo: [] };
+      } else {
+        _memoNext = { modelFingerprint: _curFingerprint, rulesHash: _curRulesHash,
+                      emptyRunCount: {}, activeMemo: [] };
+      }
+      _observedPairs.forEach(function(tp) {
+        if (_pairCountThisRun[tp]) {
+          delete _memoNext.emptyRunCount[tp];
+        } else {
+          _memoNext.emptyRunCount[tp] = (_memoNext.emptyRunCount[tp] || 0) + 1;
+        }
+      });
+      Object.keys(_memoNext.emptyRunCount).forEach(function(tp) {
+        if (_memoNext.emptyRunCount[tp] >= _TP_MEMO_EMPTY_RUNS_THRESHOLD) {
+          _memoNext.activeMemo.push(tp);
+        }
+      });
+      _tpMemoSave(_modelsKey, _memoNext);
+    } catch(e) { console.warn('[Detect] type-pair memo update failed:', e.message||e); }
 
     // ── Merge related clashes (IFC segment grouping) ─────────────
     var merged = [];
@@ -3883,9 +4252,25 @@ function startApp() {
       candidates: _prof._nCandidates,
       elements: _prof._nElements,
       hard_tests: _nHardTests,
+      hard_tests_batched: _nHardTestsBatched,
       soft_tests: _nSoftTests,
+      memo_skipped: _nMemoSkipped,
+      memo_active_pairs: _activeMemoSet ? _activeMemoSet.size : 0,
+      pair_cache_reemits: _nPairCacheReemit,
+      pair_cache_size: _pairResultCache.size,
+      bvh_cache_max: _BVH_CACHE_MAX,
       clashes_found: merged.length
     };
+    // Attach the just-computed profile to the most-recent run entry in the
+    // detection-runs history (already saved above). Purely additive: if the
+    // history wasn't written or is malformed, this no-ops.
+    try {
+      var _runsForProf = JSON.parse(localStorage.getItem('cc_detection_runs')||'[]');
+      if (_runsForProf.length > 0) {
+        _runsForProf[_runsForProf.length - 1].profile = profile;
+        localStorage.setItem('cc_detection_runs', JSON.stringify(_runsForProf));
+      }
+    } catch(e) {}
     var _pcts = {};
     ['sweep_and_prune_ms','bvh_build_ms','hard_clash_ms','soft_clash_ms','merge_and_post_ms'].forEach(function(k){
       _pcts[k.replace('_ms','')] = _totalMs>0 ? Math.round(profile[k]/_totalMs*100)+'%' : '0%';
@@ -3896,7 +4281,7 @@ function startApp() {
       console.table([
         {Phase:'Sweep & Prune',    Time:profile.sweep_and_prune_ms+'ms', Pct:_pcts.sweep_and_prune, Detail:profile.elements+' elements → '+profile.candidates+' candidates'},
         {Phase:'BVH Build',        Time:profile.bvh_build_ms+'ms',       Pct:_pcts.bvh_build,       Detail:profile.elements+' element BVHs'},
-        {Phase:'Hard Clash Tests', Time:profile.hard_clash_ms+'ms',      Pct:_pcts.hard_clash,      Detail:profile.hard_tests+' tri-tri tests'},
+        {Phase:'Hard Clash Tests', Time:profile.hard_clash_ms+'ms',      Pct:_pcts.hard_clash,      Detail:profile.hard_tests+' single + '+profile.hard_tests_batched+' batched'},
         {Phase:'Soft Clash Tests', Time:profile.soft_clash_ms+'ms',      Pct:_pcts.soft_clash,      Detail:profile.soft_tests+' spatial hash queries'},
         {Phase:'Merge & Post',     Time:profile.merge_and_post_ms+'ms',  Pct:_pcts.merge_and_post,  Detail:merged.length+' clashes after merge'},
         {Phase:'TOTAL',            Time:profile.total_ms+'ms',           Pct:'100%',                Detail:''}
@@ -3911,11 +4296,18 @@ function startApp() {
     // ── Chunked execution: process candidates in batches ──────────
     var totalCandidates = candidates.length;
     if (totalCandidates <= _DETECT_CHUNK_SIZE || !resolveAsync) {
+      _chunkBatchCache = new Map();
+      _warmChunkBatch(0, totalCandidates);
       for (var si=0; si<totalCandidates; si++) {
         var _sc=candidates[si];
         _getBVH(_sc.eA); _getBVH(_sc.eB);
+        var _cBefore = clashes.length;
         _processCandidate(_sc);
+        if (clashes.length > _cBefore) {
+          _pairCacheSet(_pairKey(_sc.mA, _sc.eA, _sc.mB, _sc.eB), _curRulesHash, clashes[clashes.length - 1]);
+        }
       }
+      _chunkBatchCache = null;
       return _finalize();
     }
     _phase('Testing intersections');
@@ -3933,7 +4325,19 @@ function startApp() {
         if (!_chunkEls[_kB]) { _chunkEls[_kB]=_cp.eB; _getBVH(_cp.eB); }
       }
       _prof._nElements += Object.keys(_chunkEls).length;
-      for (var i=chunkIdx; i<end; i++) { try { _processCandidate(candidates[i]); } catch(e) { /* skip bad candidate */ } }
+      _chunkBatchCache = new Map();
+      _warmChunkBatch(chunkIdx, end);
+      for (var i=chunkIdx; i<end; i++) {
+        try {
+          var _cp2 = candidates[i];
+          var _cBef = clashes.length;
+          _processCandidate(_cp2);
+          if (clashes.length > _cBef) {
+            _pairCacheSet(_pairKey(_cp2.mA, _cp2.eA, _cp2.mB, _cp2.eB), _curRulesHash, clashes[clashes.length - 1]);
+          }
+        } catch(e) { /* skip bad candidate */ }
+      }
+      _chunkBatchCache = null;
       chunkIdx = end;
       if (onProgress) onProgress(chunkIdx, totalCandidates);
       if (chunkIdx < totalCandidates) {
@@ -5230,6 +5634,10 @@ function startApp() {
     commentModeRef.current = s.commentMode;
     var commentsRef = useRef(s.comments);
     commentsRef.current = s.comments;
+    var workspaceRef = useRef(s.workspace);
+    workspaceRef.current = s.workspace;
+    var inspectorOpenRef = useRef(s.inspectorOpen);
+    inspectorOpenRef.current = s.inspectorOpen;
 
     useEffect(function() {
       var el = ref.current; if(!el) return;
@@ -8342,7 +8750,15 @@ function startApp() {
             setSelectedEl(found ? {props:found.el.props||{}, modelName:found.model.name, expressId:eid, point:hitPt, box:hitBox, normal:hitNormal} : {props:{expressId:eid}, modelName:'Unknown', expressId:eid, point:hitPt, box:hitBox, normal:hitNormal});
             window.dispatchEvent(new CustomEvent('cc-element-selected'));
             if(outlineRef.current){scene.remove(outlineRef.current);outlineRef.current=null;}
-            if(prefsRef.current.autoFlyTo!==false && _flyTo) {
+            // Workspace gating for click-to-fly:
+            //   present    → never (read-only walkthrough; framing fights the user)
+            //   review     → only when the right-side Inspector is open
+            //                (otherwise the click is just a selection action)
+            //   coordinate → always (legacy behaviour; coordination needs framing)
+            var _wsFly = workspaceRef.current || 'present';
+            var _flyAllowed = (_wsFly === 'coordinate')
+              || (_wsFly === 'review' && inspectorOpenRef.current);
+            if(_flyAllowed && prefsRef.current.autoFlyTo!==false && _flyTo) {
               var elSz = hitBox.getSize(new THREE.Vector3());
               _flyTo(hitPt, _zoomDist(Math.max(elSz.x,elSz.y,elSz.z)), hitNormal ? {normal:hitNormal} : null);
             }
@@ -8745,6 +9161,36 @@ function startApp() {
         if (_orbitDragging || window._ccSectionDragging) invalidate(2);
         if(_needsRender <= 0) return;
         _needsRender--;
+
+        // ── Normalize section-box handle sizes to a constant pixel size ──
+        // Without this, handles built at world scale ~maxDim*0.01 look
+        // disproportionately large on big models and tiny on small ones.
+        // Re-scales every frame so each tagged handle keeps its target
+        // pixel footprint regardless of model scale / camera distance.
+        if (S._sboxHandles || S._sboxFaceHandles || S._sboxRotRing) {
+          var _camPos = S.camera.position;
+          var _canvasH = renderer.domElement.height || el.clientHeight || 1;
+          var _isPersp = S.camera.isPerspectiveCamera !== false && S.camera.fov != null;
+          var _tanHalfFov = _isPersp ? Math.tan((S.camera.fov || 50) * Math.PI / 360) : 0;
+          var _orthoSpan = !_isPersp ? ((S.camera.top - S.camera.bottom) / (S.camera.zoom || 1)) : 0;
+          function _scaleHandle(h) {
+            if (!h || !h.userData || !h.userData._baseSize) return;
+            var pxTarget = h.userData._targetPx || 9;
+            var worldSize;
+            if (_isPersp) {
+              var d = _camPos.distanceTo(h.position);
+              worldSize = (pxTarget / _canvasH) * 2 * _tanHalfFov * d;
+            } else {
+              worldSize = (pxTarget / _canvasH) * _orthoSpan;
+            }
+            var s = worldSize / h.userData._baseSize;
+            if (s > 0 && isFinite(s)) h.scale.setScalar(s);
+          }
+          if (S._sboxHandles)     S._sboxHandles.forEach(_scaleHandle);
+          if (S._sboxFaceHandles) S._sboxFaceHandles.forEach(_scaleHandle);
+          if (S._sboxRotRing)     _scaleHandle(S._sboxRotRing);
+        }
+
         // Lower resolution while moving: orbit drag → 50%, walk movement → 65%
         var _isDragFrame = _orbitDragging || window._ccSectionDragging;
         var _isWalkFrame = _walkMovingFrame;
@@ -9403,6 +9849,10 @@ function startApp() {
       S._sboxFacePanels=facePanels;
 
       var maxDim = Math.max(hx,hy,hz);
+      // Handles are built at a representative world size, but the tick loop
+      // re-scales them every frame so they appear at a constant pixel size
+      // regardless of model scale or camera distance — otherwise the same
+      // handle looks tiny on a 5 m apartment and huge on a 500 m tower.
       var handleSize = Math.max(0.046, Math.min(maxDim*0.0104, 0.37));
       var handleGeo=new THREE.SphereGeometry(handleSize,8,8);
       var handles=[];
@@ -9427,6 +9877,8 @@ function startApp() {
         mesh.userData._handleAxX=axX.clone();
         mesh.userData._handleAxY=axY.clone();
         mesh.userData._handleAxZ=axZ.clone();
+        mesh.userData._baseSize=handleSize;
+        mesh.userData._targetPx=9;
         mesh.renderOrder=999;
         _sboxUnclip(mesh);
         S.scene.add(mesh);
@@ -9462,6 +9914,8 @@ function startApp() {
         arrow.userData._faceSign = fd.sign;
         arrow.userData._faceIdx  = fd.idx;
         arrow.userData._faceSide = fd.side;
+        arrow.userData._baseSize = faceArrowSize;
+        arrow.userData._targetPx = 16;
         arrow.renderOrder = 999;
         _sboxUnclip(arrow);
         S.scene.add(arrow);
@@ -9479,6 +9933,8 @@ function startApp() {
       ring.position.copy(ctr).addScaledVector(axY,ringY);
       ring.rotation.x=Math.PI/2; // lay flat
       ring.userData._sboxRotation=true;
+      ring.userData._baseSize=ringRadius;
+      ring.userData._targetPx=72;
       ring.renderOrder=999;
       _sboxUnclip(ring);
       S.scene.add(ring);
@@ -10019,42 +10475,45 @@ function startApp() {
         } else if (style === 'rendered') {
           _disposeEdges(obj);
           if (!cache.rendered) {
-            // Keyword-based PBR preset from IFC material name
+            // Photorealistic: respect the IFC-exported colour from the source
+            // software (Revit / ArchiCAD / etc.) — origColor came from
+            // placed.color, which is the resolved IfcSurfaceStyle colour.
+            // Material name and IFC type only inform PBR characteristics
+            // (roughness, metalness, glass transparency); the colour itself
+            // is whatever the architect set in their authoring tool.
             var _matName = (obj.userData._ifcMaterial || '').toLowerCase();
-            var _r = 0.85, _m = 0.0, _clr = origColor.clone();
             var _rdType = _eidToType[obj.userData.expressId] || '';
-            var _rdOpaque = /steel|metal|alum|copper|brass|iron|zinc|concrete|beton|brick|masonry|wood|timber|stone|gypsum|plaster|insul/.test(_matName);
-            // Hard frame types: ALWAYS opaque regardless of material name.
+            var _r = 0.85, _m = 0.0;
             var _rdHardFrame = /^Ifc(Member|CurtainWall|Beam|Column|Pile|Footing|Wall|Slab|Roof|Stair|Ramp|Covering|Railing|Rail)/i.test(_rdType);
-            // Soft frame: opaque by default, glass only if material explicitly says so.
             var _rdSoftFrame = /^Ifc(Door|Plate|BuildingElementProxy)/i.test(_rdType);
+            var _rdOpaqueMat = /steel|metal|alum|copper|brass|iron|zinc|concrete|beton|brick|masonry|wood|timber|stone|gypsum|plaster|insul/.test(_matName);
+            // Glass: trust the IFC alpha first; fall back to name guess.
             var _isGlass = !_rdHardFrame && (
-              /glass|glazing|fenst/.test(_matName)
-              || (/^IfcWindow/i.test(_rdType) && orig.transparent && orig.opacity < 0.5)
-              || (!_rdOpaque && !_rdSoftFrame && orig.transparent && orig.opacity < 0.3)
+              (orig.transparent && orig.opacity < 0.5)
+              || (!_rdSoftFrame && /glass|glazing|fenst/.test(_matName))
             );
             if (_isGlass) {
-              _r = 0.05; _m = 0.0; _clr.set(0xbfe8ff);
+              _r = 0.05; _m = 0.0;
             } else if (/steel|metal|alum|copper|brass|iron|zinc/.test(_matName)) {
               _r = 0.25; _m = 0.9;
             } else if (/concrete|beton|cast/.test(_matName)) {
-              _r = 0.95; _m = 0.0; _clr.set(0xb0a898);
+              _r = 0.95; _m = 0.0;
             } else if (/wood|timber|oak|pine|parquet|ply/.test(_matName)) {
-              _r = 0.85; _m = 0.0; _clr.set(0xc49a6c);
+              _r = 0.80; _m = 0.0;
             } else if (/brick|masonry|tile|ceramic|stone/.test(_matName)) {
-              _r = 0.90; _m = 0.0; _clr.set(0xc97d5a);
+              _r = 0.90; _m = 0.0;
             } else if (/gypsum|plasterboard|plaster|drywall|gips/.test(_matName)) {
-              _r = 0.85; _m = 0.0; _clr.set(0xe8e5e0);
+              _r = 0.85; _m = 0.0;
             } else if (/insul|foam|mineral|rockwool|glass.*wool/.test(_matName)) {
-              _r = 1.0; _m = 0.0; _clr.set(0xf0c850);
+              _r = 1.0; _m = 0.0;
             }
-            var _rdForceOpaque = !_isGlass && (_rdHardFrame || _rdSoftFrame || _rdOpaque);
+            var _rdForceOpaque = !_isGlass && (_rdHardFrame || _rdSoftFrame || _rdOpaqueMat);
             cache.rendered = new THREE.MeshStandardMaterial({
-              color: (_matName || _isGlass) ? _clr : origColor,
+              color: origColor,
               roughness: _r, metalness: _m,
               envMapIntensity: 0.85,
               transparent: _isGlass ? true : (_rdForceOpaque ? false : orig.transparent),
-              opacity: _isGlass ? 0.25 : (_rdForceOpaque ? 1.0 : orig.opacity),
+              opacity: _isGlass ? Math.min(0.35, orig.opacity > 0.05 ? orig.opacity : 0.25) : (_rdForceOpaque ? 1.0 : orig.opacity),
               depthWrite: _isGlass ? false : true,
               side: _isGlass ? THREE.DoubleSide : THREE.FrontSide
             });
@@ -10080,6 +10539,13 @@ function startApp() {
     useEffect(function(){ window._ccHoverCoordTick = function(){ setHcTick(function(x){return (x+1)%1000;}); }; return function(){window._ccHoverCoordTick=null;}; }, []);
     var ps = useState(false), perfOpen=ps[0], setPerfOpen=ps[1];
     var pd = useState({fps:0,tris:0,meshCount:0,drawCalls:0}), perfData=pd[0], setPerfData=pd[1];
+    var dp = useState(window._ccDetectProfile || null), detectProfile=dp[0], setDetectProfile=dp[1];
+    var dpO = useState(false), detectProfOpen=dpO[0], setDetectProfOpen=dpO[1];
+    useEffect(function(){
+      function onDP(){ setDetectProfile(window._ccDetectProfile || null); }
+      window.addEventListener('cc-detect-profile', onDP);
+      return function(){ window.removeEventListener('cc-detect-profile', onDP); };
+    }, []);
     useEffect(function(){
       var iv = setInterval(function(){
         var S = state3d.current;
@@ -10364,6 +10830,58 @@ function startApp() {
           <span>Version</span>
           <span style=${{color:'var(--text-muted)'}}>${CC_VERSION.v} (${CC_VERSION.hash})</span>
         </div>
+      </div>`}
+      ${(s.workspace==='coordinate' || s.workspace==='review') && s.diagnostics && detectProfile && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'var(--space-3)',left:s.workspace==='review'?'5.5rem':'var(--space-3)',padding:'var(--space-1) var(--space-2)',pointerEvents:'auto',fontSize:'var(--text-xs)'}}>
+        <span style=${{color:'var(--accent)',cursor:'pointer',fontWeight:'var(--weight-medium)',fontFamily:'var(--font-mono)'}}
+          onClick=${function(){setDetectProfOpen(!detectProfOpen)}}>${detectProfile.total_ms} ms · ${detectProfile.clashes_found}</span>
+      </div>`}
+      ${(s.workspace==='coordinate' || s.workspace==='review') && s.diagnostics && detectProfile && detectProfOpen && html`<div class="cc-overlay-chrome" style=${{position:'absolute',top:'2.4rem',left:s.workspace==='review'?'5.5rem':'var(--space-3)',padding:'var(--space-2) var(--space-3)',pointerEvents:'auto',fontSize:'var(--text-2xs)',color:'var(--text-secondary)',minWidth:220}}>
+        <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'var(--space-1)'}}>
+          <span style=${{fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',fontSize:'var(--text-xs)',textTransform:'uppercase',letterSpacing:'.06em'}}>Last detection</span>
+          <button onClick=${function(){setDetectProfOpen(false)}} style=${{...S_BTN,padding:'0 var(--space-1)',background:'none',color:'var(--text-faint)',fontSize:'var(--text-xs)'}} aria-label="Close detection profile">✕</button>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Sweep &amp; Prune</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.sweep_and_prune_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>BVH build</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.bvh_build_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Hard clash</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.hard_clash_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Soft clash</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.soft_clash_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Merge &amp; post</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.merge_and_post_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0',borderTop:'1px solid var(--border-subtle)',marginTop:'.2rem',paddingTop:'.2rem'}}>
+          <span>Total</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)',fontWeight:'var(--weight-semibold)'}}>${detectProfile.total_ms} ms</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Elements</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.elements}</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Candidates</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.candidates}</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Hard tests</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.hard_tests}${detectProfile.hard_tests_batched ? ' + '+detectProfile.hard_tests_batched+' batched' : ''}</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Soft tests</span><span style=${{color:'var(--text-primary)',fontFamily:'var(--font-mono)'}}>${detectProfile.soft_tests}</span>
+        </div>
+        <div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0'}}>
+          <span>Clashes</span><span style=${{color:'var(--accent)',fontFamily:'var(--font-mono)',fontWeight:'var(--weight-semibold)'}}>${detectProfile.clashes_found}</span>
+        </div>
+        ${(detectProfile.memo_active_pairs > 0 || detectProfile.memo_skipped > 0) && html`<div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0',color:'var(--text-faint)'}}>
+          <span>Memo skipped</span><span style=${{fontFamily:'var(--font-mono)'}}>${detectProfile.memo_skipped} / ${detectProfile.memo_active_pairs} pairs</span>
+        </div>`}
+        ${detectProfile.pair_cache_reemits > 0 && html`<div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0',color:'var(--text-faint)'}}>
+          <span>Pair cache re-emits</span><span style=${{fontFamily:'var(--font-mono)'}}>${detectProfile.pair_cache_reemits} / ${detectProfile.pair_cache_size}</span>
+        </div>`}
+        ${detectProfile.bvh_cache_max && html`<div style=${{display:'flex',justifyContent:'space-between',padding:'.1rem 0',color:'var(--text-faint)'}}>
+          <span>BVH cache cap</span><span style=${{fontFamily:'var(--font-mono)'}}>${detectProfile.bvh_cache_max}</span>
+        </div>`}
       </div>`}
       ${s.clashes.length>0 && html`<div class="cc-overlay-top" style=${{position:'absolute',top:'var(--space-3)',left:'50%',transform:'translateX(-50%)',display:'flex',gap:'var(--space-1)',pointerEvents:'auto'}}>
         <button class="cc-btn-press" onClick=${function(){if(_fitToClashes)_fitToClashes(s.clashes);}}
@@ -11422,7 +11940,7 @@ function startApp() {
         props.storey = storeyResult.map[eid] || '';
         props.material = matMap[eid] || '';
         var pm = propMap[eid];
-        if (pm) { props.quantities = pm.quantities; props.psets = pm.psets; }
+        if (pm) { props.quantities = _ccCanonQuantities(pm.quantities); props.psets = _ccCanonPsets(pm.psets); }
         if (props.globalId) propsByGlobalId[props.globalId] = props;
         propsByExpressId[eid] = props;
       });
@@ -11438,7 +11956,7 @@ function startApp() {
           spProps2.storey = storeyResult.map[sid2] || '';
           spProps2.material = matMap[sid2] || '';
           var spPm2 = propMap[sid2];
-          if (spPm2) { spProps2.quantities = spPm2.quantities; spProps2.psets = spPm2.psets; }
+          if (spPm2) { spProps2.quantities = _ccCanonQuantities(spPm2.quantities); spProps2.psets = _ccCanonPsets(spPm2.psets); }
           if (spProps2.globalId) propsByGlobalId[spProps2.globalId] = spProps2;
           propsByExpressId[sid2] = spProps2;
         }
