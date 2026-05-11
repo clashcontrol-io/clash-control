@@ -26274,6 +26274,51 @@ function startApp() {
     </div>`;
   }
 
+  // Always-on drag-drop overlay — works even when models are loaded.
+  // Uses document-level listeners so the visual div can be pointer-events:none
+  // and never blocks 3D viewer interaction.
+  function GlobalDropZone() {
+    var stDrag = useState(false), dragging = stDrag[0], setDragging = stDrag[1];
+    useEffect(function(){
+      var enterCount = 0; // track nested dragenter/dragleave correctly
+      function onDragEnter(e){
+        if (!Array.from(e.dataTransfer.types||[]).some(function(t){return t==='Files';})) return;
+        enterCount++;
+        setDragging(true);
+      }
+      function onDragOver(e){
+        if (!Array.from(e.dataTransfer.types||[]).some(function(t){return t==='Files';})) return;
+        e.preventDefault();
+      }
+      function onDragLeave(){
+        enterCount--;
+        if (enterCount <= 0){ enterCount = 0; setDragging(false); }
+      }
+      function onDrop(e){
+        enterCount = 0; setDragging(false);
+        var files = Array.from(e.dataTransfer.files||[]).filter(function(f){return /\.(ifc|glb)$/i.test(f.name);});
+        if (files.length && window._ccLoadFiles){ e.preventDefault(); window._ccLoadFiles(files); }
+      }
+      document.addEventListener('dragenter', onDragEnter);
+      document.addEventListener('dragover',  onDragOver);
+      document.addEventListener('dragleave', onDragLeave);
+      document.addEventListener('drop',      onDrop);
+      return function(){
+        document.removeEventListener('dragenter', onDragEnter);
+        document.removeEventListener('dragover',  onDragOver);
+        document.removeEventListener('dragleave', onDragLeave);
+        document.removeEventListener('drop',      onDrop);
+      };
+    }, []);
+    if (!dragging) return null;
+    return html`<div aria-hidden="true" style=${{
+      position:'fixed',inset:'.5rem',zIndex:9999,pointerEvents:'none',
+      border:'1px solid var(--ink-accent)',borderRadius:'var(--radius-sm)',
+      boxShadow:'inset 0 0 0 1px var(--ink-accent-soft)',
+      transition:'opacity .15s'
+    }}></div>`;
+  }
+
   function WelcomePopup(props) {
     var d = props.d, s = props.s;
     // Hooks first (rules-of-hooks): so we can early-return for loading too.
@@ -28638,6 +28683,7 @@ function startApp() {
           : html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`}
       </button>
       <${MobileNav} s=${s} d=${d} />
+      <${GlobalDropZone} />
       <${WelcomePopup} s=${s} d=${d} />
       <${PrivacyBanner} />
       <${TutorialPortal} d=${d} />
