@@ -5148,8 +5148,7 @@ function startApp() {
       _walkPitch = Math.asin(Math.max(-1, Math.min(1, dir.y)));
       _walkPitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, _walkPitch));
     }
-    S.camera.position.set(camX, camY, camZ);
-    _walkApplyLook(S);
+    // Set camera near/far/fov immediately (no visual gap during entry tween)
     S.camera.near = 0.05 * _walkUnitScale;
     S.camera.far = 2000 * _walkUnitScale;
     S.camera.fov = _walkFov;
@@ -5157,8 +5156,40 @@ function startApp() {
     try { window.dispatchEvent(new CustomEvent('cc-walk-fov',{detail:{fov:_walkFov, src:'enter'}})); } catch(e){}
     _walkEmitFlags();
     _walkKeys = {};
+    _walkVelX = 0; _walkVelZ = 0;
+    _walkYawTarget = _walkYaw;
+    _walkPitchTarget = _walkPitch;
     _walkLastTime = performance.now();
-    // Request pointer lock — succeeds when called from a user-gesture (e.g. Pegman drop)
+
+    // ── Force 'rendered' style: activates SAO + Outline + SMAA + shadows ──
+    var _curState = window._ccLatestState;
+    _walkSavedRenderStyle = (_curState && _curState.prefs && _curState.prefs.renderStyle) || null;
+    if (_walkSavedRenderStyle !== 'rendered') {
+      if (window._ccDispatch) window._ccDispatch({t:'UPD_PREFS', u:{renderStyle:'rendered'}});
+      if (window._ccActivatePostFX) window._ccActivatePostFX(true);
+    }
+
+    // ── Smooth entry: glide camera from current position to walk position ──
+    var entryStartPos = S.camera.position.clone();
+    var entryEndPos = new THREE.Vector3(camX, camY, camZ);
+    _walkEnteringAnim = true;
+    _walkApplyLook(S);
+    var enterStart = performance.now();
+    var enterDuration = 350;
+    (function tickEnter(){
+      var t = Math.min(1, (performance.now() - enterStart) / enterDuration);
+      var e = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      S.camera.position.lerpVectors(entryStartPos, entryEndPos, e);
+      _walkApplyLook(S);
+      invalidate(3);
+      if (t < 1) { requestAnimationFrame(tickEnter); }
+      else {
+        _walkEnteringAnim = false;
+        _walkLastTime = performance.now();
+      }
+    })();
+
+    // Pointer lock so mouse look works immediately (best-effort, user gesture required)
     try { if (S.renderer && S.renderer.domElement) S.renderer.domElement.requestPointerLock(); } catch(e) {}
     invalidate(999);
   }
@@ -5166,40 +5197,66 @@ function startApp() {
   function _walkExit(S) {
     if (!_walkActive) return;
     _walkActive = false;
+    _walkEnteringAnim = false;
     _walkPointerLocked = false;
     _walkMovingFrame = false;
+    _walkVelX = 0; _walkVelZ = 0;
     _walkLMB = false;
     _walkKeys = {};
     _walkCrouching = false;
     _walkVignette = 0;
     try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {}
+
+    // Restore render style
+    if (_walkSavedRenderStyle !== null && _walkSavedRenderStyle !== 'rendered') {
+      if (window._ccDispatch) window._ccDispatch({t:'UPD_PREFS', u:{renderStyle:_walkSavedRenderStyle}});
+      if (window._ccActivatePostFX) window._ccActivatePostFX(false);
+    }
+    _walkSavedRenderStyle = null;
+
     var saved = _walkSavedCam;
+    _walkSavedCam = null;
     if (saved && S.orbit) {
-      S.camera.position.copy(saved.pos);
+      var exitStartPos = S.camera.position.clone();
+      var exitEndPos = new THREE.Vector3(saved.pos.x, saved.pos.y, saved.pos.z);
+
       S.orbit.target.copy(saved.target);
       S.orbit.sph.r = saved.sph.r;
       S.orbit.sph.phi = saved.sph.phi;
       S.orbit.sph.theta = saved.sph.theta;
-      S.orbit.apply();
+      S.camera.fov = saved.fov || 55;
+      S.camera.near = saved.near || 0.1;
+      S.camera.far = saved.far || 10000;
+      S.camera.updateProjectionMatrix();
+
+      var exitStart = performance.now();
+      var exitDuration = 300;
+      (function tickExit(){
+        var t = Math.min(1, (performance.now() - exitStart) / exitDuration);
+        var e = t * t; // ease-in quad
+        S.camera.position.lerpVectors(exitStartPos, exitEndPos, e);
+        S.camera.lookAt(saved.target);
+        invalidate(3);
+        if (t < 1) { requestAnimationFrame(tickExit); }
+        else {
+          S.camera.position.copy(exitEndPos);
+          S.orbit.apply();
+          invalidate(5);
+        }
+      })();
+    } else {
+      invalidate(5);
     }
-    S.camera.fov = (saved && saved.fov) || 55;
-    S.camera.near = (saved && saved.near) || 0.1;
-    S.camera.far = (saved && saved.far) || 10000;
-    S.camera.updateProjectionMatrix();
-    _walkSavedCam = null;
-    invalidate(5);
   }
 
   function _walkApplyLook(S) {
-    var dir = new THREE.Vector3(
+    _wkLookDir.set(
       Math.sin(_walkYaw) * Math.cos(_walkPitch),
       Math.sin(_walkPitch),
       Math.cos(_walkYaw) * Math.cos(_walkPitch)
     );
-    var lookAt = S.camera.position.clone().add(dir);
-    S.camera.lookAt(lookAt);
-    // because orbit phi/theta describe camera position (looking inward), while
-    // must equal walk forward  = (sin(yaw)*cos(pitch), sin(pitch), cos(yaw)*cos(pitch))
+    _wkLookAt.copy(S.camera.position).add(_wkLookDir);
+    S.camera.lookAt(_wkLookAt);
     if (S.orbit) {
       S.orbit.sph.theta = _walkYaw + Math.PI;
       S.orbit.sph.phi   = Math.PI / 2 + _walkPitch;
@@ -5208,12 +5265,33 @@ function startApp() {
 
   var _walkGravityFrame = 0; // throttle gravity raycast to every 3rd frame
   var _walkMovingFrame = false; // true while player is actively moving (WASD)
+  // EMA look smoothing targets
+  var _walkYawTarget = 0;
+  var _walkPitchTarget = 0;
+  // Velocity for Source-style acceleration + friction
+  var _walkVelX = 0, _walkVelZ = 0;
+  var _walkSavedRenderStyle = null; // restore renderStyle on walk exit
+  var _walkEnteringAnim = false;    // suppress WASD during entry tween
+  // Pre-allocated objects — avoid per-frame GC pressure on hot path
+  var _wkRayCaster = new THREE.Raycaster();
+  var _wkRayOrigin = new THREE.Vector3();
+  var _wkRayDir    = new THREE.Vector3();
+  var _wkLookDir   = new THREE.Vector3();
+  var _wkLookAt    = new THREE.Vector3();
   function _walkTick(S) {
     if (!_walkActive) return;
     var now = performance.now();
     var dt = Math.min((now - _walkLastTime) / 1000, 0.1); // cap at 100ms
     _walkLastTime = now;
     if (dt <= 0) return;
+
+    // ── EMA look smoothing (τ = 30 ms) ────────────────────────────
+    // mousemove writes to targets; each tick decays toward them.
+    // Eliminates 120 Hz pixel-jitter with no perceptible lag.
+    var _lookAlpha = Math.min(1, dt / 0.030);
+    _walkYaw   += (_walkYawTarget   - _walkYaw)   * _lookAlpha;
+    _walkPitch += (_walkPitchTarget - _walkPitch) * _lookAlpha;
+    _walkApplyLook(S);
 
     // ── Gamepad polling ────────────────────────────────────────
     var gpAxes = null, gpSprint = false;
@@ -5224,15 +5302,12 @@ function startApp() {
           if (_walkGamepadIdx == null) _walkGamepadIdx = gi;
           if (gi === _walkGamepadIdx) {
             var pa = pads[gi].axes;
-            // Deadzone 0.15
             var dz = function(v){ return Math.abs(v)<0.15 ? 0 : v; };
             gpAxes = { lx: dz(pa[0]||0), ly: dz(pa[1]||0), rx: dz(pa[2]||0), ry: dz(pa[3]||0) };
-            // Right-stick → look
             if (gpAxes.rx || gpAxes.ry) {
-              _walkYaw   -= gpAxes.rx * dt * 2.5;
-              _walkPitch -= gpAxes.ry * dt * 2.0;
-              _walkPitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, _walkPitch));
-              _walkApplyLook(S);
+              _walkYawTarget   -= gpAxes.rx * dt * 2.5;
+              _walkPitchTarget -= gpAxes.ry * dt * 2.0;
+              _walkPitchTarget = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, _walkPitchTarget));
             }
             var btns = pads[gi].buttons || [];
             gpSprint = btns[6] && btns[6].pressed;
@@ -5243,68 +5318,88 @@ function startApp() {
     } catch(e) {}
 
     var sprinting = (_walkKeys['ShiftLeft'] || _walkKeys['ShiftRight'] || gpSprint) ? true : false;
-    var speed = _walkSpeed * (sprinting ? 3 : 1);
+    var speed = _walkSpeed * (sprinting ? 2.5 : 1);
     var fx = Math.sin(_walkYaw), fz = Math.cos(_walkYaw);
     var rx = -Math.cos(_walkYaw), rz = Math.sin(_walkYaw);
 
-    // Crouch (hold C): drop eye height while held
-    var wantCrouch = !!_walkKeys['KeyC'];
-    if (wantCrouch !== _walkCrouching){
-      _walkCrouching = wantCrouch;
-      _walkEyeHeight = (_walkCrouching ? _walkCrouchHeight : _walkUserHeight) * _walkUnitScale;
-      _walkEmitFlags();
-    }
-
     var mx = 0, mz = 0, my = 0;
-    if (_walkKeys['KeyW'] || _walkKeys['ArrowUp'])    { mx += fx; mz += fz; }
-    if (_walkKeys['KeyS'] || _walkKeys['ArrowDown'])  { mx -= fx; mz -= fz; }
-    if (_walkKeys['KeyA'] || _walkKeys['ArrowLeft'])   { mx -= rx; mz -= rz; }
-    if (_walkKeys['KeyD'] || _walkKeys['ArrowRight'])  { mx += rx; mz += rz; }
-    if (_walkKeys['Space'] || _walkKeys['KeyQ'])   my += 1;
-    if (_walkKeys['KeyE'])                         my -= 1;
-    // Gamepad left stick → forward/strafe (always active)
-    if (gpAxes) {
-      mx += fx * (-gpAxes.ly) + rx * (gpAxes.lx);
-      mz += fz * (-gpAxes.ly) + rz * (gpAxes.lx);
-    }
-    // Touch virtual joystick
-    if (_walkTouch && _walkTouch.mag > 0) {
-      mx += fx * _walkTouch.fx + rx * _walkTouch.rx;
-      mz += fz * _walkTouch.fx + rz * _walkTouch.rx;
+    if (!_walkEnteringAnim) {
+      if (_walkKeys['KeyW'] || _walkKeys['ArrowUp'])    { mx += fx; mz += fz; }
+      if (_walkKeys['KeyS'] || _walkKeys['ArrowDown'])  { mx -= fx; mz -= fz; }
+      if (_walkKeys['KeyA'] || _walkKeys['ArrowLeft'])  { mx -= rx; mz -= rz; }
+      if (_walkKeys['KeyD'] || _walkKeys['ArrowRight']) { mx += rx; mz += rz; }
+      if (_walkKeys['Space'] || _walkKeys['KeyQ'])      my += 1;
+      if (_walkKeys['KeyE'])                            my -= 1;
+      if (gpAxes) {
+        mx += fx * (-gpAxes.ly) + rx * (gpAxes.lx);
+        mz += fz * (-gpAxes.ly) + rz * (gpAxes.lx);
+      }
+      if (_walkTouch && _walkTouch.mag > 0) {
+        mx += fx * _walkTouch.fx + rx * _walkTouch.rx;
+        mz += fz * _walkTouch.fx + rz * _walkTouch.rx;
+      }
     }
 
     var len = Math.sqrt(mx * mx + mz * mz);
     if (len > 0) { mx /= len; mz /= len; }
 
-    var step = speed * dt;
-    var newX = S.camera.position.x + mx * step;
-    var newY = S.camera.position.y + my * step;
-    var newZ = S.camera.position.z + mz * step;
+    // ── Source-style accel + friction ──────────────────────────
+    // Reaches max speed in ~120 ms, stops in ~80 ms.
+    // GROUND_ACCEL drives responsiveness; GROUND_FRICTION drives snappiness on release.
+    var GROUND_ACCEL = 14;    // m/s²
+    var GROUND_FRICTION = 18; // m/s linear brake
+    if (len > 0) {
+      var wishVX = mx * speed, wishVZ = mz * speed;
+      var dvX = wishVX - _walkVelX, dvZ = wishVZ - _walkVelZ;
+      var dvLen = Math.sqrt(dvX*dvX + dvZ*dvZ);
+      if (dvLen > 0) {
+        var accelAmt = Math.min(dvLen, GROUND_ACCEL * dt);
+        _walkVelX += (dvX / dvLen) * accelAmt;
+        _walkVelZ += (dvZ / dvLen) * accelAmt;
+      }
+    } else {
+      // Friction
+      var curVLen = Math.sqrt(_walkVelX*_walkVelX + _walkVelZ*_walkVelZ);
+      if (curVLen > 0) {
+        var brakeAmt = Math.min(curVLen, GROUND_FRICTION * dt);
+        _walkVelX -= (_walkVelX / curVLen) * brakeAmt;
+        _walkVelZ -= (_walkVelZ / curVLen) * brakeAmt;
+      }
+    }
+    var velMoving = Math.abs(_walkVelX) > 0.001 || Math.abs(_walkVelZ) > 0.001;
+    var newX = S.camera.position.x + _walkVelX * dt;
+    var newY = S.camera.position.y + my * speed * dt;
+    var newZ = S.camera.position.z + _walkVelZ * dt;
 
+    // ── Collision (slide-resolve, pre-allocated raycaster) ──────
     var collisionPad = 0.3 * _walkUnitScale;
     var altHeld = !!(window._ccAltHeld || _walkKeys['AltLeft'] || _walkKeys['AltRight']);
-    var collisionActive = _walkCollision && !altHeld; // Alt = temporary no-clip burst
-    if (collisionActive && len > 0 && S.scene) {
-      var rayOrigin = S.camera.position.clone();
-      var rayDir = new THREE.Vector3(mx, 0, mz).normalize();
-      var ray = new THREE.Raycaster(rayOrigin, rayDir, 0, step + collisionPad);
-      var hits = ray.intersectObjects(S.mg ? S.mg.children : [], true);
-      if (hits.length > 0 && hits[0].distance < step + collisionPad) {
-        var n = hits[0].face ? hits[0].face.normal.clone() : new THREE.Vector3();
-        n.y = 0; n.normalize();
-        var slide = new THREE.Vector3(mx * step, 0, mz * step);
-        slide.sub(n.multiplyScalar(slide.dot(n)));
-        newX = S.camera.position.x + slide.x;
-        newZ = S.camera.position.z + slide.z;
+    var collisionActive = _walkCollision && !altHeld;
+    if (collisionActive && velMoving && S.mg) {
+      var velLen3 = Math.sqrt(_walkVelX*_walkVelX + _walkVelZ*_walkVelZ);
+      var actualStep = velLen3 * dt;
+      _wkRayOrigin.copy(S.camera.position);
+      _wkRayDir.set(_walkVelX / velLen3, 0, _walkVelZ / velLen3);
+      _wkRayCaster.set(_wkRayOrigin, _wkRayDir);
+      _wkRayCaster.near = 0; _wkRayCaster.far = actualStep + collisionPad;
+      var hits = _wkRayCaster.intersectObjects(S.mg.children, true);
+      if (hits.length > 0 && hits[0].distance < actualStep + collisionPad) {
+        var hn = hits[0].face ? hits[0].face.normal : _wkRayDir;
+        var hnx = hn.x, hnz = hn.z;
+        var hnLen = Math.sqrt(hnx*hnx + hnz*hnz);
+        if (hnLen > 0) { hnx /= hnLen; hnz /= hnLen; }
+        var dot = _walkVelX * hnx + _walkVelZ * hnz;
+        if (dot < 0) { _walkVelX -= hnx * dot; _walkVelZ -= hnz * dot; }
+        newX = S.camera.position.x + _walkVelX * dt;
+        newZ = S.camera.position.z + _walkVelZ * dt;
       }
     }
 
-    var moving = (mx !== 0 || mz !== 0 || my !== 0);
+    var moving = (mx !== 0 || mz !== 0 || my !== 0) || velMoving;
     _walkMovingFrame = moving;
-    if (moving) {
+    if (moving && !_walkEnteringAnim) {
       S.camera.position.set(newX, newY, newZ);
       _walkBobBaseY = newY;
-      _walkApplyLook(S);
       invalidate(3);
     }
     // ── Vertical ground-snap (gravity + stair step-up) ────────────
@@ -5313,34 +5408,36 @@ function startApp() {
     // stand on it at eye-height. This keeps stairs walkable while leaving
     // walls free to pass through.
     // Vignette tween: 0..1 based on sprint state
-    var vTarget = sprinting && (mx!==0||mz!==0) ? 1 : 0;
+    var vTarget = sprinting && velMoving ? 1 : 0;
     if (_walkVignette !== vTarget){
       _walkVignette += Math.sign(vTarget - _walkVignette) * Math.min(Math.abs(vTarget - _walkVignette), dt * 3);
       try { window.dispatchEvent(new CustomEvent('cc-walk-vignette',{detail:{v:_walkVignette}})); } catch(e){}
       invalidate(2);
     }
-    // FOV breathing during sprint (subtle ±3°)
-    if (sprinting && (mx!==0||mz!==0)){
-      var targetFov = _walkFov + 3;
+    // FOV breathing during sprint
+    if (sprinting && velMoving){
+      var targetFov = _walkFov + 6;
       if (Math.abs(S.camera.fov - targetFov) > 0.05){
-        S.camera.fov += (targetFov - S.camera.fov) * Math.min(1, dt*4);
+        S.camera.fov += (targetFov - S.camera.fov) * Math.min(1, dt / 0.150);
         S.camera.updateProjectionMatrix();
         invalidate(2);
       }
     } else if (Math.abs(S.camera.fov - _walkFov) > 0.05){
-      S.camera.fov += (_walkFov - S.camera.fov) * Math.min(1, dt*4);
+      S.camera.fov += (_walkFov - S.camera.fov) * Math.min(1, dt / 0.280);
       S.camera.updateProjectionMatrix();
       invalidate(2);
     }
 
     _walkGravityFrame = (_walkGravityFrame + 1) % 3; // run every 3rd frame
-    if (_walkGravity && my === 0 && S.mg && S.mg.children.length > 0 && !altHeld && _walkGravityFrame === 0) {
-      var stepUp = 0.5 * _walkUnitScale;     // max step we'll climb (50 cm)
-      var castFrom = stepUp;                   // start above the eye-relative ground line
-      var maxFall = 4.0 * _walkUnitScale;       // how far we'll snap down
-      var origin = new THREE.Vector3(S.camera.position.x, S.camera.position.y - _walkEyeHeight + castFrom, S.camera.position.z);
-      var dnRay = new THREE.Raycaster(origin, new THREE.Vector3(0,-1,0), 0, castFrom + maxFall);
-      var dnHits = dnRay.intersectObjects(S.mg.children, true);
+    if (!_walkEnteringAnim && _walkGravity && my === 0 && S.mg && S.mg.children.length > 0 && !altHeld && _walkGravityFrame === 0) {
+      var stepUp = 0.5 * _walkUnitScale;
+      var castFrom = stepUp;
+      var maxFall = 4.0 * _walkUnitScale;
+      _wkRayOrigin.set(S.camera.position.x, S.camera.position.y - _walkEyeHeight + castFrom, S.camera.position.z);
+      _wkRayDir.set(0, -1, 0);
+      _wkRayCaster.set(_wkRayOrigin, _wkRayDir);
+      _wkRayCaster.near = 0; _wkRayCaster.far = castFrom + maxFall;
+      var dnHits = _wkRayCaster.intersectObjects(S.mg.children, true);
       var floorHit = null;
       for (var h = 0; h < dnHits.length; h++) {
         var ho = dnHits[h].object;
@@ -5351,25 +5448,26 @@ function startApp() {
       if (floorHit) {
         var floorY = floorHit.point.y;
         var targetEyeY = floorY + _walkEyeHeight;
-        // Smooth follow so stair steps don't snap-pop
         var dy = targetEyeY - S.camera.position.y;
         var maxDy = Math.abs(dy) > 0.01 * _walkUnitScale ? Math.min(Math.abs(dy), 8 * _walkUnitScale * dt) : Math.abs(dy);
-        S.camera.position.y += Math.sign(dy) * maxDy;
-        if (_walkBobBaseY != null) _walkBobBaseY = S.camera.position.y;
-        invalidate(3);
+        // Only move + invalidate when camera actually needs to shift
+        if (Math.abs(dy) > 0.0002 * _walkUnitScale) {
+          S.camera.position.y += Math.sign(dy) * maxDy;
+          if (_walkBobBaseY != null) _walkBobBaseY = S.camera.position.y;
+          invalidate(3);
+        }
       }
     }
     // Head-bob: subtle vertical sin while ground-moving (W/A/S/D, not Q/E flying)
     if (_walkBobEnabled && _walkActive) {
-      var grounded = (mx !== 0 || mz !== 0);
+      var grounded = velMoving;
       if (grounded) {
         _walkBobPhase += dt * speed * 1.4;
-        var amp = 0.04 * _walkUnitScale; // 4 cm at unit-scale 1
+        var amp = 0.04 * _walkUnitScale;
         var bob = Math.sin(_walkBobPhase * Math.PI * 2) * amp;
         if (_walkBobBaseY != null) S.camera.position.y = _walkBobBaseY + bob;
         invalidate(2);
       } else {
-        // settle back to base height
         if (_walkBobBaseY != null && Math.abs(S.camera.position.y - _walkBobBaseY) > 1e-4) {
           S.camera.position.y += (_walkBobBaseY - S.camera.position.y) * Math.min(1, dt*8);
           invalidate(2);
@@ -5378,7 +5476,7 @@ function startApp() {
       }
     }
     // Footstep ticks — short low-volume click on each footfall
-    if (_walkFootsteps && (mx!==0||mz!==0)){
+    if (_walkFootsteps && velMoving){
       _walkFootPhase += dt * speed * 1.4;
       if (_walkFootPhase >= 0.5){
         _walkFootPhase = 0;
@@ -5848,6 +5946,38 @@ function startApp() {
       // ── Walk mode event listeners (Enscape-style: free WASD + mouse look) ──
       _wlAdd('keydown', function(e) {
         if (!_walkActive) return;
+        if (e.code === 'KeyC' && !e.repeat) {
+          // Crouch toggle (tap, not hold)
+          _walkCrouching = !_walkCrouching;
+          _walkEyeHeight = (_walkCrouching ? _walkCrouchHeight : _walkUserHeight) * _walkUnitScale;
+          _walkEmitFlags();
+          e.preventDefault();
+          return;
+        }
+        if (e.code === 'KeyP' && !e.repeat) {
+          // Photo mode: hide HUD for one frame, download PNG, restore
+          var hudEls = document.querySelectorAll('.cc-walk-hud');
+          hudEls.forEach(function(el){ el.style.display='none'; });
+          requestAnimationFrame(function(){
+            try {
+              var S2 = window._ccState3d;
+              if (S2 && S2.renderer) {
+                invalidate(2);
+                requestAnimationFrame(function(){
+                  var data = S2.renderer.domElement.toDataURL('image/png');
+                  var a = document.createElement('a');
+                  a.href = data;
+                  a.download = 'clashcontrol-'+new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')+'.png';
+                  a.click();
+                });
+              }
+            } finally {
+              hudEls.forEach(function(el){ el.style.display=''; });
+            }
+          });
+          e.preventDefault();
+          return;
+        }
         _walkKeys[e.code] = true;
         if (e.code === 'Escape') {
           _walkExit(S);
@@ -5862,7 +5992,7 @@ function startApp() {
             try { window.dispatchEvent(new CustomEvent('cc-walk-bookmark',{detail:{count:list.length}})); } catch(_){}
           } catch(_){}
         }
-        if (/^(Key[WASDCEQB]|Arrow|Space|Shift)/.test(e.code)) e.preventDefault();
+        if (/^(Key[WASDEPQB]|Arrow|Space|Shift)/.test(e.code)) e.preventDefault();
         invalidate(3);
       });
       _wlAdd('keyup', function(e) {
@@ -5959,17 +6089,15 @@ function startApp() {
       });
       // Window-level mousemove so look works even when cursor drifts over
       // HUD overlays while walking with WASD.
+      // Writes to EMA targets; _walkTick applies smoothed decay each frame.
       _wlAdd('mousemove', function(e) {
-        if (!_walkActive) return;
-        var mx = e.movementX || 0, my = e.movementY || 0;
-        // Clamp large jumps that occur when the cursor re-enters the viewport
-        // after hitting an edge (only an issue when pointer lock is inactive).
-        if (!_walkPointerLocked && (Math.abs(mx) > 80 || Math.abs(my) > 80)) return;
+        if (!_walkActive || _walkEnteringAnim) return;
+        var dx = e.movementX || 0, dy = e.movementY || 0;
+        if (!_walkPointerLocked && (Math.abs(dx) > 80 || Math.abs(dy) > 80)) return;
         var sens = 0.002 * (_walkSensitivity || 1);
-        _walkYaw -= mx * sens;
-        _walkPitch += my * (_walkInvertY ? sens : -sens);
-        _walkPitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, _walkPitch));
-        _walkApplyLook(S);
+        _walkYawTarget -= dx * sens;
+        _walkPitchTarget += dy * (_walkInvertY ? sens : -sens);
+        _walkPitchTarget = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, _walkPitchTarget));
         invalidate(3);
       });
       renderer.domElement.addEventListener('wheel', function(e) {
@@ -17442,7 +17570,6 @@ function startApp() {
       return arr;
     })();
     function jumpStorey(st){
-      var unit = (typeof window._ccWalkSmartEntry==='function') ? 1 : 1;
       try {
         var box = (typeof window._ccElemsBBox === 'function') ? window._ccElemsBBox() : null;
         var cx = 0, cz = 0;
@@ -17450,15 +17577,20 @@ function startApp() {
         var Sref = window._ccState3d;
         if (Sref && Sref.camera){
           var heightM = flags.height || 1.7;
-          // approximate scene-unit elevation: storeyData elevation is in storey-units;
-          // walk's unit scale already factored into camera Y at enter — reuse same factor by
-          // keeping ratio: scene Y to elevation = current cam Y / current eyeHeight - elevation0
-          // simpler: place at world Y where storey elevation maps via existing offset ratio
-          var sceneY = st.elevation; // already in scene units for many models
-          // try to use storey-floor scene-Y if available via state.floors
+          var sceneY = st.elevation;
           (s.floors||[]).forEach(function(f){ if (f.name===st.name && typeof f.elevation==='number'){ sceneY = f.elevation; } });
-          Sref.camera.position.set(cx, sceneY + heightM, cz);
-          if (typeof invalidate==='function') invalidate(3);
+          var targetY = sceneY + heightM;
+          // Animate camera to storey level, keeping current XZ and yaw
+          var startPos = Sref.camera.position.clone();
+          var endPos = new THREE.Vector3(cx, targetY, cz);
+          var dur = 400, t0 = performance.now();
+          (function step(){
+            var t = Math.min(1, (performance.now() - t0) / dur);
+            var e = 1 - Math.pow(1-t, 3);
+            Sref.camera.position.lerpVectors(startPos, endPos, e);
+            if (typeof invalidate==='function') invalidate(3);
+            if (t < 1) requestAnimationFrame(step);
+          })();
         }
       } catch(e){}
     }
@@ -17543,7 +17675,8 @@ function startApp() {
         <span><b style=${{color:'var(--text-primary)'}}>Scroll</b></span><span>Adjust speed</span>
         <span><b style=${{color:'var(--text-primary)'}}>Shift + Scroll</b></span><span>Adjust FOV</span>
         <span><b style=${{color:'var(--text-primary)'}}>Double-click</b></span><span>Teleport to surface</span>
-        <span><b style=${{color:'var(--text-primary)'}}>Hold C</b></span><span>Crouch</span>
+        <span><b style=${{color:'var(--text-primary)'}}>C</b></span><span>Toggle crouch</span>
+        <span><b style=${{color:'var(--text-primary)'}}>P</b></span><span>Photo (hide HUD + save PNG)</span>
         <span><b style=${{color:'var(--text-primary)'}}>Hold Alt</b></span><span>Pass through walls</span>
         <span><b style=${{color:'var(--text-primary)'}}>Space / Q · E</b></span><span>Up · Down (fly)</span>
         ${!isPresent && html`<${React.Fragment}><span><b style=${{color:'var(--text-primary)'}}>F</b></span><span>Inspect hovered element</span></${React.Fragment}>`}
@@ -17582,7 +17715,7 @@ function startApp() {
           var clock = (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm;
           return html`<div style=${{height:1,background:'var(--border)',margin:'.15rem 0'}}></div>
             <div style=${{fontSize:'var(--text-2xs)',textTransform:'uppercase',letterSpacing:'.04em',color:'var(--text-muted)'}}>Sun · ${clock}</div>
-            <input type="range" min="6" max="20" step="0.25" value=${tv}
+            <input type="range" min="5" max="21" step="0.25" value=${tv}
               onInput=${function(e){
                 var ls2 = Object.assign({sun:1,ambient:1,exposure:1,shadow:1,time:13}, (s.prefs&&s.prefs.lightSettings)||{});
                 ls2.time = parseFloat(e.target.value);
@@ -17624,7 +17757,7 @@ function startApp() {
         ${isPresent && html`<div style=${{height:1,background:'var(--border)',margin:'.15rem 0'}}></div>
           <${WalkSplineRecorder} d=${d} />`}
       </div>`}
-      <div style=${{position:'absolute',bottom:'var(--space-3)',left:'50%',transform:'translateX(-50%)',
+      <div class="cc-walk-hud" style=${{position:'absolute',bottom:'var(--space-3)',left:'50%',transform:'translateX(-50%)',
         pointerEvents:'auto',zIndex:5,display:'flex',alignItems:'center',gap:'.3rem',
         background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',
         padding:'.3rem .6rem',boxShadow:'var(--shadow-md)',whiteSpace:'nowrap'}}>
