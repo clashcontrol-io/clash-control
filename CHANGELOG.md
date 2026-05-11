@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.9.8 (2026-05-11)
+- chore: bump version to 5.9.7
+
 ## v5.9.7 (2026-05-11)
 - chore: daily memory sync 2026-05-11
 
