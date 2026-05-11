@@ -25566,7 +25566,7 @@ function startApp() {
       window._ccOpenAIPanel = function(){
         setCollapsed(false);
         try{localStorage.setItem('cc_ai_panel_collapsed','0');}catch(e){}
-        setDrawerTab('details');
+        setDrawerTab('ai');
       };
       window._ccToggleModelsPanel = function(){
         // Toggle: if already open on Models tab, collapse; otherwise open & switch
@@ -26156,8 +26156,8 @@ function startApp() {
         background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='var(--accent-bg-deep)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
       <!-- Tab bar + collapse -->
       <div style=${{display:'flex',alignItems:'center',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,height:40,gap:0,paddingLeft:12}}>
-        ${(s.workspace==='present'?['details']:['details','measure']).map(function(tab){
-          var labels={details:'Details',measure:'Measure'};
+        ${(s.workspace==='present'?['details','ai']:['details','measure','ai']).map(function(tab){
+          var labels={details:'Details',measure:'Measure',ai:'Ask AI'};
           var isActive=drawerTab===tab;
           var hasDot = (tab==='details' && drawerEl) || (tab==='measure' && (s.measureMode || (s.measurements&&s.measurements.length>0)));
           return html`<button key=${tab}
