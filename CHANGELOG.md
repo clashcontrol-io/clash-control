@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.11.1 (2026-05-11)
+- fix: WASD breaks when clicking to look — remove mid-walk requestPointerLock
+
 ## v5.11.0 (2026-05-11)
 - Walk mode Phase 2: LMB-drag look, step-up, section/measure preserved, V/N/share
 
