@@ -6040,19 +6040,24 @@ function startApp() {
         if (!_walkActive) return;
         delete _walkKeys[e.code];
       });
-      // LMB drag = look. Request pointer lock on mousedown so movementX/Y gives
-      // unlimited travel (clientX/Y stops at screen edge). Released on mouseup.
+      // LMB drag = look. Session-level pointer lock (requested at walk entry) gives
+      // unlimited movementX/Y travel. clientX/Y delta is kept as fallback if the
+      // browser denies lock. Re-request lock on click if it was lost (e.g. after
+      // pressing Escape), but never on mousedown — that cancels held key state.
       renderer.domElement.addEventListener('mousedown', function(e) {
         if (!_walkActive || e.button !== 0) return;
         _walkLmbDragging = true;
         _walkLmbPrevX = e.clientX;
         _walkLmbPrevY = e.clientY;
-        try { renderer.domElement.requestPointerLock(); } catch(_){}
       });
       _wlAdd('mouseup', function(e) {
-        if (e.button !== 0) return;
-        _walkLmbDragging = false;
-        try { if (document.pointerLockElement === renderer.domElement) document.exitPointerLock(); } catch(_){}
+        if (e.button === 0) _walkLmbDragging = false;
+      });
+      renderer.domElement.addEventListener('click', function(e) {
+        if (!_walkActive) return;
+        if (!_walkPointerLocked) {
+          try { renderer.domElement.requestPointerLock(); } catch(_){}
+        }
       });
       // Double-click in walk mode = teleport to surface under cursor (any
       // surface with normal.y > 0.5 — floors, stairs, balconies, parapets).
