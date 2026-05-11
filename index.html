@@ -1112,7 +1112,7 @@ function startApp() {
 
       case A.TREE:         return Object.assign({},s,{treeOpen:a.v});
       case A.FLOOR_PLAN:   return Object.assign({},s,{floorPlan:a.v, sectionAxis:null, sectionCustom:null, sectionBox:null, walkMode:a.v?false:s.walkMode, measureMode:a.v?null:s.measureMode, commentMode:a.v?false:s.commentMode});
-      case A.WALK_MODE:    return Object.assign({},s,{walkMode:!!a.v, walkEntry:a.entry||null, walkPlacing:false, sectionAxis:a.v?null:s.sectionAxis, sectionCustom:a.v?null:s.sectionCustom, sectionBox:a.v?null:s.sectionBox, measureMode:a.v?null:s.measureMode, floorPlan:a.v?null:s.floorPlan, commentMode:a.v?false:s.commentMode});
+      case A.WALK_MODE:    return Object.assign({},s,{walkMode:!!a.v, walkEntry:a.entry||null, walkPlacing:false, commentMode:a.v?false:s.commentMode});
       case A.WALK_PLACING: return Object.assign({},s,{walkPlacing:!!a.v, walkMode:a.v?false:s.walkMode, sectionAxis:a.v?null:s.sectionAxis, sectionCustom:a.v?null:s.sectionCustom, sectionBox:a.v?null:s.sectionBox, measureMode:a.v?null:s.measureMode, floorPlan:a.v?null:s.floorPlan, commentMode:a.v?false:s.commentMode});
       case A.SET_HIGHLIGHTED_STOREY: return Object.assign({},s,{_highlightedStorey:a.v});
       case A.SET_PROJECT:  return Object.assign({},s,{activeProject:a.id});
@@ -5202,6 +5202,7 @@ function startApp() {
     _walkMovingFrame = false;
     _walkVelX = 0; _walkVelZ = 0;
     _walkLMB = false;
+    _walkLmbDragging = false;
     _walkKeys = {};
     _walkCrouching = false;
     _walkVignette = 0;
@@ -5272,6 +5273,8 @@ function startApp() {
   var _walkVelX = 0, _walkVelZ = 0;
   var _walkSavedRenderStyle = null; // restore renderStyle on walk exit
   var _walkEnteringAnim = false;    // suppress WASD during entry tween
+  var _walkLmbDragging = false;     // LMB held for drag-look
+  var _walkLmbPrevX = 0, _walkLmbPrevY = 0;
   // Pre-allocated objects — avoid per-frame GC pressure on hot path
   var _wkRayCaster = new THREE.Raycaster();
   var _wkRayOrigin = new THREE.Vector3();
@@ -5426,6 +5429,44 @@ function startApp() {
       S.camera.fov += (_walkFov - S.camera.fov) * Math.min(1, dt / 0.280);
       S.camera.updateProjectionMatrix();
       invalidate(2);
+    }
+
+    // ── Forward knee-ray step-up (stair nosings, 22 cm risers) ──────
+    // Probe 30 cm ahead at knee height (40 cm). If there's a horizontal
+    // surface ≤ 25 cm above foot level, lift camera smoothly over it.
+    if (!_walkEnteringAnim && _walkGravity && velMoving && my === 0 && S.mg && S.mg.children.length > 0) {
+      var kneeAhead = 0.30 * _walkUnitScale;
+      var kneeH    = 0.40 * _walkUnitScale;
+      var maxRiser = 0.25 * _walkUnitScale;
+      var velNorm  = Math.sqrt(_walkVelX*_walkVelX + _walkVelZ*_walkVelZ);
+      if (velNorm > 0) {
+        _wkRayOrigin.set(
+          S.camera.position.x + (_walkVelX / velNorm) * kneeAhead,
+          S.camera.position.y - _walkEyeHeight + kneeH + maxRiser,
+          S.camera.position.z + (_walkVelZ / velNorm) * kneeAhead
+        );
+        _wkRayDir.set(0, -1, 0);
+        _wkRayCaster.set(_wkRayOrigin, _wkRayDir);
+        _wkRayCaster.near = 0; _wkRayCaster.far = maxRiser * 2;
+        var kneeHits = _wkRayCaster.intersectObjects(S.mg.children, true);
+        for (var ki = 0; ki < kneeHits.length; ki++) {
+          var kh = kneeHits[ki];
+          if (!kh.object.visible) continue;
+          if (S._isGhostMat && S._isGhostMat(kh.object.material)) continue;
+          if (!kh.face) continue;
+          var kn = kh.face.normal;
+          if (kn.y < 0.7) continue; // not a walkable surface
+          var ledgeY = kh.point.y;
+          var footY  = S.camera.position.y - _walkEyeHeight;
+          var stepH  = ledgeY - footY;
+          if (stepH > 0.01 * _walkUnitScale && stepH <= maxRiser) {
+            S.camera.position.y += Math.min(stepH, 5 * _walkUnitScale * dt);
+            if (_walkBobBaseY != null) _walkBobBaseY = S.camera.position.y;
+            invalidate(3);
+          }
+          break;
+        }
+      }
     }
 
     _walkGravityFrame = (_walkGravityFrame + 1) % 3; // run every 3rd frame
@@ -5999,13 +6040,16 @@ function startApp() {
         if (!_walkActive) return;
         delete _walkKeys[e.code];
       });
-      // Single click on canvas while in walk mode acquires pointer lock so
-      // mouse controls look continuously. Esc releases and exits walk mode.
-      renderer.domElement.addEventListener('click', function(e) {
-        if (!_walkActive) return;
-        if (document.pointerLockElement !== renderer.domElement) {
-          try { renderer.domElement.requestPointerLock(); } catch (err) {}
-        }
+      // LMB drag = look (primary mechanism — no pointer-lock required).
+      // mousedown starts drag; mousemove tracks clientX/Y delta; mouseup ends.
+      renderer.domElement.addEventListener('mousedown', function(e) {
+        if (!_walkActive || e.button !== 0) return;
+        _walkLmbDragging = true;
+        _walkLmbPrevX = e.clientX;
+        _walkLmbPrevY = e.clientY;
+      });
+      _wlAdd('mouseup', function(e) {
+        if (e.button === 0) _walkLmbDragging = false;
       });
       // Double-click in walk mode = teleport to surface under cursor (any
       // surface with normal.y > 0.5 — floors, stairs, balconies, parapets).
@@ -6087,13 +6131,22 @@ function startApp() {
         _walkPointerLocked = (document.pointerLockElement === renderer.domElement);
         try { window.dispatchEvent(new CustomEvent('cc-walk-locked',{detail:{locked:_walkPointerLocked}})); } catch(e){}
       });
-      // Window-level mousemove so look works even when cursor drifts over
-      // HUD overlays while walking with WASD.
+      // Look: either pointer-locked (unlimited) or LMB-drag (natural click-drag).
       // Writes to EMA targets; _walkTick applies smoothed decay each frame.
       _wlAdd('mousemove', function(e) {
         if (!_walkActive || _walkEnteringAnim) return;
-        var dx = e.movementX || 0, dy = e.movementY || 0;
-        if (!_walkPointerLocked && (Math.abs(dx) > 80 || Math.abs(dy) > 80)) return;
+        var dx, dy;
+        if (_walkPointerLocked) {
+          dx = e.movementX || 0;
+          dy = e.movementY || 0;
+        } else if (_walkLmbDragging) {
+          dx = e.clientX - _walkLmbPrevX;
+          dy = e.clientY - _walkLmbPrevY;
+          _walkLmbPrevX = e.clientX;
+          _walkLmbPrevY = e.clientY;
+        } else {
+          return;
+        }
         var sens = 0.002 * (_walkSensitivity || 1);
         _walkYawTarget -= dx * sens;
         _walkPitchTarget += dy * (_walkInvertY ? sens : -sens);
@@ -17484,6 +17537,11 @@ function startApp() {
     var speedSt = useState(null), speedLabel=speedSt[0], setSpeedLabel=speedSt[1];
     var vignetteSt = useState(0), vignette=vignetteSt[0], setVignette=vignetteSt[1];
     var hoverElSt = useState(null), hoverEl=hoverElSt[0], setHoverEl=hoverElSt[1];
+    var vpToastSt = useState(false), vpToast=vpToastSt[0], setVpToast=vpToastSt[1];
+    var shareSt = useState(false), shareToast=shareSt[0], setShareToast=shareSt[1];
+    // Stable ref so key-handler closures always see latest state
+    var sRef = useRef(s); sRef.current = s;
+    var isCoordRef = useRef(isCoord); isCoordRef.current = isCoord;
 
     useEffect(function(){
       function onFov(e){ var v = e && e.detail && e.detail.fov; if (typeof v === 'number') setFov(v); }
@@ -17557,8 +17615,80 @@ function startApp() {
       return function(){ window.removeEventListener('keydown', onKey); };
     }, [isPresent]);
 
+    // V = capture viewpoint, Shift+V = restore last; N = next clash (coordinate only)
+    useEffect(function(){
+      function onKey(e) {
+        if (e.repeat) return;
+        var sNow = sRef.current;
+        if (e.key === 'v' || e.key === 'V') {
+          if (e.shiftKey) {
+            try {
+              var wvps = JSON.parse(localStorage.getItem('cc_walkViewpoints')||'[]');
+              if (wvps.length && window._ccApplyViewpoint) {
+                window._ccApplyViewpoint(wvps[wvps.length-1]);
+              }
+            } catch(_) {}
+          } else {
+            try {
+              if (window._ccCaptureViewpoint && window._ccDispatch) {
+                var vp2 = window._ccCaptureViewpoint('Walk '+(new Date().toTimeString().slice(0,5)));
+                if (vp2) {
+                  window._ccDispatch({t:A.ADD_VIEWPOINT, v:vp2});
+                  var wvps2 = JSON.parse(localStorage.getItem('cc_walkViewpoints')||'[]');
+                  wvps2.push(vp2); if (wvps2.length > 20) wvps2.shift();
+                  localStorage.setItem('cc_walkViewpoints', JSON.stringify(wvps2));
+                  setVpToast(true); setTimeout(function(){ setVpToast(false); }, 1500);
+                }
+              }
+            } catch(_) {}
+          }
+        } else if ((e.key === 'n' || e.key === 'N') && isCoordRef.current) {
+          try {
+            var cam = window._ccState3d && window._ccState3d.camera;
+            if (!cam) return;
+            var openClashes = (sNow.clashes||[]).filter(function(c){ return c.status==='open' && c.point; });
+            if (!openClashes.length) return;
+            var best = null, bestD = Infinity;
+            openClashes.forEach(function(c){
+              var dx=c.point[0]-cam.position.x, dy=c.point[1]-cam.position.y, dz=c.point[2]-cam.position.z;
+              var d2=dx*dx+dy*dy+dz*dz;
+              if (d2 < bestD) { bestD=d2; best=c; }
+            });
+            if (best) {
+              var eyeH = typeof window._ccWalkGetFlags==='function' ? (window._ccWalkGetFlags().height||1.7) : 1.7;
+              var Sref2 = window._ccState3d;
+              var endN = new THREE.Vector3(best.point[0], best.point[1]+eyeH, best.point[2]);
+              var startN = Sref2.camera.position.clone();
+              var distN = startN.distanceTo(endN);
+              var durN = Math.max(400, Math.min(1200, distN * 60));
+              var t0N = performance.now();
+              (function stepN(){
+                var t = Math.min(1,(performance.now()-t0N)/durN);
+                var k = 1-Math.pow(1-t,3);
+                Sref2.camera.position.lerpVectors(startN, endN, k);
+                if (typeof invalidate==='function') invalidate(3);
+                if (t<1) requestAnimationFrame(stepN);
+              })();
+            }
+          } catch(_) {}
+        }
+      }
+      window.addEventListener('keydown', onKey);
+      return function(){ window.removeEventListener('keydown', onKey); };
+    }, []);
+
     function applyFov(v){ if (window._ccWalkSetFov) window._ccWalkSetFov(v); }
     function exit(){ if (window._ccWalkExit) window._ccWalkExit(); d({t:A.WALK_MODE, v:false}); }
+
+    function copyShareLink(){
+      try {
+        var hash = (typeof window._ccEncodeViewHash === 'function') ? window._ccEncodeViewHash() : '';
+        var url = hash ? window.location.origin + window.location.pathname + '#v=' + hash : window.location.href;
+        if (navigator.clipboard) navigator.clipboard.writeText(url);
+        else { var t=document.createElement('textarea'); t.value=url; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); }
+        setShareToast(true); setTimeout(function(){ setShareToast(false); }, 1800);
+      } catch(_) {}
+    }
 
     // Floor selector — collect storeys across models
     var storeyList = (function(){
@@ -17630,11 +17760,9 @@ function startApp() {
       boxShadow:'inset 0 0 '+(80+120*vignette)+'px '+(40+80*vignette)+'px rgba(0,0,0,'+(0.18*vignette)+')'
     }}></div>` : null;
 
-    // First-click pointer-lock affordance — small reticle until locked
-    var locked = (typeof document !== 'undefined') && document.pointerLockElement === (window._ccState3d && window._ccState3d.renderer && window._ccState3d.renderer.domElement);
-    var crosshair = html`<div style=${{position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:5}}>
-      ${locked ? html`<div style=${{width:6,height:6,borderRadius:'50%',background:'rgba(255,255,255,.6)',boxShadow:'0 0 0 1px rgba(0,0,0,.4)'}}></div>`
-              : html`<div title="Click to lock cursor for unlimited look" style=${{width:32,height:32,borderRadius:'50%',border:'1.5px dashed rgba(255,255,255,.7)',boxShadow:'0 0 4px rgba(0,0,0,.5)',animation:'cc-walk-pulse 1.2s ease-in-out infinite'}}></div>`}
+    var crosshair = html`<div style=${{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',pointerEvents:'none',zIndex:5,
+        opacity: vignette > 0.5 ? 0 : 1, transition:'opacity 0.15s'}}>
+      <div style=${{width:6,height:6,borderRadius:'50%',background:'rgba(255,255,255,.75)',boxShadow:'0 0 0 1px rgba(0,0,0,.5)'}}></div>
     </div>`;
 
     return html`<${React.Fragment}>
@@ -17682,6 +17810,8 @@ function startApp() {
         ${!isPresent && html`<${React.Fragment}><span><b style=${{color:'var(--text-primary)'}}>F</b></span><span>Inspect hovered element</span></${React.Fragment}>`}
         ${!isPresent && html`<${React.Fragment}><span><b style=${{color:'var(--text-primary)'}}>I</b></span><span>Create issue at view</span></${React.Fragment}>`}
         <span><b style=${{color:'var(--text-primary)'}}>B</b></span><span>Bookmark this view</span>
+        <span><b style=${{color:'var(--text-primary)'}}>V / Shift+V</b></span><span>Save / restore viewpoint</span>
+        ${isCoord && html`<${React.Fragment}><span><b style=${{color:'var(--text-primary)'}}>N</b></span><span>Fly to next open clash</span></${React.Fragment}>`}
         <span><b style=${{color:'var(--text-primary)'}}>Esc</b></span><span>Exit walk mode</span>
       </div>`}
       ${moreOpen && html`<div style=${{position:'absolute',bottom:'4rem',right:'1rem',
@@ -17754,6 +17884,16 @@ function startApp() {
             })}
           </div>`;
         })()}
+        <div style=${{height:1,background:'var(--border)',margin:'.15rem 0'}}></div>
+        <button onClick=${copyShareLink} style=${{width:'100%',padding:'.3rem .5rem',fontSize:'var(--text-xs)',border:'1px solid var(--border)',
+            background:'var(--bg-secondary)',color:'var(--text-secondary)',borderRadius:'var(--radius-xs)',cursor:'pointer',fontFamily:'inherit',
+            display:'flex',alignItems:'center',gap:'.4rem',justifyContent:'center'}}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          Copy share link
+        </button>
         ${isPresent && html`<div style=${{height:1,background:'var(--border)',margin:'.15rem 0'}}></div>
           <${WalkSplineRecorder} d=${d} />`}
       </div>`}
@@ -17803,6 +17943,18 @@ function startApp() {
           background:'var(--color-danger-bg)',color:'var(--color-danger-fg)',
           border:'1px solid var(--color-danger-border)'}}>Esc · Exit</button>
       </div>
+      ${vpToast && html`<div style=${{position:'absolute',top:'10%',left:'50%',transform:'translateX(-50%)',
+          background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',
+          padding:'.3rem .75rem',fontSize:'var(--text-xs)',color:'var(--text-primary)',
+          pointerEvents:'none',zIndex:8,boxShadow:'var(--shadow-md)',whiteSpace:'nowrap'}}>
+        Viewpoint saved
+      </div>`}
+      ${shareToast && html`<div style=${{position:'absolute',top:'10%',left:'50%',transform:'translateX(-50%)',
+          background:'var(--bg-primary)',border:'1px solid var(--border)',borderRadius:'var(--radius-xs)',
+          padding:'.3rem .75rem',fontSize:'var(--text-xs)',color:'var(--text-primary)',
+          pointerEvents:'none',zIndex:8,boxShadow:'var(--shadow-md)',whiteSpace:'nowrap'}}>
+        Link copied to clipboard
+      </div>`}
       ${!isPresent && html`<${WalkClashRadar} s=${s} />`}
       ${!isPresent && html`<${WalkMinimap} s=${s} />`}
       <${WalkTouchJoystick} />
