@@ -25770,7 +25770,7 @@ function startApp() {
       // Collect all quantities for display
       var allQty = ep&&ep.quantities||{};
       var dimKeys  = ['Length','Width','Height','Thickness','Depth','Perimeter'];
-      var areaKeys = ['Area','GrossArea','NetArea','GrossFloorArea','NetFloorArea','GrossSideArea','NetSideArea'];
+      var areaKeys = ['Area','GrossArea','NetArea','GrossFloorArea','NetFloorArea'];
       var volKeys  = ['Volume','GrossVolume','NetVolume'];
       var dims  = dimKeys.filter(function(k){return allQty[k]!=null;}).map(function(k){return {l:k,v:allQty[k],f:fmtDim};});
       var areas = areaKeys.filter(function(k){return allQty[k]!=null;}).map(function(k){return {l:k.replace(/^(Gross|Net)/,'$1 '),v:allQty[k],f:fmtArea};});
