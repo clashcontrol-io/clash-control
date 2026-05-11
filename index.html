@@ -6040,8 +6040,10 @@ function startApp() {
         if (!_walkActive) return;
         delete _walkKeys[e.code];
       });
-      // LMB drag = look (primary mechanism — no pointer-lock required).
-      // mousedown starts drag; mousemove tracks clientX/Y delta; mouseup ends.
+      // LMB drag = look. Session-level pointer lock (requested at walk entry) gives
+      // unlimited movementX/Y travel. clientX/Y delta is kept as fallback if the
+      // browser denies lock. Re-request lock on click if it was lost (e.g. after
+      // pressing Escape), but never on mousedown — that cancels held key state.
       renderer.domElement.addEventListener('mousedown', function(e) {
         if (!_walkActive || e.button !== 0) return;
         _walkLmbDragging = true;
@@ -6050,6 +6052,12 @@ function startApp() {
       });
       _wlAdd('mouseup', function(e) {
         if (e.button === 0) _walkLmbDragging = false;
+      });
+      renderer.domElement.addEventListener('click', function(e) {
+        if (!_walkActive) return;
+        if (!_walkPointerLocked) {
+          try { renderer.domElement.requestPointerLock(); } catch(_){}
+        }
       });
       // Double-click in walk mode = teleport to surface under cursor (any
       // surface with normal.y > 0.5 — floors, stairs, balconies, parapets).
@@ -6131,8 +6139,8 @@ function startApp() {
         _walkPointerLocked = (document.pointerLockElement === renderer.domElement);
         try { window.dispatchEvent(new CustomEvent('cc-walk-locked',{detail:{locked:_walkPointerLocked}})); } catch(e){}
       });
-      // Look: either pointer-locked (unlimited) or LMB-drag (natural click-drag).
-      // Writes to EMA targets; _walkTick applies smoothed decay each frame.
+      // Look: pointer lock active during LMB-drag → movementX/Y gives unlimited
+      // travel. clientX/Y delta is a fallback when pointer lock is unavailable.
       _wlAdd('mousemove', function(e) {
         if (!_walkActive || _walkEnteringAnim) return;
         var dx, dy;
@@ -6140,6 +6148,7 @@ function startApp() {
           dx = e.movementX || 0;
           dy = e.movementY || 0;
         } else if (_walkLmbDragging) {
+          // Fallback: pointer lock not available; track raw clientX/Y
           dx = e.clientX - _walkLmbPrevX;
           dy = e.clientY - _walkLmbPrevY;
           _walkLmbPrevX = e.clientX;
