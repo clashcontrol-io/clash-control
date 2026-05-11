@@ -1847,11 +1847,14 @@ function startApp() {
 
   function resolveMaterialName(api, modelID, mat) {
     if (!mat) return '';
-    if (mat.Name) return safeStr(mat.Name);
+    // Plain IfcMaterial — just return its name.
+    if (mat.Name && !mat.ForLayerSet && !mat.MaterialLayers && !mat.MaterialConstituents && !mat.ForProfileSet && !mat.MaterialProfiles && !mat.Materials) return safeStr(mat.Name);
     if (mat.ForLayerSet || mat.MaterialLayers) {
       var layerSet = mat.ForLayerSet ? api.GetLine(modelID, mat.ForLayerSet.value != null ? mat.ForLayerSet.value : mat.ForLayerSet) : mat;
       if (layerSet) {
-        if (layerSet.Name) return safeStr(layerSet.Name);
+        // Prefer individual layer material names — Revit sets LayerSetName to the
+        // wall type name (e.g. "Basic Wall:Chase – GWB & Metal Stud 6 5/8") which
+        // is not a useful material label. The actual layer materials are what users want.
         if (layerSet.MaterialLayers) {
           var names = [];
           for (var k = 0; k < layerSet.MaterialLayers.length; k++) {
@@ -1867,6 +1870,7 @@ function startApp() {
           }
           if (names.length) return names.join(', ');
         }
+        if (layerSet.Name) return safeStr(layerSet.Name);
       }
     }
     if (mat.MaterialConstituents) {
@@ -25519,7 +25523,7 @@ function startApp() {
     var collSt=useState(function(){
       try { return localStorage.getItem('cc_ai_panel_collapsed')==='1'; } catch(e) { return false; }
     }), collapsed=collSt[0], setCollapsed=collSt[1];
-    var tabSt=useState('ai'), drawerTab=tabSt[0], setDrawerTab=tabSt[1];
+    var tabSt=useState('details'), drawerTab=tabSt[0], setDrawerTab=tabSt[1];
     var elSt=useState(null), drawerEl=elSt[0], setDrawerEl=elSt[1];
     var dragRef=useRef(null);
     var onResizeDown = _makeResizeHandler(dragRef, function(w){ setPanelW(w); try{localStorage.setItem('cc_ai_panel_w',String(w));}catch(e){} }, 250, 600, true);
@@ -25549,7 +25553,6 @@ function startApp() {
         if (cur !== prev) {
           prev = cur;
           setDrawerEl(cur);
-          if (!cur) setDrawerTab('ai');
         }
       }, 300);
       return function(){
@@ -25563,7 +25566,7 @@ function startApp() {
       window._ccOpenAIPanel = function(){
         setCollapsed(false);
         try{localStorage.setItem('cc_ai_panel_collapsed','0');}catch(e){}
-        setDrawerTab('ai');
+        setDrawerTab('details');
       };
       window._ccToggleModelsPanel = function(){
         // Toggle: if already open on Models tab, collapse; otherwise open & switch
@@ -25767,7 +25770,7 @@ function startApp() {
       // Collect all quantities for display
       var allQty = ep&&ep.quantities||{};
       var dimKeys  = ['Length','Width','Height','Thickness','Depth','Perimeter'];
-      var areaKeys = ['Area','GrossArea','NetArea','GrossFloorArea','NetFloorArea'];
+      var areaKeys = ['Area','GrossArea','NetArea','GrossFloorArea','NetFloorArea','GrossSideArea','NetSideArea'];
       var volKeys  = ['Volume','GrossVolume','NetVolume'];
       var dims  = dimKeys.filter(function(k){return allQty[k]!=null;}).map(function(k){return {l:k,v:allQty[k],f:fmtDim};});
       var areas = areaKeys.filter(function(k){return allQty[k]!=null;}).map(function(k){return {l:k.replace(/^(Gross|Net)/,'$1 '),v:allQty[k],f:fmtArea};});
@@ -26136,8 +26139,6 @@ function startApp() {
         <div style=${{display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
           <button onClick=${function(){d({t:A.MODAL,v:true,el:el});d({t:A.TAB,v:'issues'});}}
             style=${{flex:1,padding:'.4rem .6rem',borderRadius:'var(--radius-sm)',background:'var(--accent)',color:'#fff',border:'none',fontSize:'.74rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>+ New issue</button>
-          <button onClick=${function(){setDrawerTab('ai');}}
-            style=${{flex:1,padding:'.4rem .6rem',borderRadius:'var(--radius-sm)',background:'var(--bg-tertiary)',color:'var(--text-secondary)',border:'1px solid var(--border)',fontSize:'.74rem',fontWeight:500,cursor:'pointer',fontFamily:'inherit'}}>Ask AI</button>
         </div>
       </div>`;
     }
@@ -26155,8 +26156,8 @@ function startApp() {
         background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='var(--accent-bg-deep)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
       <!-- Tab bar + collapse -->
       <div style=${{display:'flex',alignItems:'center',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,height:40,gap:0,paddingLeft:12}}>
-        ${(s.workspace==='present'?['details','ai']:['details','measure','ai']).map(function(tab){
-          var labels={details:'Details',measure:'Measure',ai:'Ask AI'};
+        ${(s.workspace==='present'?['details']:['details','measure']).map(function(tab){
+          var labels={details:'Details',measure:'Measure'};
           var isActive=drawerTab===tab;
           var hasDot = (tab==='details' && drawerEl) || (tab==='measure' && (s.measureMode || (s.measurements&&s.measurements.length>0)));
           return html`<button key=${tab}
