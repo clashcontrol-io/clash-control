@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.11.0 (2026-05-11)
+- Walk mode Phase 2: LMB-drag look, step-up, section/measure preserved, V/N/share
+
 ## v5.10.0 (2026-05-11)
 - Walk mode Phase 1: fix lag, accel/friction, EMA look, smooth enter/exit
 
