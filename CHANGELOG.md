@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.10.0 (2026-05-11)
+- Walk mode Phase 1: fix lag, accel/friction, EMA look, smooth enter/exit
+
 ## v5.9.8 (2026-05-11)
 - chore: bump version to 5.9.7
 
