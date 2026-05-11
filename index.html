@@ -4261,6 +4261,16 @@ function startApp() {
       bvh_cache_max: _BVH_CACHE_MAX,
       clashes_found: merged.length
     };
+    // Attach the just-computed profile to the most-recent run entry in the
+    // detection-runs history (already saved above). Purely additive: if the
+    // history wasn't written or is malformed, this no-ops.
+    try {
+      var _runsForProf = JSON.parse(localStorage.getItem('cc_detection_runs')||'[]');
+      if (_runsForProf.length > 0) {
+        _runsForProf[_runsForProf.length - 1].profile = profile;
+        localStorage.setItem('cc_detection_runs', JSON.stringify(_runsForProf));
+      }
+    } catch(e) {}
     var _pcts = {};
     ['sweep_and_prune_ms','bvh_build_ms','hard_clash_ms','soft_clash_ms','merge_and_post_ms'].forEach(function(k){
       _pcts[k.replace('_ms','')] = _totalMs>0 ? Math.round(profile[k]/_totalMs*100)+'%' : '0%';
