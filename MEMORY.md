@@ -271,6 +271,32 @@ UI_OVERHAUL.md written (7 chapters, 1469 lines). PLAN.md updated.
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-05-12
+**Summary:** 16 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- 23325ac chore: bump version to 5.11.1
+- 01ff976 fix: WASD breaks when clicking to look — remove mid-walk requestPointerLock
+- 8393047 fix: walk LMB-drag look stops at screen edge
+- 7c6d70d chore: bump version to 5.11.0
+- bd07655 Walk mode Phase 2: LMB-drag look, step-up, section/measure preserved, V/N/share
+- ee1252c chore: bump version to 5.10.0
+- 7f63458 Walk mode Phase 1: fix lag, accel/friction, EMA look, smooth enter/exit
+- 219c70f revert: unrequested areaKeys expansion (user asked about material/classification, not area)
+- a246f2a fix: restore Ask AI tab so Cmd+K entries remain functional
+- cfa6853 fix: inspector details — material layers, area formatting, default tab, remove Ask AI tab
+- ec6ec90 fix: use --color-success green for drag-drop overlay border; call out DESIGN.md in session start
+- a4c0add feat: drag-and-drop IFC/GLB loading when models are already open
+- 0132c7d chore: bump version to 5.9.8
+- 32c58ee chore: bump version to 5.9.7
+- dbdd54b chore: daily memory sync 2026-05-11
+- 5af42ab feat: persist detection profile in detection-runs history
+
+</details>
+
 ### 2026-05-11
 **Summary:** 1 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
