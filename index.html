@@ -2027,6 +2027,37 @@ function startApp() {
         } catch(e) {}
       }
     } catch(e) { console.warn('Property map build failed:', e.message||e); }
+
+    // Propagate type-level psets/quantities to instances via IfcRelDefinesByType.
+    // The loop above already built propMap entries for element *type* entities
+    // (IfcBeamType, IfcColumnType, etc.) because they can be targets of
+    // IfcRelDefinesByProperties too.  We now copy those entries down to each
+    // related instance without overwriting instance-level assignments — so
+    // structural profile psets (Pset_ProfileProperties, Pset_BeamCommon, …)
+    // that live on the type become visible on each beam/column instance.
+    try {
+      var typeRelIds = api.GetLineIDsWithType(modelID, IFC.IFCRELDEFINESBYTYPE);
+      for (var ti = 0; ti < typeRelIds.size(); ti++) {
+        try {
+          var tRel = api.GetLine(modelID, typeRelIds.get(ti));
+          var typeId = tRel.RelatingType ? (tRel.RelatingType.value != null ? tRel.RelatingType.value : tRel.RelatingType) : null;
+          if (!typeId || !propMap[typeId]) continue;
+          var typePm = propMap[typeId];
+          var tObjs = tRel.RelatedObjects || [];
+          for (var tj = 0; tj < tObjs.length; tj++) {
+            var toid = tObjs[tj].value != null ? tObjs[tj].value : tObjs[tj];
+            if (!propMap[toid]) propMap[toid] = {quantities:{}, psets:{}};
+            for (var psetName in typePm.psets) {
+              if (!propMap[toid].psets[psetName]) propMap[toid].psets[psetName] = typePm.psets[psetName];
+            }
+            for (var qName in typePm.quantities) {
+              if (propMap[toid].quantities[qName] == null) propMap[toid].quantities[qName] = typePm.quantities[qName];
+            }
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+
     return propMap;
   }
 
