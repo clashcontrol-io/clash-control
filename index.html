@@ -6318,6 +6318,39 @@ function startApp() {
         _flyTo(p, 4);
       };
 
+      // Double-click outside walk mode: fly camera toward the clicked surface.
+      // Raycasts the model, uses the hit point as new orbit target and closes
+      // in to 20 % of current distance (minimum 1 m). Works in any workspace.
+      renderer.domElement.addEventListener('dblclick', function(e) {
+        if (_walkActive) return; // walk mode has its own dblclick (teleport)
+        if (_sboxDragging || _secDrag) return;
+        try {
+          var rect = renderer.domElement.getBoundingClientRect();
+          var nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          var ny = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          var rc = new THREE.Raycaster();
+          rc.setFromCamera({x:nx, y:ny}, S.camera);
+          if (!S.mg) return;
+          var hits = rc.intersectObjects(S.mg.children, true);
+          var hit = null;
+          for (var i = 0; i < hits.length; i++) {
+            var h = hits[i];
+            if (!h.object || !h.object.visible) continue;
+            if (typeof _isGhostMat === 'function' && _isGhostMat(h.object.material)) continue;
+            hit = h; break;
+          }
+          if (!hit) return;
+          var tgt = hit.point.clone();
+          var curDist = S.camera.position.distanceTo(S.orbit.target);
+          var newDist = Math.max(1.0, curDist * 0.20);
+          // Position camera along current look direction, newDist back from hit point
+          var dir = new THREE.Vector3();
+          S.camera.getWorldDirection(dir);
+          var newPos = tgt.clone().addScaledVector(dir, -newDist);
+          _animateFly(tgt, newPos, 550);
+        } catch(err) {}
+      });
+
       _resetView = function() {
         // Clear all viewer overlays — true "back to clean slate"
         if (_unghostAll) _unghostAll();
@@ -9035,7 +9068,7 @@ function startApp() {
           var dragHandles = S2._sectionPlaneVis._secDragHandles || [];
           var hits = dragHandles.length ? raycaster.intersectObjects(dragHandles, false) : [];
           if (hits.length > 0) {
-            e.preventDefault(); e.stopPropagation();
+            e.preventDefault(); e.stopImmediatePropagation(); // prevent orbit mousedown from also firing
             S2.orbit.enabled = false;
             var wantsRotate = hits[0].object.userData._secHandle === 'rotate' || e.shiftKey;
             if (wantsRotate) {
@@ -9690,9 +9723,10 @@ function startApp() {
         border.userData._sectionPlane = true;
         border.renderOrder = 999;
         grp.add(border);
-        // Rotation ring — 3/4 arc at section-plane edge; drag to rotate the cut
-        var _torusR = Math.min(halfW, halfH) * 0.52;
-        var _tubeR = Math.max(0.018, _torusR * 0.045);
+        // Rotation ring — 3/4 arc at section-plane edge; drag to rotate the cut.
+        // Cap radius at 2 m so the ring stays manageable on city-scale models.
+        var _torusR = Math.min(Math.min(halfW, halfH) * 0.52, 2.0);
+        var _tubeR = Math.max(0.04, _torusR * 0.055);
         var arcGeo = new THREE.TorusGeometry(_torusR, _tubeR, 8, 32, Math.PI * 1.5);
         var arcMat = new THREE.MeshBasicMaterial({
           color: 0x1a6b4a, transparent: true, opacity: 0.70,
@@ -10117,8 +10151,10 @@ function startApp() {
       });
       S._sboxFaceHandles = faceHandles;
 
-      var ringRadius=Math.max(maxDim*0.15, 1.5); // scale with box so it's visible at any model scale
-      var ringTubeRadius=0.04;
+      // Fixed world-space size capped at 2.5 m — _scaleHandle uniform scaling
+      // makes the tube sub-pixel thin on large models, so we skip that mechanism here.
+      var ringRadius=Math.min(Math.max(maxDim*0.15, 0.6), 2.5);
+      var ringTubeRadius=Math.max(ringRadius*0.055, 0.04);
       var ringFloatHeight=Math.max(hy*0.3,0.5); // float above box
       var ringGeo=new THREE.TorusGeometry(ringRadius,ringTubeRadius,8,48);
       var ringMat=new THREE.MeshBasicMaterial({color:0xf59e0b,transparent:true,opacity:0.7,depthTest:false});
@@ -10127,8 +10163,6 @@ function startApp() {
       ring.position.copy(ctr).addScaledVector(axY,ringY);
       ring.rotation.x=Math.PI/2; // lay flat
       ring.userData._sboxRotation=true;
-      ring.userData._baseSize=ringRadius;
-      ring.userData._targetPx=72;
       ring.renderOrder=999;
       _sboxUnclip(ring);
       S.scene.add(ring);
