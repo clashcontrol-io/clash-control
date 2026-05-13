@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.11.2 (2026-05-13)
+- chore: daily memory sync 2026-05-13
+
 ## v5.11.1 (2026-05-11)
 - fix: WASD breaks when clicking to look — remove mid-walk requestPointerLock
 
