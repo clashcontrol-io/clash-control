@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.12.1 (2026-05-14)
+- Fix handle sizing to be geometry-relative, not camera-distance based
+
 ## v5.12.0 (2026-05-14)
 - Unify section plane handles with section box style
 
