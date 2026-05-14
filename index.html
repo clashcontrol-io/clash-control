@@ -26163,23 +26163,14 @@ function startApp() {
       var psetCount  = ep&&ep.psets ? Object.keys(ep.psets).length : 0;
       var qtyCount   = ep&&ep.quantities ? Object.keys(ep.quantities).length : 0;
 
-      // Helper: format dimension values — unit-aware (mm/cm/m models)
+      // Helper: format dimension values — show raw IFC value with correct unit suffix
       var _qtyUs = (typeof _ccDetectUnitScale === 'function') ? _ccDetectUnitScale(latestState && latestState.models) : 1;
-      function fmtDim(v){
-        if (typeof v !== 'number') return String(v);
-        var m = v / _qtyUs; // convert to metres
-        return m >= 1 ? m.toFixed(3)+' m' : (m*1000).toFixed(1)+' mm';
-      }
-      function fmtArea(v){
-        if (typeof v !== 'number') return String(v);
-        var m2 = v / (_qtyUs * _qtyUs);
-        return m2 >= 1 ? m2.toFixed(3)+' m²' : (m2*10000).toFixed(1)+' cm²';
-      }
-      function fmtVol(v){
-        if (typeof v !== 'number') return String(v);
-        var m3 = v / (_qtyUs * _qtyUs * _qtyUs);
-        return m3 >= 0.01 ? m3.toFixed(3)+' m³' : (m3*1e6).toFixed(1)+' cm³';
-      }
+      var _lenUnit  = _qtyUs >= 1000 ? 'mm' : (_qtyUs >= 100 ? 'cm' : 'm');
+      var _areaUnit = _qtyUs >= 1000 ? 'mm²' : (_qtyUs >= 100 ? 'cm²' : 'm²');
+      var _volUnit  = _qtyUs >= 1000 ? 'mm³' : (_qtyUs >= 100 ? 'cm³' : 'm³');
+      function fmtDim(v){  return typeof v === 'number' ? v.toFixed(_qtyUs >= 100 ? 0 : 3)+' '+_lenUnit  : String(v); }
+      function fmtArea(v){ return typeof v === 'number' ? v.toFixed(_qtyUs >= 100 ? 0 : 3)+' '+_areaUnit : String(v); }
+      function fmtVol(v){  return typeof v === 'number' ? v.toFixed(_qtyUs >= 100 ? 0 : 3)+' '+_volUnit  : String(v); }
 
       // Collect all quantities for display
       var allQty = ep&&ep.quantities||{};
