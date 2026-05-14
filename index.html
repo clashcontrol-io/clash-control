@@ -9751,6 +9751,11 @@ function startApp() {
         rotRing.userData._sectionPlane = true;
         rotRing.userData._secHandle   = 'rotate';
         rotRing.renderOrder = 1000;
+        // Rotation always happens around world Y (horizontal spin). Counter-rotate the ring
+        // so it lies flat in world space regardless of the group's quaternion.
+        if (quaternion) {
+          rotRing.quaternion.copy(new THREE.Quaternion().copy(quaternion).invert());
+        }
         grp.add(rotRing);
 
         // ── Move arrow — long stem + cone tip pointing along local +Z (plane normal) ──
