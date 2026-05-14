@@ -9758,7 +9758,7 @@ function startApp() {
         // Caps prevent handles from becoming enormous on large building-scale models.
         var halfMin   = Math.min(halfW, halfH);
         var shaftLen  = Math.max(0.3,  Math.min(halfMin * 0.45, 4.0));  // extra long, max 4 m
-        var shaftCylR = Math.max(0.015, Math.min(halfMin * 0.018, 0.12));
+        var shaftCylR = Math.max(0.008, Math.min(halfMin * 0.007, 0.05));
         var tipR      = Math.max(0.03,  Math.min(halfMin * 0.04,  0.25));
         var tipLen    = Math.max(0.08,  Math.min(halfMin * 0.1,   0.5));
         var arrowMat  = new THREE.MeshBasicMaterial({color: 0x1a6b4a, transparent: true, opacity: 0.65, depthTest: false});
