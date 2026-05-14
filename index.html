@@ -9182,7 +9182,7 @@ function startApp() {
         if (on) {
           if (!h.userData._secOrigColor) h.userData._secOrigColor = h.material.color.getHex();
           if (!h.userData._secOrigOpacity) h.userData._secOrigOpacity = h.material.opacity;
-          h.material.color.set(h.userData._secHandle === 'rotate' ? 0xffe566 : 0x6fffca);
+          h.material.color.set(h.userData._secHandle === 'rotate' ? 0xffd700 : 0x4fffb0);
           h.material.opacity = 1.0;
         } else {
           if (h.userData._secOrigColor !== undefined) h.material.color.set(h.userData._secOrigColor);
@@ -9432,7 +9432,7 @@ function startApp() {
         // disproportionately large on big models and tiny on small ones.
         // Re-scales every frame so each tagged handle keeps its target
         // pixel footprint regardless of model scale / camera distance.
-        if (S._sboxHandles || S._sboxFaceHandles || S._sboxRotRing) {
+        if (S._sboxHandles || S._sboxFaceHandles || S._sboxRotRing || (S._sectionPlaneVis && S._sectionPlaneVis._secDragHandles)) {
           var _camPos = S.camera.position;
           var _canvasH = renderer.domElement.height || el.clientHeight || 1;
           var _isPersp = S.camera.isPerspectiveCamera !== false && S.camera.fov != null;
@@ -9457,6 +9457,8 @@ function startApp() {
           if (S._sboxHandles)     S._sboxHandles.forEach(_scaleHandle);
           if (S._sboxFaceHandles) S._sboxFaceHandles.forEach(_scaleHandle);
           if (S._sboxRotRing)     _scaleHandle(S._sboxRotRing);
+          if (S._sectionPlaneVis && S._sectionPlaneVis._secDragHandles)
+            S._sectionPlaneVis._secDragHandles.forEach(_scaleHandle);
         }
 
         // Lower resolution while moving: orbit drag → 50%, walk movement → 65%
@@ -9739,47 +9741,69 @@ function startApp() {
       if (S._sectionHatchMesh) { S.scene.remove(S._sectionHatchMesh); S._sectionHatchMesh.geometry.dispose(); S._sectionHatchMesh.material.dispose(); S._sectionHatchMesh=null; }
       function _makeSectionVis(halfW, halfH, position, quaternion) {
         var grp = new THREE.Group();
-        // Translucent fill + visible border so the user sees a *plane*, not
-        // just an arrow. SketchUp + Navisworks + Solibri all show the cut
-        // plane as a translucent coloured rectangle bordered by a bright
-        // line — that's the convention architects already read. Earlier
-        // builds removed this and left only the arrow, which made it
-        // unclear whether sectioning was active.
         var fillGeo = new THREE.PlaneGeometry(halfW * 2, halfH * 2);
         var fillMat = new THREE.MeshBasicMaterial({
           color: 0x1a6b4a, transparent: true, opacity: 0.08,
           side: THREE.DoubleSide, depthWrite: false
         });
-        fillMat.clippingPlanes = []; // gizmos must not clip themselves
+        fillMat.clippingPlanes = [];
         var fill = new THREE.Mesh(fillGeo, fillMat);
         fill.userData._sectionPlane = true;
         fill.renderOrder = 998;
         grp.add(fill);
         var borderGeo = new THREE.EdgesGeometry(fillGeo);
-        var borderMat = new THREE.LineBasicMaterial({
-          color: 0x1a6b4a, transparent: true, opacity: 0.85
-        });
+        var borderMat = new THREE.LineBasicMaterial({color: 0x1a6b4a, transparent: true, opacity: 0.85});
         borderMat.clippingPlanes = [];
         var border = new THREE.LineSegments(borderGeo, borderMat);
         border.userData._sectionPlane = true;
         border.renderOrder = 999;
         grp.add(border);
-        // Rotation ring — 3/4 arc at section-plane edge; drag to rotate the cut.
-        // Cap radius at 2 m so the ring stays manageable on city-scale models.
+
+        // ── Rotation ring — amber, matches section-box ring style ──────────
         var _torusR = Math.min(Math.min(halfW, halfH) * 0.52, 2.0);
-        var _tubeR = Math.max(0.04, _torusR * 0.055);
-        var arcGeo = new THREE.TorusGeometry(_torusR, _tubeR, 8, 32, Math.PI * 1.5);
-        var arcMat = new THREE.MeshBasicMaterial({
-          color: 0x1a6b4a, transparent: true, opacity: 0.70,
-          side: THREE.DoubleSide, depthWrite: false
-        });
+        var _tubeR  = Math.max(0.04, _torusR * 0.055);
+        var arcGeo  = new THREE.TorusGeometry(_torusR, _tubeR, 8, 32, Math.PI * 1.5);
+        var arcMat  = new THREE.MeshBasicMaterial({color: 0xf59e0b, transparent: true, opacity: 0.7, depthTest: false});
         arcMat.clippingPlanes = [];
         var rotRing = new THREE.Mesh(arcGeo, arcMat);
         rotRing.userData._sectionPlane = true;
-        rotRing.userData._secHandle = 'rotate';
+        rotRing.userData._secHandle   = 'rotate';
+        rotRing.userData._baseSize    = _tubeR;
+        rotRing.userData._targetPx    = 5;
         rotRing.renderOrder = 1000;
         grp.add(rotRing);
-        grp._secDragHandles = [rotRing];
+
+        // ── Move arrow — long stem + cone tip pointing along local +Z (plane normal) ──
+        var halfMin   = Math.min(halfW, halfH);
+        var arrowR    = Math.max(0.04, Math.min(halfMin * 0.025, 0.5));
+        var shaftLen  = arrowR * 12;  // long shaft so it's easy to grab
+        var tipLen    = arrowR * 5;
+        var arrowMat  = new THREE.MeshBasicMaterial({color: 0x1a6b4a, transparent: true, opacity: 0.65, depthTest: false});
+        arrowMat.clippingPlanes = [];
+        var shaftGeo  = new THREE.CylinderGeometry(arrowR * 0.35, arrowR * 0.35, shaftLen, 8);
+        var shaft     = new THREE.Mesh(shaftGeo, arrowMat);
+        shaft.rotation.x = -Math.PI / 2;
+        shaft.position.set(0, 0, shaftLen / 2);
+        shaft.userData._sectionPlane = true;
+        shaft.userData._secHandle    = 'move';
+        shaft.userData._baseSize     = arrowR;
+        shaft.userData._targetPx     = 8;
+        shaft.userData._maxWorldSize = halfMin * 0.15;
+        shaft.renderOrder = 1000;
+        grp.add(shaft);
+        var tipGeo = new THREE.ConeGeometry(arrowR, tipLen, 12);
+        var tip    = new THREE.Mesh(tipGeo, arrowMat.clone());
+        tip.rotation.x = -Math.PI / 2;
+        tip.position.set(0, 0, shaftLen + tipLen / 2);
+        tip.userData._sectionPlane = true;
+        tip.userData._secHandle    = 'move';
+        tip.userData._baseSize     = arrowR;
+        tip.userData._targetPx     = 8;
+        tip.userData._maxWorldSize = halfMin * 0.15;
+        tip.renderOrder = 1000;
+        grp.add(tip);
+
+        grp._secDragHandles = [rotRing, shaft, tip];
         grp.position.copy(position);
         if (quaternion) grp.quaternion.copy(quaternion);
         grp.renderOrder = 999;
