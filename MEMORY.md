@@ -271,6 +271,20 @@ UI_OVERHAUL.md written (7 chapters, 1469 lines). PLAN.md updated.
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-05-14
+**Summary:** 4 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- 4acc741 chore: bump version to 5.11.3
+- fc6a3d3 chore: bump version to 5.11.2
+- d58b062 fix: propagate type-level psets to instances on IFC load
+- 080f6d3 chore: daily memory sync 2026-05-13
+
+</details>
+
 ### 2026-05-13
 **Summary:** 1 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
