@@ -26115,7 +26115,7 @@ function startApp() {
     function renderDetails() {
       var el = drawerEl;
       var workspace = s.workspace || 'present';
-      var WRAP = {flex:1,overflowY:'auto',padding:'.75rem .9rem',display:'flex',flexDirection:'column',gap:'.6rem'};
+      var WRAP = {flex:1,overflowY:'auto',padding:'.75rem .9rem',display:'flex',flexDirection:'column',gap:'.6rem',minWidth:0};
       var ROW  = {display:'flex',gap:'.4rem',alignItems:'baseline',padding:'.22rem 0',borderBottom:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)'};
       var LBL  = {color:'var(--text-muted)',minWidth:88,flexShrink:0};
       var VAL  = {color:'var(--text-primary)',flex:1,wordBreak:'break-word'};
@@ -26267,9 +26267,9 @@ function startApp() {
       var dqColor = dqScore===dqTotal?'var(--color-success-fg)':dqScore>=dqTotal*0.7?'var(--color-warning-fg)':'var(--color-danger-fg)';
 
       // Shared header block
-      var headerCard = html`<div style=${{background:'var(--accent-bg)',borderRadius:'var(--radius-md)',padding:'.7rem .85rem',border:'1px solid var(--accent-bg-deep)'}}>
+      var headerCard = html`<div style=${{background:'var(--accent-bg)',borderRadius:'var(--radius-md)',padding:'.7rem .85rem',border:'1px solid var(--accent-bg-deep)',minWidth:0,overflow:'hidden'}}>
         <div style=${{fontSize:'var(--text-2xs)',color:'var(--accent)',marginBottom:'.2rem',textTransform:'uppercase',letterSpacing:'.08em',fontWeight:'var(--weight-bold)'}}>${typeName}</div>
-        <div style=${{fontSize:'var(--text-md)',fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',lineHeight:'var(--leading-tight)'}}>${elName}</div>
+        <div style=${{fontSize:'var(--text-md)',fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',lineHeight:'var(--leading-tight)',wordBreak:'break-word',overflowWrap:'anywhere'}}>${elName}</div>
         <div style=${{display:'flex',gap:'.6rem',marginTop:'.3rem',flexWrap:'wrap'}}>
           ${discipline && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-secondary)'}}>${discipline}</span>`}
           ${storey && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)'}}>· ${storey}</span>`}
