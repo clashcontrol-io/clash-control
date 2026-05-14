@@ -8403,7 +8403,7 @@ function startApp() {
           var sb3=newSb;
           var ctr3=new THREE.Vector3((sb3.min[0]+sb3.max[0])/2,(sb3.min[1]+sb3.max[1])/2,(sb3.min[2]+sb3.max[2])/2);
           var hx3=(sb3.max[0]-sb3.min[0])/2, hy3=(sb3.max[1]-sb3.min[1])/2, hz3=(sb3.max[2]-sb3.min[2])/2;
-          var hSz3=Math.max(0.07,Math.min(Math.max(hx3,hy3,hz3)*0.028,0.28));
+          var hSz3=Math.max(0.07,Math.min(Math.max(hx3,hy3,hz3)*0.028,0.20));
           if(S3._sboxHandles){var cSigns=[[-1,-1,-1],[-1,-1,1],[-1,1,-1],[-1,1,1],[1,-1,-1],[1,-1,1],[1,1,-1],[1,1,1]];S3._sboxHandles.forEach(function(h,i){var sg=cSigns[i];var p=ctr3.clone().addScaledVector(axX3,sg[0]*hx3).addScaledVector(axY3,sg[1]*hy3).addScaledVector(axZ3,sg[2]*hz3);h.position.copy(p).addScaledVector(new THREE.Vector3(sg[0],sg[1],sg[2]).normalize(),hSz3);h.userData._handleAxX=axX3.clone();h.userData._handleAxZ=axZ3.clone();});}
           var faS3=Math.max(0.08,Math.min(Math.max(hx3,hy3,hz3)*0.0173,0.69));
           if(S3._sboxFaceHandles){var fD3=[{ax:axX3,s:+1,he:hx3},{ax:axX3,s:-1,he:hx3},{ax:axY3,s:+1,he:hy3},{ax:axY3,s:-1,he:hy3},{ax:axZ3,s:+1,he:hz3},{ax:axZ3,s:-1,he:hz3}];S3._sboxFaceHandles.forEach(function(h,i){var fd3=fD3[i];if(!fd3)return;var fc=ctr3.clone().addScaledVector(fd3.ax,fd3.s*fd3.he);h.position.copy(fc).addScaledVector(fd3.ax,fd3.s*faS3*1.0);h.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),fd3.ax.clone().multiplyScalar(fd3.s).normalize());h.userData._faceAxis=fd3.ax.clone().multiplyScalar(fd3.s);});}
@@ -9125,10 +9125,17 @@ function startApp() {
           if (Math.abs(dx) < 3 && !_secDrag.didDrag) return;
           _secDrag.didDrag = true;
           window._ccSectionDragging = true;
-          var angle = -dx * 0.005;
-          var nx = _secDrag.startNormal[0], nz = _secDrag.startNormal[2];
+          var angle = -dx * 0.003;
+          var nx = _secDrag.startNormal[0], ny = _secDrag.startNormal[1], nz = _secDrag.startNormal[2];
           var cosA = Math.cos(angle), sinA = Math.sin(angle);
-          var rn = [nx*cosA - nz*sinA, _secDrag.startNormal[1], nx*sinA + nz*cosA];
+          var rn;
+          if (Math.abs(ny) > 0.7) {
+            // Horizontal plane: ring stands vertical → tilt the plane by rotating normal around world Z
+            rn = [nx*cosA - ny*sinA, nx*sinA + ny*cosA, nz];
+          } else {
+            // Vertical plane: ring lies flat → spin around world Y
+            rn = [nx*cosA - nz*sinA, ny, nx*sinA + nz*cosA];
+          }
           if (window._ccDispatch) window._ccDispatch({t:A.SECTION_CUSTOM, v:{normal:rn, point:_secDrag.startPoint}, pos:_secDrag.startPos});
           renderer.domElement.style.cursor = 'ew-resize';
         } else {
@@ -9156,7 +9163,7 @@ function startApp() {
             var mdx =  dx / el.clientWidth  * 2;
             var mdy = -dy / el.clientHeight * 2;
             var dot = mdx * sx + mdy * sy;
-            newPos = Math.max(0, Math.min(1, _secDrag.startPos - dot * 1.0));
+            newPos = Math.max(0, Math.min(1, _secDrag.startPos - dot * 0.5));
           } else {
             newPos = Math.max(0, Math.min(1, _secDrag.startPos + dy * 0.003));
           }
@@ -9763,7 +9770,7 @@ function startApp() {
         var tipLen    = Math.max(0.07,  Math.min(halfMin * 0.08,  0.35));
         var arrowMat  = new THREE.MeshBasicMaterial({color: 0x1a6b4a, transparent: true, opacity: 0.65, depthTest: false});
         arrowMat.clippingPlanes = [];
-        var shaftGeo  = new THREE.CylinderGeometry(shaftCylR, shaftCylR, shaftLen, 8);
+        var shaftGeo  = new THREE.CylinderGeometry(shaftCylR, shaftCylR, shaftLen, 8, 1, true);
         var shaft     = new THREE.Mesh(shaftGeo, arrowMat);
         shaft.rotation.x = -Math.PI / 2;
         shaft.position.set(0, 0, shaftLen / 2);
@@ -10123,7 +10130,7 @@ function startApp() {
       // re-scales them every frame so they appear at a constant pixel size
       // regardless of model scale or camera distance — otherwise the same
       // handle looks tiny on a 5 m apartment and huge on a 500 m tower.
-      var handleSize = Math.max(0.07, Math.min(maxDim*0.028, 0.28));
+      var handleSize = Math.max(0.07, Math.min(maxDim*0.028, 0.20));
       var handleGeo=new THREE.SphereGeometry(handleSize,8,8);
       var handles=[];
       // renderer.clippingPlanes clips everything outside the section box, including
@@ -10162,8 +10169,7 @@ function startApp() {
       // even on big building-scale models (no hard upper cap).
       var faceArrowSize = Math.max(0.08, Math.min(maxDim * 0.0173, 0.69));
       var faceArrowGeo = new THREE.ConeGeometry(faceArrowSize * 0.55, faceArrowSize * 1.6, 16);
-      var _minBoxDim = Math.max(0.1, Math.min(hx, hy, hz));
-      var _arrowMaxWorld = Math.min(_minBoxDim * 0.15, 1.5);
+      var _arrowMaxWorld = Math.max(0.12, Math.min(maxDim * 0.04, 0.55));
       var faceHandles = [];
       var faceDirs = [
         {axis: axX.clone(), sign: +1, idx: 0, side: 'max', halfExt: hx},
