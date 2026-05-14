@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.12.0 (2026-05-14)
+- Unify section plane handles with section box style
+
 ## v5.11.3 (2026-05-13)
 - chore: bump version to 5.11.2
 
