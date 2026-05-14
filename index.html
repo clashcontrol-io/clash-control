@@ -7126,6 +7126,12 @@ function startApp() {
       _getSectionBoxFromScene = function(){
         if(!S.mg||!S.mg.children.length) return null;
         var box=_elemsBBox();
+        // Union with actual scene mesh bounds to catch GLB geometry or any
+        // elements whose per-element box wasn't computed.
+        try {
+          var meshBox = new THREE.Box3().setFromObject(S.mg);
+          if (!meshBox.isEmpty()) box.union(meshBox);
+        } catch(e){}
         if(box.isEmpty()) return null;
         box.expandByScalar(0.5);
         return box;
@@ -8385,7 +8391,7 @@ function startApp() {
 
         if(ds.type==='rotate'){
           var dx=e.clientX-ds.startX;
-          var newRot=ds.startRot - dx*0.01;
+          var newRot=ds.startRot + dx*0.01;
           var newSb=Object.assign({},ds.startSb,{min:ds.startSb.min.slice(),max:ds.startSb.max.slice(),rotation:newRot});
           if(window._ccDispatch) window._ccDispatch({t:A.SECTION_BOX,v:newSb});
           // Immediately update wireframe + handles in Three.js for smooth visual feedback
@@ -9442,6 +9448,9 @@ function startApp() {
             } else {
               worldSize = (pxTarget / _canvasH) * _orthoSpan;
             }
+            if (h.userData._maxWorldSize && worldSize > h.userData._maxWorldSize) {
+              worldSize = h.userData._maxWorldSize;
+            }
             var s = worldSize / h.userData._baseSize;
             if (s > 0 && isFinite(s)) h.scale.setScalar(s);
           }
@@ -10153,6 +10162,8 @@ function startApp() {
       // even on big building-scale models (no hard upper cap).
       var faceArrowSize = Math.max(0.08, Math.min(maxDim * 0.0173, 0.69));
       var faceArrowGeo = new THREE.ConeGeometry(faceArrowSize * 0.55, faceArrowSize * 1.6, 16);
+      var _minBoxDim = Math.max(0.1, Math.min(hx, hy, hz));
+      var _arrowMaxWorld = _minBoxDim * 0.18;
       var faceHandles = [];
       var faceDirs = [
         {axis: axX.clone(), sign: +1, idx: 0, side: 'max', halfExt: hx},
@@ -10165,7 +10176,7 @@ function startApp() {
       faceDirs.forEach(function(fd){
         var faceCenter = ctr.clone().addScaledVector(fd.axis, fd.sign * fd.halfExt);
         var arrowPos   = faceCenter.clone().addScaledVector(fd.axis, fd.sign * faceArrowSize * 1.0);
-        var fmat = new THREE.MeshBasicMaterial({color:0x1a6b4a, transparent:true, opacity:0.92, depthTest:false});
+        var fmat = new THREE.MeshBasicMaterial({color:0x1a6b4a, transparent:true, opacity:0.65, depthTest:false});
         var arrow = new THREE.Mesh(faceArrowGeo, fmat);
         arrow.position.copy(arrowPos);
         arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), fd.axis.clone().multiplyScalar(fd.sign).normalize());
@@ -10175,7 +10186,8 @@ function startApp() {
         arrow.userData._faceIdx  = fd.idx;
         arrow.userData._faceSide = fd.side;
         arrow.userData._baseSize = faceArrowSize;
-        arrow.userData._targetPx = 16;
+        arrow.userData._targetPx = 14;
+        arrow.userData._maxWorldSize = _arrowMaxWorld;
         arrow.renderOrder = 999;
         _sboxUnclip(arrow);
         S.scene.add(arrow);
@@ -28900,10 +28912,11 @@ function startApp() {
         var changed = (window._ccShiftHeld !== s1) || (window._ccAltHeld !== a1);
         window._ccShiftHeld = s1;
         window._ccAltHeld   = a1;
-        if (a1 && window._ccSelectedEl && window._ccSelectedEl.box && !window._ccSelectedEl.box.isEmpty()){
+        var _measActive = !!(window._ccLatestState && window._ccLatestState.measureMode);
+        if (a1 && _measActive && window._ccSelectedEl && window._ccSelectedEl.box && !window._ccSelectedEl.box.isEmpty()){
           var c = window._ccSelectedEl.box.getCenter(new THREE.Vector3());
           window._ccAltHoverFrom = {x:c.x, y:c.y, z:c.z};
-        } else if (!a1) {
+        } else if (!a1 || !_measActive) {
           window._ccAltHoverFrom = null;
         }
         if (changed) {
