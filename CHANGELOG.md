@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.12.3 (2026-05-14)
+- Slow down section plane drag to better follow mouse speed
+
 ## v5.12.2 (2026-05-14)
 - Tighten handle size caps to prevent oversizing on large models
 
