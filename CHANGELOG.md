@@ -1,5 +1,8 @@
 # Changelog
 
+## v5.12.2 (2026-05-14)
+- Tighten handle size caps to prevent oversizing on large models
+
 ## v5.12.1 (2026-05-14)
 - Fix handle sizing to be geometry-relative, not camera-distance based
 
