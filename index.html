@@ -296,6 +296,7 @@
     @keyframes ccTipIn{from{opacity:0;transform:translateX(-50%) translateY(-3px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
     @keyframes cc-walk-pulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:.8;transform:scale(1.18)}}
     @keyframes cc-walk-tele{0%{opacity:1}100%{opacity:0}}
+    @keyframes cc-dot-pulse{0%,100%{opacity:1}50%{opacity:.3}}
     .cc-modal-backdrop{animation:ccBackdropIn var(--duration-fast) var(--ease-standard)}
     .cc-modal-card{animation:ccModalIn var(--duration-base) var(--ease-decelerate)}
     .cc-list-row{transition:background var(--duration-fast) var(--ease-standard),border-color var(--duration-fast) var(--ease-standard)}
@@ -7125,6 +7126,12 @@ function startApp() {
       _getSectionBoxFromScene = function(){
         if(!S.mg||!S.mg.children.length) return null;
         var box=_elemsBBox();
+        // Union with actual scene mesh bounds to catch GLB geometry or any
+        // elements whose per-element box wasn't computed.
+        try {
+          var meshBox = new THREE.Box3().setFromObject(S.mg);
+          if (!meshBox.isEmpty()) box.union(meshBox);
+        } catch(e){}
         if(box.isEmpty()) return null;
         box.expandByScalar(0.5);
         return box;
@@ -8384,7 +8391,7 @@ function startApp() {
 
         if(ds.type==='rotate'){
           var dx=e.clientX-ds.startX;
-          var newRot=ds.startRot - dx*0.01;
+          var newRot=ds.startRot + dx*0.01;
           var newSb=Object.assign({},ds.startSb,{min:ds.startSb.min.slice(),max:ds.startSb.max.slice(),rotation:newRot});
           if(window._ccDispatch) window._ccDispatch({t:A.SECTION_BOX,v:newSb});
           // Immediately update wireframe + handles in Three.js for smooth visual feedback
@@ -9175,7 +9182,7 @@ function startApp() {
         if (on) {
           if (!h.userData._secOrigColor) h.userData._secOrigColor = h.material.color.getHex();
           if (!h.userData._secOrigOpacity) h.userData._secOrigOpacity = h.material.opacity;
-          h.material.color.set(h.userData._secHandle === 'rotate' ? 0xffe566 : 0x6fffca);
+          h.material.color.set(h.userData._secHandle === 'rotate' ? 0xffd700 : 0x4fffb0);
           h.material.opacity = 1.0;
         } else {
           if (h.userData._secOrigColor !== undefined) h.material.color.set(h.userData._secOrigColor);
@@ -9425,7 +9432,7 @@ function startApp() {
         // disproportionately large on big models and tiny on small ones.
         // Re-scales every frame so each tagged handle keeps its target
         // pixel footprint regardless of model scale / camera distance.
-        if (S._sboxHandles || S._sboxFaceHandles || S._sboxRotRing) {
+        if (S._sboxHandles || S._sboxFaceHandles || S._sboxRotRing || (S._sectionPlaneVis && S._sectionPlaneVis._secDragHandles)) {
           var _camPos = S.camera.position;
           var _canvasH = renderer.domElement.height || el.clientHeight || 1;
           var _isPersp = S.camera.isPerspectiveCamera !== false && S.camera.fov != null;
@@ -9441,12 +9448,17 @@ function startApp() {
             } else {
               worldSize = (pxTarget / _canvasH) * _orthoSpan;
             }
+            if (h.userData._maxWorldSize && worldSize > h.userData._maxWorldSize) {
+              worldSize = h.userData._maxWorldSize;
+            }
             var s = worldSize / h.userData._baseSize;
             if (s > 0 && isFinite(s)) h.scale.setScalar(s);
           }
           if (S._sboxHandles)     S._sboxHandles.forEach(_scaleHandle);
           if (S._sboxFaceHandles) S._sboxFaceHandles.forEach(_scaleHandle);
           if (S._sboxRotRing)     _scaleHandle(S._sboxRotRing);
+          if (S._sectionPlaneVis && S._sectionPlaneVis._secDragHandles)
+            S._sectionPlaneVis._secDragHandles.forEach(_scaleHandle);
         }
 
         // Lower resolution while moving: orbit drag → 50%, walk movement → 65%
@@ -9729,47 +9741,69 @@ function startApp() {
       if (S._sectionHatchMesh) { S.scene.remove(S._sectionHatchMesh); S._sectionHatchMesh.geometry.dispose(); S._sectionHatchMesh.material.dispose(); S._sectionHatchMesh=null; }
       function _makeSectionVis(halfW, halfH, position, quaternion) {
         var grp = new THREE.Group();
-        // Translucent fill + visible border so the user sees a *plane*, not
-        // just an arrow. SketchUp + Navisworks + Solibri all show the cut
-        // plane as a translucent coloured rectangle bordered by a bright
-        // line — that's the convention architects already read. Earlier
-        // builds removed this and left only the arrow, which made it
-        // unclear whether sectioning was active.
         var fillGeo = new THREE.PlaneGeometry(halfW * 2, halfH * 2);
         var fillMat = new THREE.MeshBasicMaterial({
           color: 0x1a6b4a, transparent: true, opacity: 0.08,
           side: THREE.DoubleSide, depthWrite: false
         });
-        fillMat.clippingPlanes = []; // gizmos must not clip themselves
+        fillMat.clippingPlanes = [];
         var fill = new THREE.Mesh(fillGeo, fillMat);
         fill.userData._sectionPlane = true;
         fill.renderOrder = 998;
         grp.add(fill);
         var borderGeo = new THREE.EdgesGeometry(fillGeo);
-        var borderMat = new THREE.LineBasicMaterial({
-          color: 0x1a6b4a, transparent: true, opacity: 0.85
-        });
+        var borderMat = new THREE.LineBasicMaterial({color: 0x1a6b4a, transparent: true, opacity: 0.85});
         borderMat.clippingPlanes = [];
         var border = new THREE.LineSegments(borderGeo, borderMat);
         border.userData._sectionPlane = true;
         border.renderOrder = 999;
         grp.add(border);
-        // Rotation ring — 3/4 arc at section-plane edge; drag to rotate the cut.
-        // Cap radius at 2 m so the ring stays manageable on city-scale models.
+
+        // ── Rotation ring — amber, matches section-box ring style ──────────
         var _torusR = Math.min(Math.min(halfW, halfH) * 0.52, 2.0);
-        var _tubeR = Math.max(0.04, _torusR * 0.055);
-        var arcGeo = new THREE.TorusGeometry(_torusR, _tubeR, 8, 32, Math.PI * 1.5);
-        var arcMat = new THREE.MeshBasicMaterial({
-          color: 0x1a6b4a, transparent: true, opacity: 0.70,
-          side: THREE.DoubleSide, depthWrite: false
-        });
+        var _tubeR  = Math.max(0.04, _torusR * 0.055);
+        var arcGeo  = new THREE.TorusGeometry(_torusR, _tubeR, 8, 32, Math.PI * 1.5);
+        var arcMat  = new THREE.MeshBasicMaterial({color: 0xf59e0b, transparent: true, opacity: 0.7, depthTest: false});
         arcMat.clippingPlanes = [];
         var rotRing = new THREE.Mesh(arcGeo, arcMat);
         rotRing.userData._sectionPlane = true;
-        rotRing.userData._secHandle = 'rotate';
+        rotRing.userData._secHandle   = 'rotate';
+        rotRing.userData._baseSize    = _tubeR;
+        rotRing.userData._targetPx    = 5;
         rotRing.renderOrder = 1000;
         grp.add(rotRing);
-        grp._secDragHandles = [rotRing];
+
+        // ── Move arrow — long stem + cone tip pointing along local +Z (plane normal) ──
+        var halfMin   = Math.min(halfW, halfH);
+        var arrowR    = Math.max(0.04, Math.min(halfMin * 0.025, 0.5));
+        var shaftLen  = arrowR * 12;  // long shaft so it's easy to grab
+        var tipLen    = arrowR * 5;
+        var arrowMat  = new THREE.MeshBasicMaterial({color: 0x1a6b4a, transparent: true, opacity: 0.65, depthTest: false});
+        arrowMat.clippingPlanes = [];
+        var shaftGeo  = new THREE.CylinderGeometry(arrowR * 0.35, arrowR * 0.35, shaftLen, 8);
+        var shaft     = new THREE.Mesh(shaftGeo, arrowMat);
+        shaft.rotation.x = -Math.PI / 2;
+        shaft.position.set(0, 0, shaftLen / 2);
+        shaft.userData._sectionPlane = true;
+        shaft.userData._secHandle    = 'move';
+        shaft.userData._baseSize     = arrowR;
+        shaft.userData._targetPx     = 8;
+        shaft.userData._maxWorldSize = halfMin * 0.15;
+        shaft.renderOrder = 1000;
+        grp.add(shaft);
+        var tipGeo = new THREE.ConeGeometry(arrowR, tipLen, 12);
+        var tip    = new THREE.Mesh(tipGeo, arrowMat.clone());
+        tip.rotation.x = -Math.PI / 2;
+        tip.position.set(0, 0, shaftLen + tipLen / 2);
+        tip.userData._sectionPlane = true;
+        tip.userData._secHandle    = 'move';
+        tip.userData._baseSize     = arrowR;
+        tip.userData._targetPx     = 8;
+        tip.userData._maxWorldSize = halfMin * 0.15;
+        tip.renderOrder = 1000;
+        grp.add(tip);
+
+        grp._secDragHandles = [rotRing, shaft, tip];
         grp.position.copy(position);
         if (quaternion) grp.quaternion.copy(quaternion);
         grp.renderOrder = 999;
@@ -10152,6 +10186,8 @@ function startApp() {
       // even on big building-scale models (no hard upper cap).
       var faceArrowSize = Math.max(0.08, Math.min(maxDim * 0.0173, 0.69));
       var faceArrowGeo = new THREE.ConeGeometry(faceArrowSize * 0.55, faceArrowSize * 1.6, 16);
+      var _minBoxDim = Math.max(0.1, Math.min(hx, hy, hz));
+      var _arrowMaxWorld = _minBoxDim * 0.18;
       var faceHandles = [];
       var faceDirs = [
         {axis: axX.clone(), sign: +1, idx: 0, side: 'max', halfExt: hx},
@@ -10164,7 +10200,7 @@ function startApp() {
       faceDirs.forEach(function(fd){
         var faceCenter = ctr.clone().addScaledVector(fd.axis, fd.sign * fd.halfExt);
         var arrowPos   = faceCenter.clone().addScaledVector(fd.axis, fd.sign * faceArrowSize * 1.0);
-        var fmat = new THREE.MeshBasicMaterial({color:0x1a6b4a, transparent:true, opacity:0.92, depthTest:false});
+        var fmat = new THREE.MeshBasicMaterial({color:0x1a6b4a, transparent:true, opacity:0.65, depthTest:false});
         var arrow = new THREE.Mesh(faceArrowGeo, fmat);
         arrow.position.copy(arrowPos);
         arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), fd.axis.clone().multiplyScalar(fd.sign).normalize());
@@ -10174,7 +10210,8 @@ function startApp() {
         arrow.userData._faceIdx  = fd.idx;
         arrow.userData._faceSide = fd.side;
         arrow.userData._baseSize = faceArrowSize;
-        arrow.userData._targetPx = 16;
+        arrow.userData._targetPx = 14;
+        arrow.userData._maxWorldSize = _arrowMaxWorld;
         arrow.renderOrder = 999;
         _sboxUnclip(arrow);
         S.scene.add(arrow);
@@ -18847,10 +18884,14 @@ function startApp() {
     var pKeyName = stKeyName[0], setPKeyName = stKeyName[1];
     var stCopied = useState(''); var copiedKind = stCopied[0], setCopiedKind = stCopied[1];
     var stCreating = useState(false); var creating=stCreating[0], setCreating=stCreating[1];
+    var stCreateOpen = useState(false); var createOpen=stCreateOpen[0], setCreateOpen=stCreateOpen[1];
+    var stCreateName = useState(''); var createName=stCreateName[0], setCreateName=stCreateName[1];
+    var stJoinOpen = useState(false); var joinOpen=stJoinOpen[0], setJoinOpen=stJoinOpen[1];
+    var stJoinKey = useState(''); var joinKeyVal=stJoinKey[0], setJoinKeyVal=stJoinKey[1];
     var shareUrl = pKey ? (window.location.origin + window.location.pathname + '?p=' + encodeURIComponent(pKey)) : '';
     function createKey(){
       if (creating) return;
-      var name = prompt('Name this shared project (visible to teammates):', pKeyName || 'Untitled project');
+      var name = createName.trim();
       if (!name) return;
       if (!window._ccSharedCreate) { alert('Sharing service unavailable.'); return; }
       setCreating(true);
@@ -18864,6 +18905,8 @@ function startApp() {
           }
         }catch(e){}
         setCreating(false);
+        setCreateOpen(false);
+        setCreateName('');
       }).catch(function(){ alert('Could not create shared project. Server may be unavailable.'); setCreating(false); });
     }
     function copy(text, kind){
@@ -18874,9 +18917,8 @@ function startApp() {
       setTimeout(function(){ setCopiedKind(''); }, 1400);
     }
     function joinByKey(){
-      var key = prompt('Paste the project key your teammate gave you:', '');
+      var key = joinKeyVal.trim();
       if (!key) return;
-      key = key.trim();
       // also accept full URL — strip everything but the ?p= value
       var m = key.match(/[?&]p=([^&#]+)/);
       if (m) key = decodeURIComponent(m[1]);
@@ -18889,6 +18931,8 @@ function startApp() {
           } catch(e){}
           setPKey(key);
           setPKeyName(data.project.name);
+          setJoinOpen(false);
+          setJoinKeyVal('');
           if (window._ccSharedStart) window._ccSharedStart();
         })
         .catch(function(){ alert('Project not found. Check the key and try again.'); });
@@ -18945,10 +18989,32 @@ function startApp() {
             </div>` : html`<div style=${{padding:'.9rem 1rem',background:'var(--bg-tertiary)',border:'1px dashed var(--border)',borderRadius:'var(--radius-md)'}}>
               <div style=${{fontSize:'0.85rem',fontWeight:600,color:'var(--text-primary)',marginBottom:'.25rem'}}>Quick share</div>
               <div style=${{fontSize:'0.78rem',color:'var(--text-secondary)',lineHeight:1.5,marginBottom:'.6rem'}}>Generate a project key in one click. Share the link — your teammate clicks it and instantly sees the same comments, issues, and clash decisions. No account, no upload.</div>
-              <div style=${{display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
-                <button onClick=${createKey} disabled=${creating} style=${{...btnPrimary,padding:'.45rem .8rem',fontSize:'0.8rem'}}>${creating?'Creating…':'Create shared project'}</button>
-                <button onClick=${joinByKey} style=${{...btnSecondary,padding:'.45rem .8rem',fontSize:'0.8rem'}}>Join with a key…</button>
-              </div>
+              ${!createOpen && !joinOpen && html`<div style=${{display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
+                <button onClick=${function(){ setCreateOpen(true); setCreateName(pKeyName || 'Untitled project'); }} style=${{...btnPrimary,padding:'.45rem .8rem',fontSize:'0.8rem'}}>Create shared project</button>
+                <button onClick=${function(){ setJoinOpen(true); }} style=${{...btnSecondary,padding:'.45rem .8rem',fontSize:'0.8rem'}}>Join with a key…</button>
+              </div>`}
+              ${createOpen && html`<div style=${{display:'flex',flexDirection:'column',gap:'.4rem'}}>
+                <div style=${{fontSize:'0.74rem',color:'var(--text-muted)'}}>Project name (visible to teammates)</div>
+                <div style=${{display:'flex',gap:'.4rem'}}>
+                  <input autofocus type="text" value=${createName} placeholder="Untitled project"
+                    onInput=${function(e){ setCreateName(e.target.value); }}
+                    onKeyDown=${function(e){ if(e.key==='Enter') createKey(); if(e.key==='Escape'){ setCreateOpen(false); setCreateName(''); } }}
+                    style=${{flex:1,...inputStyle}} />
+                  <button onClick=${createKey} disabled=${creating||!createName.trim()} style=${{...btnPrimary,padding:'.45rem .8rem',fontSize:'0.8rem',opacity:(creating||!createName.trim())?0.5:1}}>${creating?'Creating…':'Create'}</button>
+                  <button onClick=${function(){ setCreateOpen(false); setCreateName(''); }} style=${{...btnGhost,padding:'.45rem .8rem',fontSize:'0.8rem'}}>Cancel</button>
+                </div>
+              </div>`}
+              ${joinOpen && html`<div style=${{display:'flex',flexDirection:'column',gap:'.4rem'}}>
+                <div style=${{fontSize:'0.74rem',color:'var(--text-muted)'}}>Paste project key or share link</div>
+                <div style=${{display:'flex',gap:'.4rem'}}>
+                  <input autofocus type="text" value=${joinKeyVal} placeholder="MEP-abc123 or full URL"
+                    onInput=${function(e){ setJoinKeyVal(e.target.value); }}
+                    onKeyDown=${function(e){ if(e.key==='Enter') joinByKey(); if(e.key==='Escape'){ setJoinOpen(false); setJoinKeyVal(''); } }}
+                    style=${{flex:1,...inputStyle}} />
+                  <button onClick=${joinByKey} disabled=${!joinKeyVal.trim()} style=${{...btnPrimary,padding:'.45rem .8rem',fontSize:'0.8rem',opacity:joinKeyVal.trim()?1:0.5}}>Join</button>
+                  <button onClick=${function(){ setJoinOpen(false); setJoinKeyVal(''); }} style=${{...btnGhost,padding:'.45rem .8rem',fontSize:'0.8rem'}}>Cancel</button>
+                </div>
+              </div>`}
             </div>`}
 
             <div>
@@ -26085,7 +26151,7 @@ function startApp() {
     function renderDetails() {
       var el = drawerEl;
       var workspace = s.workspace || 'present';
-      var WRAP = {flex:1,overflowY:'auto',padding:'.75rem .9rem',display:'flex',flexDirection:'column',gap:'.6rem'};
+      var WRAP = {flex:1,overflowY:'auto',padding:'.75rem .9rem',display:'flex',flexDirection:'column',gap:'.6rem',minWidth:0};
       var ROW  = {display:'flex',gap:'.4rem',alignItems:'baseline',padding:'.22rem 0',borderBottom:'1px solid var(--border-subtle)',fontSize:'var(--text-xs)'};
       var LBL  = {color:'var(--text-muted)',minWidth:88,flexShrink:0};
       var VAL  = {color:'var(--text-primary)',flex:1,wordBreak:'break-word'};
@@ -26121,10 +26187,14 @@ function startApp() {
       var psetCount  = ep&&ep.psets ? Object.keys(ep.psets).length : 0;
       var qtyCount   = ep&&ep.quantities ? Object.keys(ep.quantities).length : 0;
 
-      // Helper: format dimension values
-      function fmtDim(v){ return typeof v==='number'?(v>=1?v.toFixed(3)+' m':(v*1000).toFixed(1)+' mm'):String(v); }
-      function fmtArea(v){ return typeof v==='number'?(v>=1?v.toFixed(3)+' m²':(v*10000).toFixed(1)+' cm²'):String(v); }
-      function fmtVol(v){ return typeof v==='number'?(v>=0.01?v.toFixed(3)+' m³':(v*1e6).toFixed(1)+' cm³'):String(v); }
+      // Helper: format dimension values — show raw IFC value with correct unit suffix
+      var _qtyUs = (typeof _ccDetectUnitScale === 'function') ? _ccDetectUnitScale(latestState && latestState.models) : 1;
+      var _lenUnit  = _qtyUs >= 1000 ? 'mm' : (_qtyUs >= 100 ? 'cm' : 'm');
+      var _areaUnit = _qtyUs >= 1000 ? 'mm²' : (_qtyUs >= 100 ? 'cm²' : 'm²');
+      var _volUnit  = _qtyUs >= 1000 ? 'mm³' : (_qtyUs >= 100 ? 'cm³' : 'm³');
+      function fmtDim(v){  return typeof v === 'number' ? v.toFixed(_qtyUs >= 100 ? 0 : 3)+' '+_lenUnit  : String(v); }
+      function fmtArea(v){ return typeof v === 'number' ? v.toFixed(_qtyUs >= 100 ? 0 : 3)+' '+_areaUnit : String(v); }
+      function fmtVol(v){  return typeof v === 'number' ? v.toFixed(_qtyUs >= 100 ? 0 : 3)+' '+_volUnit  : String(v); }
 
       // Collect all quantities for display
       var allQty = ep&&ep.quantities||{};
@@ -26237,9 +26307,9 @@ function startApp() {
       var dqColor = dqScore===dqTotal?'var(--color-success-fg)':dqScore>=dqTotal*0.7?'var(--color-warning-fg)':'var(--color-danger-fg)';
 
       // Shared header block
-      var headerCard = html`<div style=${{background:'var(--accent-bg)',borderRadius:'var(--radius-md)',padding:'.7rem .85rem',border:'1px solid var(--accent-bg-deep)'}}>
+      var headerCard = html`<div style=${{background:'var(--accent-bg)',borderRadius:'var(--radius-md)',padding:'.7rem .85rem',border:'1px solid var(--accent-bg-deep)',minWidth:0,overflow:'hidden'}}>
         <div style=${{fontSize:'var(--text-2xs)',color:'var(--accent)',marginBottom:'.2rem',textTransform:'uppercase',letterSpacing:'.08em',fontWeight:'var(--weight-bold)'}}>${typeName}</div>
-        <div style=${{fontSize:'var(--text-md)',fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',lineHeight:'var(--leading-tight)'}}>${elName}</div>
+        <div style=${{fontSize:'var(--text-md)',fontWeight:'var(--weight-semibold)',color:'var(--text-primary)',lineHeight:'var(--leading-tight)',wordBreak:'break-word',overflowWrap:'anywhere'}}>${elName}</div>
         <div style=${{display:'flex',gap:'.6rem',marginTop:'.3rem',flexWrap:'wrap'}}>
           ${discipline && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-secondary)'}}>${discipline}</span>`}
           ${storey && html`<span style=${{fontSize:'var(--text-2xs)',color:'var(--text-muted)'}}>· ${storey}</span>`}
@@ -26515,10 +26585,10 @@ function startApp() {
         background:'transparent',transition:'background .15s',borderRadius:'14px 0 0 14px'}} onMouseEnter=${function(e){e.currentTarget.style.background='var(--accent-bg-deep)';}} onMouseLeave=${function(e){e.currentTarget.style.background='transparent';}}></div>
       <!-- Tab bar + collapse -->
       <div style=${{display:'flex',alignItems:'center',borderBottom:'1px solid var(--border-subtle)',flexShrink:0,height:40,gap:0,paddingLeft:12}}>
-        ${(s.workspace==='present'?['details','ai']:['details','measure','ai']).map(function(tab){
-          var labels={details:'Details',measure:'Measure',ai:'Ask AI'};
-          var isActive=drawerTab===tab;
-          var hasDot = (tab==='details' && drawerEl) || (tab==='measure' && (s.measureMode || (s.measurements&&s.measurements.length>0)));
+        ${['details','ai'].map(function(tab){
+          var labels={details:'Details',ai:'Ask AI'};
+          var isActive=drawerTab===tab||( tab==='details' && drawerTab==='measure');
+          var hasDot = tab==='details' && drawerEl;
           return html`<button key=${tab}
             onClick=${function(){setDrawerTab(tab);}}
             style=${{
@@ -26530,7 +26600,6 @@ function startApp() {
             }}>
             ${hasDot&&html`<span style=${{width:6,height:6,borderRadius:'50%',background:'var(--accent)',display:'inline-block'}}></span>`}
             ${labels[tab]}
-            ${tab==='measure' && s.measurements && s.measurements.length>0 && html`<span style=${{fontFamily:'var(--font-mono)',color:'var(--text-faint)',fontSize:'var(--text-2xs)'}}>${s.measurements.length}</span>`}
           </button>`;
         })}
         <div style=${{flex:1}}></div>
@@ -26541,8 +26610,7 @@ function startApp() {
             borderRadius:6, transition:'color .12s'
           }}>×</button>
       </div>
-      ${drawerTab==='details' ? renderDetails()
-        : drawerTab==='measure' ? renderMeasurements()
+      ${(drawerTab==='details'||drawerTab==='measure') ? renderDetails()
         : drawerTab==='models' ? html`<${ModelSidebar} s=${s} d=${d} />`
         : html`<${NLCommandPanel} s=${s} d=${d} docked=${true} />`}
     </div>`;
@@ -26677,6 +26745,35 @@ function startApp() {
       boxShadow:'inset 0 0 0 1px var(--color-success-border)',
       transition:'opacity .15s'
     }}></div>`;
+  }
+
+  function FolderWatchBadge() {
+    var st = useState(false), active = st[0], setActive = st[1];
+    var nameRef = useRef('');
+    useEffect(function() {
+      function onEv(e) {
+        setActive(e.detail.active);
+        if (e.detail.name) nameRef.current = e.detail.name;
+      }
+      window.addEventListener('cc-folder-watch', onEv);
+      return function() { window.removeEventListener('cc-folder-watch', onEv); };
+    }, []);
+    if (!active) return null;
+    return html`<div style=${{
+      position:'fixed',bottom:'1rem',right:'1rem',zIndex:9998,
+      background:'var(--surface)',border:'1px solid var(--hairline-strong)',
+      borderRadius:10,padding:'.5rem .85rem',
+      display:'flex',alignItems:'center',gap:'.55rem',
+      boxShadow:'0 4px 24px rgba(0,0,0,.4)',
+      fontFamily:'var(--font-body)',fontSize:'0.78rem',color:'var(--ink-primary)',
+      userSelect:'none'
+    }}>
+      <span style=${{width:7,height:7,borderRadius:'50%',background:'#22c55e',flexShrink:0,animation:'cc-dot-pulse 2s ease-in-out infinite'}}></span>
+      <span>Watching <b style=${{fontWeight:600}}>${nameRef.current}</b></span>
+      <button onClick=${function(){ if(window._ccStopFolderWatch) window._ccStopFolderWatch(); }}
+        title="Stop watching"
+        style=${{background:'none',border:'none',color:'var(--ink-faint)',cursor:'pointer',fontSize:'1.1rem',padding:'0 .1rem',lineHeight:1,marginLeft:'.1rem'}}>×</button>
+    </div>`;
   }
 
   function WelcomePopup(props) {
@@ -26825,6 +26922,20 @@ function startApp() {
                   fontFamily:'var(--font-body)',fontSize:'var(--text-sm)',fontWeight:500
                 }}>Load</button>
             </div>`}
+
+            <button onClick=${function(){ if(window._ccStartFolderWatch) window._ccStartFolderWatch(); }}
+              style=${{
+                display:'flex',alignItems:'center',justifyContent:'space-between',gap:'1rem',
+                padding:'.7rem 0',background:'none',border:'none',
+                borderTop:'1px solid var(--hairline)',borderBottom:'1px solid var(--hairline)',
+                cursor:'pointer',textAlign:'left',width:'100%',
+                fontFamily:'var(--font-body)',color:'var(--ink-primary)',fontSize:'var(--text-md)'
+              }}
+              onMouseEnter=${function(e){ e.currentTarget.style.color='var(--ink-accent)'; }}
+              onMouseLeave=${function(e){ e.currentTarget.style.color='var(--ink-primary)'; }}>
+              <span>Watch a folder…</span>
+              <span style=${{color:'var(--ink-faint)',fontSize:'var(--text-xs)'}}>Desktop Connector · ACC</span>
+            </button>
 
           </div>
 
@@ -27083,6 +27194,21 @@ function startApp() {
               <span style=${{display:'flex',flexDirection:'column',gap:1}}>
                 <span style=${{fontSize:'var(--text-sm)',fontWeight:500}}>Shared folder</span>
                 <span style=${{fontSize:'var(--text-2xs)',color:'var(--ink-faint)',fontFamily:'var(--font-mono)'}}>OneDrive · Dropbox · NAS — team sync</span>
+              </span>
+            </button>
+            <button onClick=${function(){
+                setAddOpen(false);
+                if(window._ccStartFolderWatch) window._ccStartFolderWatch();
+              }}
+              style=${{display:'flex',alignItems:'flex-start',gap:'.6rem',width:'100%',
+                padding:'.55rem .8rem',background:'none',border:'none',cursor:'pointer',textAlign:'left',
+                fontFamily:'var(--font-body)',color:'var(--ink-primary)'}}
+              onMouseEnter=${function(e){e.currentTarget.style.background='var(--surface-warm)';}}
+              onMouseLeave=${function(e){e.currentTarget.style.background='none';}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style=${{marginTop:2,flexShrink:0,color:'var(--ink-secondary)'}}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span style=${{display:'flex',flexDirection:'column',gap:1}}>
+                <span style=${{fontSize:'var(--text-sm)',fontWeight:500}}>Watch a folder</span>
+                <span style=${{fontSize:'var(--text-2xs)',color:'var(--ink-faint)',fontFamily:'var(--font-mono)'}}>Desktop Connector · ACC — auto-reloads on change</span>
               </span>
             </button>
           </div>
@@ -28814,10 +28940,11 @@ function startApp() {
         var changed = (window._ccShiftHeld !== s1) || (window._ccAltHeld !== a1);
         window._ccShiftHeld = s1;
         window._ccAltHeld   = a1;
-        if (a1 && window._ccSelectedEl && window._ccSelectedEl.box && !window._ccSelectedEl.box.isEmpty()){
+        var _measActive = !!(window._ccLatestState && window._ccLatestState.measureMode);
+        if (a1 && _measActive && window._ccSelectedEl && window._ccSelectedEl.box && !window._ccSelectedEl.box.isEmpty()){
           var c = window._ccSelectedEl.box.getCenter(new THREE.Vector3());
           window._ccAltHoverFrom = {x:c.x, y:c.y, z:c.z};
-        } else if (!a1) {
+        } else if (!a1 || !_measActive) {
           window._ccAltHoverFrom = null;
         }
         if (changed) {
@@ -28991,6 +29118,78 @@ function startApp() {
       window.dispatchEvent(new CustomEvent('cc-pending-files'));
     };
 
+    // ── Folder watcher ────────────────────────────────────────────
+    var _watchDirHandle = null;
+    var _watchSnapshot  = {};   // filename → {size, lastModified}
+    var _watchFolderName = '';
+    var _watchInterval  = null;
+    var _WATCH_EXTS     = /\.(ifc|glb|ifcmeta|ifcprops)$/i;
+    var _WATCH_POLL_MS  = 5000;
+
+    function _emitWatchEvent(active) {
+      window.dispatchEvent(new CustomEvent('cc-folder-watch', {
+        detail: { active: active, name: _watchFolderName }
+      }));
+    }
+
+    function _stopFolderWatch() {
+      if (_watchInterval) { clearInterval(_watchInterval); _watchInterval = null; }
+      _watchDirHandle = null;
+      _watchSnapshot  = {};
+      _emitWatchEvent(false);
+    }
+
+    async function _pollFolderWatch() {
+      if (!_watchDirHandle) return;
+      var changed = [];
+      try {
+        for await (var entry of _watchDirHandle.values()) {
+          if (entry.kind !== 'file' || !_WATCH_EXTS.test(entry.name)) continue;
+          var f = await entry.getFile();
+          var snap = _watchSnapshot[entry.name];
+          if (!snap || snap.size !== f.size || snap.lastModified !== f.lastModified) {
+            _watchSnapshot[entry.name] = { size: f.size, lastModified: f.lastModified };
+            changed.push(f);
+          }
+        }
+      } catch(e) {
+        _stopFolderWatch();
+        return;
+      }
+      if (changed.length && window._ccLoadFiles) window._ccLoadFiles(changed);
+      _emitWatchEvent(true);
+    }
+
+    async function _startFolderWatch() {
+      if (!window.showDirectoryPicker) {
+        alert('Folder watching requires Chrome or Edge.');
+        return;
+      }
+      var dirHandle;
+      try { dirHandle = await window.showDirectoryPicker({ mode: 'read' }); }
+      catch(e) { return; }
+
+      _stopFolderWatch();
+      _watchDirHandle  = dirHandle;
+      _watchFolderName = dirHandle.name;
+      _watchSnapshot   = {};
+
+      var files = [];
+      for await (var entry of dirHandle.values()) {
+        if (entry.kind !== 'file' || !_WATCH_EXTS.test(entry.name)) continue;
+        var f = await entry.getFile();
+        _watchSnapshot[entry.name] = { size: f.size, lastModified: f.lastModified };
+        files.push(f);
+      }
+      if (files.length && window._ccLoadFiles) window._ccLoadFiles(files);
+
+      _watchInterval = setInterval(_pollFolderWatch, _WATCH_POLL_MS);
+      _emitWatchEvent(true);
+    }
+
+    window._ccStartFolderWatch = _startFolderWatch;
+    window._ccStopFolderWatch  = _stopFolderWatch;
+
     var is2D = s.underlayMode === 'view2d' || s.underlayMode === 'compare';
     return html`<div style=${{
       // 100dvh tracks mobile browser chrome better than 100vh; the
@@ -29061,6 +29260,7 @@ function startApp() {
         </ul>
         <a href="https://github.com/clashcontrol-io/clashcontrol/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style=${{fontSize:'0.69rem',color:'var(--accent)',textDecoration:'none'}}>Full changelog →</a>
       </div>`}
+      <${FolderWatchBadge} />
       ${!pwaDismissed && pwaUpdateAvail && html`<div style=${{position:'fixed',bottom:'1rem',left:'50%',transform:'translateX(-50%)',zIndex:9999,
         background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:10,padding:'.6rem 1rem',display:'flex',alignItems:'center',gap:'.75rem',
         boxShadow:'0 4px 24px rgba(0,0,0,.4)',fontSize:'0.85rem',color:'var(--text-primary)',maxWidth:'90vw'}}>
