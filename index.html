@@ -9126,9 +9126,16 @@ function startApp() {
           _secDrag.didDrag = true;
           window._ccSectionDragging = true;
           var angle = -dx * 0.005;
-          var nx = _secDrag.startNormal[0], nz = _secDrag.startNormal[2];
+          var nx = _secDrag.startNormal[0], ny = _secDrag.startNormal[1], nz = _secDrag.startNormal[2];
           var cosA = Math.cos(angle), sinA = Math.sin(angle);
-          var rn = [nx*cosA - nz*sinA, _secDrag.startNormal[1], nx*sinA + nz*cosA];
+          var rn;
+          if (Math.abs(ny) > 0.7) {
+            // Horizontal plane: ring stands vertical → tilt the plane by rotating normal around world Z
+            rn = [nx*cosA - ny*sinA, nx*sinA + ny*cosA, nz];
+          } else {
+            // Vertical plane: ring lies flat → spin around world Y
+            rn = [nx*cosA - nz*sinA, ny, nx*sinA + nz*cosA];
+          }
           if (window._ccDispatch) window._ccDispatch({t:A.SECTION_CUSTOM, v:{normal:rn, point:_secDrag.startPoint}, pos:_secDrag.startPos});
           renderer.domElement.style.cursor = 'ew-resize';
         } else {
@@ -9751,11 +9758,6 @@ function startApp() {
         rotRing.userData._sectionPlane = true;
         rotRing.userData._secHandle   = 'rotate';
         rotRing.renderOrder = 1000;
-        // Rotation always happens around world Y (horizontal spin). Counter-rotate the ring
-        // so it lies flat in world space regardless of the group's quaternion.
-        if (quaternion) {
-          rotRing.quaternion.copy(new THREE.Quaternion().copy(quaternion).invert());
-        }
         grp.add(rotRing);
 
         // ── Move arrow — long stem + cone tip pointing along local +Z (plane normal) ──
