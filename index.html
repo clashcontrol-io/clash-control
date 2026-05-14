@@ -9125,7 +9125,7 @@ function startApp() {
           if (Math.abs(dx) < 3 && !_secDrag.didDrag) return;
           _secDrag.didDrag = true;
           window._ccSectionDragging = true;
-          var angle = -dx * 0.005;
+          var angle = -dx * 0.003;
           var nx = _secDrag.startNormal[0], ny = _secDrag.startNormal[1], nz = _secDrag.startNormal[2];
           var cosA = Math.cos(angle), sinA = Math.sin(angle);
           var rn;
@@ -9163,7 +9163,7 @@ function startApp() {
             var mdx =  dx / el.clientWidth  * 2;
             var mdy = -dy / el.clientHeight * 2;
             var dot = mdx * sx + mdy * sy;
-            newPos = Math.max(0, Math.min(1, _secDrag.startPos - dot * 1.0));
+            newPos = Math.max(0, Math.min(1, _secDrag.startPos - dot * 0.5));
           } else {
             newPos = Math.max(0, Math.min(1, _secDrag.startPos + dy * 0.003));
           }
