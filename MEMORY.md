@@ -253,7 +253,7 @@ pass resets type & chrome:
 Plan file: `/root/.claude/plans/there-has-been-a-gentle-ember.md`.
 
 Earlier branch `claude/improve-ifc-viewer-ux-WhTsB`: full UI overhaul for architectural audience.
-Full 8-PR migration completed (2026-04-30):
+Full 8-PR migration completed (2026-04-30):  **[STALE?]**
 
 - ~~PR-1: violet accent (#7c3aed), rounder radii, glass surface tokens~~ (2026-04-30)
 - ~~PR-2: bottom ModeToolbar — Orbit/Walk/Slice/Measure/Plan/Note chips~~ (2026-04-30)
@@ -267,10 +267,38 @@ Full 8-PR migration completed (2026-04-30):
 Also resolved conflict with origin/main: kept revit keep-partial/discard buttons from `9772053`, used violet CSS tokens.
 
 UI_OVERHAUL.md written (7 chapters, 1469 lines). PLAN.md updated.
-
 <!-- END:active-work -->
 
 <!-- BEGIN:session-log -->
+### 2026-05-15
+**Summary:** 19 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
+**Changed:** see commits
+**Notable:** —
+
+<details><summary>Commits</summary>
+
+- 014f080 chore: bump version to 5.12.3
+- b301d3e Slow down section plane drag to better follow mouse speed
+- 8e75d02 Fix section plane rotation to match ring orientation
+- 3c23c97 Fix section plane rotation ring orientation — always lies flat (world-horizontal)
+- 8a1ac83 Remove flat end caps from section plane arrow shaft
+- 10145ab Lock face arrow size cap and fix tall-narrow box scaling
+- 22aadb1 chore: bump version to 5.12.2
+- a149c48 Tighten handle size caps to prevent oversizing on large models
+- 7cb1b49 Thin section plane arrow shaft (~40% of previous radius)
+- efcd7b5 chore: bump version to 5.12.1
+- 11585ef Fix handle sizing to be geometry-relative, not camera-distance based
+- 1c382ba chore: bump version to 5.12.0
+- 2494aa8 Unify section plane handles with section box style
+- 7e92932 Show IFC quantities in model's native unit, not converted to metres
+- 002d291 Fix IFC quantity dimensions ignoring project unit scale
+- c122a36 Fix Alt+click, section box arrows, bounds, rotation, and opacity
+- 0573dcf Fix text overflow in Details panel element name header
+- 557d246 Add folder watcher, inline project creation, remove Measure tab
+- 5a4b345 chore: daily memory sync 2026-05-14
+
+</details>
+
 ### 2026-05-14
 **Summary:** 4 commit(s) landed (no AI summary — set ANTHROPIC_API_KEY secret for richer entries).
 **Changed:** see commits
